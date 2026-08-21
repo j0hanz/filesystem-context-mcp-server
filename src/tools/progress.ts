@@ -185,7 +185,6 @@ export class StderrProgressSink implements ProgressSink {
 
     const merged: ProgressCtx = {
       ...this.#ctx,
-      ...(event.message ? { subject: event.message } : {}),
       ...(event.kind === 'tick' || event.kind === 'complete'
         ? { current: event.current, total: event.total }
         : {}),
@@ -222,8 +221,8 @@ export class McpProgressSink implements ProgressSink {
   emit(event: ProgressEvent): void {
     let current = event.current;
     let total = event.total;
-    if (event.kind === 'complete' || event.kind === 'fail') {
-      current = total ?? current + 1;
+    if (event.kind === 'complete') {
+      current = total ?? current;
       total = current;
     }
     const notificationParams: ProgressNotificationParams = {

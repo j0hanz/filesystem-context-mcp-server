@@ -48,7 +48,6 @@ type SearchSummary = SearchResultValue['summary'];
 interface SearchPreviewState {
   needsExternalize: boolean;
   visiblePayloads: SearchMatchPayload[];
-  heading: string;
 }
 
 interface SearchContext {
@@ -75,7 +74,6 @@ function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewS
   return {
     needsExternalize,
     visiblePayloads: payloads.slice(0, visibleCount),
-    heading: buildHeading(payloads.length, visibleCount),
   };
 }
 
@@ -149,14 +147,6 @@ const GrepOutputSchema = z.strictObject({
     ),
   nextCursor: NextCursorSchema,
 });
-
-function buildHeading(totalMatches: number, visibleMatches: number): string {
-  if (visibleMatches >= totalMatches) {
-    return `Found ${totalMatches}:`;
-  }
-
-  return `Found ${totalMatches} (showing first ${visibleMatches}):`;
-}
 
 function buildSearchMatchDetail(totalMatches: number, filesMatched: number): string {
   const matchDetail = formatCount(totalMatches, 'match', 'matches');

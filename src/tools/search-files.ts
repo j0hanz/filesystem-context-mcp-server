@@ -153,15 +153,16 @@ async function handleSearchFiles(
   };
   applySummaryFields(structured, result.summary, nextCursor);
 
-  // Store the page so a caller can fetch the full result set by URI when the
-  // response is incomplete: `nextCursor` covers the multi-page case, and
-  // `summary.truncated` covers a single page that already hit the hard result
+  // Store the full result set so a caller can fetch all matching files by URI
+  // when the response is incomplete: `nextCursor` covers the multi-page case,
+  // and `summary.truncated` covers a single page that already hit the hard result
   // cap (no nextCursor, but more matches exist beyond the cap).
   if (ctx.resourceStore !== undefined && (nextCursor !== undefined || result.summary.truncated)) {
+    const fullRelativeResults = buildRelativeResults(result.basePath, result.results);
     const { entry, link } = putJsonResource(
       ctx.resourceStore,
       `${args.pattern} files`,
-      relativeResults,
+      fullRelativeResults,
     );
 
     return {

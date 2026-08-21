@@ -2,9 +2,11 @@ import { strict as assert } from 'node:assert';
 import { beforeEach, describe, it, mock } from 'node:test';
 
 import {
+  McpProgressSink,
   type ProgressEvent,
   ProgressSession,
   type ProgressSink,
+  StderrProgressSink,
 } from '../../src/tools/progress.js';
 
 class MemorySink implements ProgressSink {
@@ -254,5 +256,67 @@ void describe('ProgressSession', () => {
     session.complete('done');
     // No sinks — nothing to assert beyond "no throw".
     assert.ok(session);
+  });
+});
+
+void describe('McpProgressSink', () => {
+  void it('emits progress notification on complete without inflating counts when total is undefined', async () => {
+    const notifications: unknown[] = [];
+    const sink = new McpProgressSink('test-tool', 'token-123', async (n) => {
+      notifications.push(n);
+    });
+
+    sink.emit({ kind: 'tick', current: 3, message: 'processing' });
+    sink.emit({ kind: 'complete', current: 3, message: 'done' });
+    await sink.flush();
+
+    assert.equal(notifications.length, 2);
+    const complete = notifications[1] as { params: { progress: number; total?: number } };
+    assert.equal(complete.params.progress, 3);
+    assert.equal(complete.params.total, 3);
+  });
+
+  void it('emits actual progress on fail without forcing 100% completion', async () => {
+    const notifications: unknown[] = [];
+    const sink = new McpProgressSink('test-tool', 'token-123', async (n) => {
+      notifications.push(n);
+    });
+
+    sink.emit({ kind: 'tick', current: 3, total: 10, message: 'processing' });
+    sink.emit({ kind: 'fail', current: 3, total: 10, message: 'failed', error: new Error('boom') });
+    await sink.flush();
+
+    assert.equal(notifications.length, 2);
+    const fail = notifications[1] as { params: { progress: number; total?: number } };
+    assert.equal(fail.params.progress, 3);
+    assert.equal(fail.params.total, 10);
+  });
+});
+
+void describe('StderrProgressSink', () => {
+  void it('emits clean formatted progress to stderr without duplicated labels', () => {
+    const written: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    const origIsTTY = process.stderr.isTTY;
+
+    try {
+      (process.stderr as { isTTY?: boolean }).isTTY = true;
+      (process.stderr as { write: (s: string) => boolean }).write = (str: string) => {
+        written.push(str);
+        return true;
+      };
+
+      const sink = new StderrProgressSink({ label: 'Search', subject: 'pattern' });
+      sink.emit({ kind: 'tick', current: 1, total: 5, message: 'Search: pattern · 1/5' });
+
+      assert.equal(written.length, 1);
+      // eslint-disable-next-line no-control-regex
+      const plain = (written[0] ?? '').replace(/\x1b\[[0-9;]*m/g, '');
+      assert.ok(plain.includes('Search: pattern · 1/5'));
+      assert.ok(!plain.includes('Search: Search:'), 'Label prefix must not be duplicated');
+    } finally {
+      (process.stderr as { write: typeof origWrite }).write = origWrite;
+      (process.stderr as { isTTY?: boolean }).isTTY = origIsTTY;
+    }
   });
 });

@@ -567,8 +567,13 @@ async function handleSearchAndReplace(
 
   const structured = buildSearchAndReplaceStructuredResult(summary, args);
 
-  // Store primary file in resource store if available
-  if (ctx.resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
+  // Store primary file in resource store if available (skip in dryRun to avoid reading stale disk content)
+  if (
+    !args.dryRun &&
+    ctx.resourceStore &&
+    summary.changedFiles.length > 0 &&
+    summary.filesChanged > 0
+  ) {
     const primaryFile = summary.changedFiles[0];
     if (!primaryFile) return { structured };
 

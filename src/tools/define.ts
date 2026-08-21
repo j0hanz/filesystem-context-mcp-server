@@ -248,6 +248,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const doneCtx: ProgressCtx = this.def.progressDone
       ? { ...this.#progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
       : this.#progressCtx;
+    this.#stderrSink.updateCtx(doneCtx);
     await this.#closeWithDone(plainMessage('done', doneCtx));
   }
 

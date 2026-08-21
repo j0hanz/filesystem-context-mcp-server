@@ -230,4 +230,29 @@ describe('replace_text: $ sequences are literal unless isRegex=true', () => {
       await env.cleanup();
     }
   });
+
+  it('dryRun does not populate primaryFile or leak stale on-disk content', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'dryrun.txt');
+      await writeFile(file, 'original content\n');
+
+      const res = await env.client.callTool({
+        name: 'replace_text',
+        arguments: {
+          path: file,
+          searchPattern: 'original',
+          replacement: 'updated',
+          dryRun: true,
+        },
+      });
+      assertOk(res);
+      const s = getStructured<{ primaryFile?: unknown; filesModified: number }>(res);
+      assert.equal(s.filesModified, 1);
+      assert.equal(s.primaryFile, undefined);
+      assert.equal(await readFile(file, 'utf-8'), 'original content\n');
+    } finally {
+      await env.cleanup();
+    }
+  });
 });

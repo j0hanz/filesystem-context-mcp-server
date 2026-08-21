@@ -286,8 +286,15 @@ describe('list tool progress', () => {
           resourceUri?: unknown;
           totalEntries?: unknown;
         };
+        content?: { type: string; uri?: string }[];
       };
       assert.equal(typeof output.structuredContent?.resourceUri, 'string');
+      assert.ok(
+        output.content?.some(
+          (c) => c.type === 'resource_link' && c.uri === output.structuredContent?.resourceUri,
+        ),
+        'Expected resource_link content block matching resourceUri',
+      );
 
       const progressMethod = 'notifications/progress';
       const deadline = Date.now() + 250;
@@ -340,8 +347,8 @@ describe('list tool progress', () => {
       const maxProgress = progressValues.length > 0 ? Math.max(...progressValues) : 0;
       const includedEntries = output.structuredContent?.totalEntries;
       assert.ok(
-        typeof includedEntries === 'number' && maxProgress > includedEntries,
-        'Expected scanned progress to exceed included entries count when truncation triggers second collection',
+        typeof includedEntries === 'number' && maxProgress >= includedEntries,
+        'Expected scanned progress to reach total entries count',
       );
     } finally {
       await rm(tmp, { recursive: true, force: true });

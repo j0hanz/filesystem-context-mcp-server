@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
@@ -232,7 +234,7 @@ const ListOutputSchema = z.strictObject({
 async function handleList(
   args: z.infer<typeof ListInputSchema>,
   ctx: ToolCtx,
-): Promise<z.infer<typeof ListOutputSchema>> {
+): Promise<{ structured: z.infer<typeof ListOutputSchema>; link?: ContentBlock }> {
   const path = args.path;
   const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
   const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
@@ -250,6 +252,7 @@ async function handleList(
   const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
   let resourceUri: string | undefined;
+  let link: ContentBlock | undefined;
   if (result.totalEntries > inlineEntries.length && ctx.resourceStore) {
     const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
     const fullTruncated = result.totalEntries > result.entries.length;
@@ -261,8 +264,9 @@ async function handleList(
       totalDirectories: result.totalDirectories,
       ...(fullTruncated ? { truncated: true } : {}),
     };
-    const { entry } = putJsonResource(ctx.resourceStore, 'list-result.json', fullOutput);
-    resourceUri = entry.uri;
+    const res = putJsonResource(ctx.resourceStore, `${basename(validDir)} tree`, fullOutput);
+    resourceUri = res.entry.uri;
+    link = res.link;
   }
 
   const output: z.infer<typeof ListOutputSchema> = {
@@ -277,7 +281,7 @@ async function handleList(
     ...(resourceUri ? { resourceUri } : {}),
   };
 
-  return output;
+  return { structured: output, ...(link ? { link } : {}) };
 }
 
 export const LIST = defineTool({
@@ -302,7 +306,11 @@ export const LIST = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const output = await handleList(args, ctx);
-    return { structured: output, text: output.markdown };
+    const { structured, link } = await handleList(args, ctx);
+    return {
+      structured,
+      text: structured.markdown,
+      ...(link ? { resources: [link] } : {}),
+    };
   },
 });

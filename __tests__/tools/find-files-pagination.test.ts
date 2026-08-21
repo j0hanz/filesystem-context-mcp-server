@@ -89,4 +89,18 @@ describe('find_files — pagination', () => {
     // Basenames a,b,c,d,e — alphabetical by name regardless of directory.
     assert.deepEqual(names, ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']);
   });
+
+  it('stores all matching files in resourceStore when paginated', async () => {
+    const page1 = await env.client.callTool({
+      name: 'find_files',
+      arguments: { path: env.tmpDir, pattern: '**/*.txt', maxResults: 2, sortBy: 'path' },
+    });
+    assertOk(page1);
+    const s1 = getStructured<{ results: { path: string }[]; resourceUri?: string }>(page1);
+    assert.ok(s1.resourceUri, 'expected resourceUri on paginated result');
+
+    const entry = env.resourceStore.getText(s1.resourceUri);
+    const stored = JSON.parse(entry.text) as { path: string }[];
+    assert.equal(stored.length, 5, 'expected resource store to hold all 5 matching files');
+  });
 });
