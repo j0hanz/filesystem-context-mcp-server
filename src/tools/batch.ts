@@ -37,7 +37,7 @@ function normalizeBatchItems<TOverride>(
   if ('files' in args) {
     return args.files.map(({ path, ...rest }) => ({
       path,
-      override: rest as unknown as TOverride,
+      override: rest as TOverride,
     }));
   }
   // For invalid input not matching the discriminated union

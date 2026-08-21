@@ -73,17 +73,17 @@ interface BaseResourceContract {
     audience?: Role[];
     priority?: number;
   };
-  read(
+  readonly read: (
     uri: URL,
     variables: Record<string, string | string[]>,
     ctx: ServerContext,
-  ): Promise<ReadResourceResult> | ReadResourceResult;
-  subscribe?: (
+  ) => Promise<ReadResourceResult> | ReadResourceResult;
+  readonly subscribe?: (
     uri: string,
     notify: (uri: string) => void,
   ) => Promise<boolean | undefined> | boolean | undefined;
-  unsubscribe?: (uri: string) => void;
-  destroy?: () => void;
+  readonly unsubscribe?: (uri: string) => void;
+  readonly destroy?: () => void;
 }
 
 /** A resource with a fixed, enumerable URI (e.g. internal://instructions). */

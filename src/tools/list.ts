@@ -4,9 +4,9 @@ import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
+import type { EntryType } from '../core/glob.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
-  type EntryType,
   globEntries,
   isIgnoredByGitignore,
   loadRootGitignore,

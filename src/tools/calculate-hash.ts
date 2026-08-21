@@ -1,3 +1,5 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -236,7 +238,14 @@ async function hashDirectory(
   };
 }
 
-async function handleCalculateHash(args: z.infer<typeof HashInputSchema>, ctx: ToolCtx) {
+async function handleCalculateHash(
+  args: z.infer<typeof HashInputSchema>,
+  ctx: ToolCtx,
+): Promise<{
+  structured: z.infer<typeof HashOutputSchema>;
+  text: string;
+  resources?: ContentBlock[];
+}> {
   const { algorithms } = args;
 
   // Check if path is a directory or file

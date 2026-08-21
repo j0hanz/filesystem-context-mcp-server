@@ -22,7 +22,7 @@ export type ProgressEvent =
 
 export interface ProgressSink {
   readonly name: string;
-  emit(event: ProgressEvent): Promise<void> | void;
+  readonly emit: (event: ProgressEvent) => Promise<void> | void;
 }
 
 interface ProgressSessionOptions {

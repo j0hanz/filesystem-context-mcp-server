@@ -318,15 +318,15 @@ export function validateReadRange(
   }
 }
 
-export function defaultFalseBoolean(description: string) {
+export function defaultFalseBoolean(description: string): z.ZodDefault<z.ZodBoolean> {
   return z.boolean().default(false).describe(description);
 }
 
-export const includeHiddenField = () =>
+export const includeHiddenField = (): z.ZodDefault<z.ZodBoolean> =>
   defaultFalseBoolean('Include hidden items (starting with .)');
-export const includeIgnoredField = () =>
+export const includeIgnoredField = (): z.ZodDefault<z.ZodBoolean> =>
   defaultFalseBoolean('Include ignored items (node_modules, .git, etc).');
-export const maxDepthField = () =>
+export const maxDepthField = (): z.ZodOptional<z.ZodNumber> =>
   z
     .uint32()
     .min(0)
@@ -336,6 +336,18 @@ export const maxDepthField = () =>
 
 const DEFAULT_MAX_BATCH = 1000;
 
+export type SingleOrBatchShape<
+  TExtra extends z.ZodRawShape,
+  TPerFile extends z.ZodRawShape | undefined = undefined,
+> = TExtra & {
+  path: z.ZodOptional<typeof RequiredPath>;
+  paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
+} & (TPerFile extends z.ZodRawShape
+    ? {
+        files: z.ZodOptional<z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & TPerFile>>>;
+      }
+    : Record<never, never>);
+
 export function singleOrBatchPathsInput<
   TExtra extends z.ZodRawShape,
   TPerFile extends z.ZodRawShape | undefined = undefined,
@@ -343,16 +355,7 @@ export function singleOrBatchPathsInput<
   extra: TExtra;
   perFile?: TPerFile;
   maxBatch?: number;
-}): z.ZodObject<
-  TExtra & {
-    path: z.ZodOptional<typeof RequiredPath>;
-    paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
-  } & (TPerFile extends z.ZodRawShape
-      ? {
-          files: z.ZodOptional<z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & TPerFile>>>;
-        }
-      : object)
-> {
+}): z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>> {
   const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
   const perFileShape = opts.perFile;
   const triadic = perFileShape !== undefined;
@@ -410,7 +413,7 @@ export function singleOrBatchPathsInput<
         input: value,
       });
     }
-  }) as unknown as ReturnType<typeof singleOrBatchPathsInput<TExtra, TPerFile>>;
+  }) as z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>>;
 }
 
 /**

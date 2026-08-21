@@ -27,9 +27,8 @@ import { ROOTS_TIMEOUT_MS } from './util.js';
 // shared only isAlpha / toPosixPath / IS_WINDOWS with these primitives, not the
 // containment checks, and was consumed independently by path-completer.ts and
 // glob.ts via PathGuard.isSensitive (which delegates to SensitiveMatcher).
-// Separable peers already extracted: sensitive.ts, path-completer.ts,
-// cursor.ts.
-export type ValidatedPath = string & { readonly __validated: unique symbol };
+declare const ValidatedPathBrand: unique symbol;
+export type ValidatedPath = string & { readonly [ValidatedPathBrand]: true };
 
 export interface ServerOptions {
   allowCwd?: boolean;

@@ -24,12 +24,8 @@ import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
-import {
-  McpProgressSink,
-  ProgressSession,
-  type ProgressSink,
-  StderrProgressSink,
-} from './progress.js';
+import type { ProgressSink } from './progress.js';
+import { McpProgressSink, ProgressSession, StderrProgressSink } from './progress.js';
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
@@ -378,14 +374,14 @@ function withJsonSchema<T extends z.ZodType>(
   precomputedJsonSchema: Record<string, unknown>,
   io: 'input' | 'output',
 ): StandardSchemaWithJSON<z.infer<T>, z.infer<T>> {
-  const standard = (schema as unknown as { '~standard': Record<string, unknown> })['~standard'];
+  const standard = (schema as unknown as { '~standard'?: Record<string, unknown> })['~standard'];
   const compute = (options: { target: string }): Record<string, unknown> =>
     options.target === 'draft-2020-12'
       ? precomputedJsonSchema
       : z.toJSONSchema(schema, { target: options.target as never, io });
   return {
     '~standard': {
-      ...standard,
+      ...(standard ?? {}),
       jsonSchema: {
         input: compute,
         output: compute,

@@ -63,7 +63,10 @@ export async function processInParallel<T, R>(
 
       const index = nextIndex;
       nextIndex += 1;
-      const item = items[index] as T;
+      const item = items[index];
+      if (item === undefined) {
+        continue;
+      }
 
       try {
         const value = await processor(item);

@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
  */
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** The four filesystem entry types. Produced by `resolveEntryType` (glob.ts)

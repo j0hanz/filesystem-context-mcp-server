@@ -27,12 +27,12 @@ import { detectMimeFromContent } from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
 import type { EntryType as FileType } from './primitives.js';
+import type { ReadFileResult, ReadSpec } from './read.js';
 import {
   assertFileStats,
   createTooLargeError,
   normalizeSpec,
   readNormalized,
-  type ReadSpec,
   STREAM_CHUNK_SIZE,
 } from './read.js';
 import { MAX_TEXT_FILE_SIZE } from './util.js';
@@ -149,19 +149,28 @@ export class GuardedFileSystem {
     this.pathGuard = pathGuard;
   }
 
-  async stat(filePath: string, options?: { signal?: AbortSignal }) {
+  async stat(
+    filePath: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ stats: Stats; validPath: string }> {
     const validPath = await this.pathGuard.validateExistingPath(filePath);
     const stats = await withAbort(fsStat(validPath), options?.signal);
     return { stats, validPath };
   }
 
-  async lstat(filePath: string, options?: { signal?: AbortSignal }) {
+  async lstat(
+    filePath: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ stats: Stats; validPath: string }> {
     const validPath = await this.pathGuard.validatePathForDelete(filePath);
     const stats = await withAbort(fsLstat(validPath), options?.signal);
     return { stats, validPath };
   }
 
-  async readlink(filePath: string, options?: Parameters<typeof fsReadlink>[1]) {
+  async readlink(
+    filePath: string,
+    options?: Parameters<typeof fsReadlink>[1],
+  ): Promise<{ linkString: string; validPath: string }> {
     // validateExistingPath resolves through the symlink, so readlink would always
     // be handed the final target — a regular file — and fail EINVAL. This guard
     // keeps the link itself while still enforcing containment and the denylist.
@@ -171,13 +180,16 @@ export class GuardedFileSystem {
     return { linkString, validPath };
   }
 
-  async mkdir(filePath: string, options?: Parameters<typeof fsMkdir>[1]) {
+  async mkdir(
+    filePath: string,
+    options?: Parameters<typeof fsMkdir>[1],
+  ): Promise<{ validPath: string; result: string | undefined }> {
     const validPath = await this.pathGuard.validatePathForWrite(filePath);
     const result = await fsMkdir(validPath, options);
     return { validPath, result };
   }
 
-  async rename(oldPath: string, newPath: string) {
+  async rename(oldPath: string, newPath: string): Promise<{ validOld: string; validNew: string }> {
     // Not validateExistingPath: that resolves through a symlink, so renaming a
     // link would rename its target and leave the link dangling.
     const validOld = await this.pathGuard.validatePathForDelete(oldPath);
@@ -190,23 +202,30 @@ export class GuardedFileSystem {
     filePath: string,
     content: string,
     options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
-  ) {
+  ): Promise<{ validPath: string }> {
     return atomicWriteFile(filePath, content, this.pathGuard, options);
   }
 
-  async rm(filePath: string, options?: Parameters<typeof fsRm>[1]) {
+  async rm(filePath: string, options?: Parameters<typeof fsRm>[1]): Promise<{ validPath: string }> {
     const validPath = await this.pathGuard.validatePathForDelete(filePath);
     await fsRm(validPath, options);
     return { validPath };
   }
 
-  async rmdir(filePath: string, options?: Parameters<typeof fsRmdir>[1]) {
+  async rmdir(
+    filePath: string,
+    options?: Parameters<typeof fsRmdir>[1],
+  ): Promise<{ validPath: string }> {
     const validPath = await this.pathGuard.validatePathForDelete(filePath);
     await fsRmdir(validPath, options);
     return { validPath };
   }
 
-  async cp(source: string, destination: string, options?: Parameters<typeof fsCp>[2]) {
+  async cp(
+    source: string,
+    destination: string,
+    options?: Parameters<typeof fsCp>[2],
+  ): Promise<{ validSource: string; validDest: string }> {
     // As in rename: keep the link itself so callers passing verbatimSymlinks
     // actually copy the link rather than a dereferenced target.
     const validSource = await this.pathGuard.validatePathForDelete(source);
@@ -215,13 +234,13 @@ export class GuardedFileSystem {
     return { validSource, validDest };
   }
 
-  async hash(filePath: string, signal?: AbortSignal) {
+  async hash(filePath: string, signal?: AbortSignal): Promise<string> {
     // For hashing, we require the path to exist and be a file, so we use the stricter existing-path guard.
     const validPath = await this.pathGuard.validateExistingPath(filePath);
     return calculateFileContentHash(validPath, signal);
   }
 
-  async readFile(filePath: string, spec: ReadSpec) {
+  async readFile(filePath: string, spec: ReadSpec): Promise<ReadFileResult> {
     const normalized = normalizeSpec(spec);
     const validPath = await this.pathGuard.validateExistingPath(filePath);
     normalized.signal?.throwIfAborted();
@@ -229,7 +248,10 @@ export class GuardedFileSystem {
     return readNormalized(filePath, validPath, stats, normalized);
   }
 
-  async readRaw(filePath: string, options?: { signal?: AbortSignal }) {
+  async readRaw(
+    filePath: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ content: Buffer; mimeType: string; isBinary: boolean }> {
     const validPath = await this.pathGuard.validateExistingPath(filePath);
     const stats = await withAbort(fsStat(validPath), options?.signal);
     assertFileStats(filePath, stats);

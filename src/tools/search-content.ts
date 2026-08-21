@@ -19,13 +19,8 @@ import {
   PositiveInt,
   SafeGlobPattern,
 } from '../core/schema.js';
-import {
-  compileRegex,
-  freeRegex,
-  type Regex,
-  searchContent,
-  type SearchContentOptions,
-} from '../core/search.js';
+import type { Regex, SearchContentOptions } from '../core/search.js';
+import { compileRegex, freeRegex, searchContent } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,

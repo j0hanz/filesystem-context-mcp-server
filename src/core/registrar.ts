@@ -27,8 +27,8 @@ export interface ServerDeps {
 }
 
 export interface Registrar {
-  register(deps: ServerDeps): void;
-  dispose(server?: McpServer): void;
+  readonly register: (deps: ServerDeps) => void;
+  readonly dispose: (server?: McpServer) => void;
 }
 
 // ─── Root directory resolution helpers (relocated from path.ts) ───────────────
@@ -122,13 +122,10 @@ function logMissingDirectories(pathGuard: PathGuard): void {
 
 const ROOTS_DEBOUNCE_MS = 100;
 
+export type SynchronizerState = 'initializing' | 'idle' | 'updating' | 'shutting_down';
+
 export class McpRootsSynchronizer {
-  // Widened from a string-literal union: control-flow analysis narrows a union
-  // field to the last assigned literal ('updating') and does not reset it across
-  // the awaited setRoots, so the shutdown check in the finally compared two
-  // non-overlapping literals. A `string` field resets across the await, making
-  // the live `this.state !== 'shutting_down'` check sound.
-  private state = 'initializing';
+  private state: SynchronizerState = 'initializing';
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingRootsUpdate = false;
   private rootDirectories: string[] = [];
@@ -234,7 +231,8 @@ export class McpRootsSynchronizer {
       // roots so the guard does not keep granting a stale access-control input.
       this.rootDirectories = [];
     } finally {
-      if (this.state !== 'shutting_down') {
+      const currentState = this.state as SynchronizerState;
+      if (currentState !== 'shutting_down') {
         try {
           await this.pathGuard.setRoots(this.rootDirectories);
         } catch (error) {
@@ -247,7 +245,7 @@ export class McpRootsSynchronizer {
         // Re-check before marking idle or re-arming the queued update, so a
         // shutdown started mid-await does not leave the manager in 'idle' or
         // schedule work after destroy().
-        if (this.state !== 'shutting_down') {
+        if ((this.state as SynchronizerState) !== 'shutting_down') {
           this.state = 'idle';
           if (this.pendingRootsUpdate) {
             this.pendingRootsUpdate = false;

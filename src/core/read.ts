@@ -244,6 +244,10 @@ export function normalizeSpec(spec: ReadSpec): NormalizedSpec {
       return normalizeByteRangeSpec(spec, base);
     case 'full':
       return { ...base, kind: 'full' };
+    default: {
+      const _exhaustive: never = spec;
+      return _exhaustive;
+    }
   }
 }
 
@@ -812,6 +816,10 @@ async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
       return readTail(context, context.spec);
     case 'byteRange':
       return readByteRange(context, context.spec);
+    default: {
+      const _exhaustive: never = context.spec;
+      return _exhaustive;
+    }
   }
 }
 

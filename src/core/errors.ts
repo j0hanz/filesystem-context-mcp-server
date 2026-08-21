@@ -236,6 +236,10 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
     }
     case 'unknown':
       return Problem.unknown(message);
+    default: {
+      const _exhaustive: never = signal;
+      return _exhaustive;
+    }
   }
 }
 

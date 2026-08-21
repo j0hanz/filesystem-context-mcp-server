@@ -11,12 +11,11 @@
 // R10); the handler additionally rejects any retry whose decoded paths do not
 // match the retried request's parameters (the codec only proves the state was
 // not tampered — it cannot see the current args).
+import type { InputRequest, InputRequiredResult } from '@modelcontextprotocol/server';
 import {
   acceptedContent,
   createRequestStateCodec,
-  type InputRequest,
   inputRequired,
-  type InputRequiredResult,
   inputResponse,
 } from '@modelcontextprotocol/server';
 

@@ -239,8 +239,11 @@ export function createRegexReplacementMatcher(
       // there the replacement must be inserted verbatim.
       if (!expandReplacement) return content.replace(regex, () => replacement);
       return content.replace(regex, (match: string, ...rest: unknown[]): string => {
-        // RE2 calls back with (match, ...groups, offset, input, namedGroups).
-        const named = rest.pop() as Record<string, string> | undefined;
+        // In ECMAScript/RE2, trailing arguments are [offset, input] or [offset, input, namedGroups].
+        const named =
+          rest.length >= 3 && typeof rest[rest.length - 3] === 'number'
+            ? (rest.pop() as Record<string, string> | undefined)
+            : undefined;
         const input = rest.pop() as string;
         const offset = rest.pop() as number;
         return expandDollarTokens(

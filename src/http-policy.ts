@@ -55,15 +55,16 @@ export function validateBearerAuthorization(apiKey: string, authHeader: unknown)
   if (typeof authHeader !== 'string' || !authHeader.startsWith(bearerPrefix)) {
     return false;
   }
-  const userKey = authHeader.slice(bearerPrefix.length);
-  if (userKey.length > MAX_BEARER_TOKEN_LENGTH) {
+  const userKey = authHeader.slice(bearerPrefix.length).trim();
+  const normalizedApiKey = apiKey.trim();
+  if (userKey.length > MAX_BEARER_TOKEN_LENGTH || normalizedApiKey.length === 0) {
     return false;
   }
 
   // Pure: hash per call. createHash is negligible next to the timingSafeEqual
   // already done per request, and avoiding module-level cache state keeps this
   // testable without post-import env-mutation footguns.
-  const expectedHash = createHash('sha256').update(apiKey).digest();
+  const expectedHash = createHash('sha256').update(normalizedApiKey).digest();
   const actualHash = createHash('sha256').update(userKey).digest();
   return timingSafeEqual(expectedHash, actualHash);
 }

@@ -1,33 +1,31 @@
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import type {
+  EventId,
+  EventStore,
+  JSONRPCMessage,
+  RequestId,
+  StreamId,
+} from '@modelcontextprotocol/server';
 import {
   DEFAULT_REQUEST_TIMEOUT_MSEC,
-  type EventId,
-  type EventStore,
   isInitializedNotification,
   isInitializeRequest,
   isJSONRPCErrorResponse,
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
-  type JSONRPCMessage,
   localhostAllowedHostnames,
   parseJSONRPCMessage,
   ProtocolErrorCode,
-  type RequestId,
-  type StreamId,
 } from '@modelcontextprotocol/server';
 // Moved to a Node-only subpath export upstream (not re-exported from the
 // package root, which stays platform-agnostic for non-Node runtimes).
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 
 import { randomUUID } from 'node:crypto';
-import {
-  createServer as createHttpServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from 'node:http';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { createServer as createHttpServer } from 'node:http';
 
 import type { Express, NextFunction, Request, Response } from 'express';
 
