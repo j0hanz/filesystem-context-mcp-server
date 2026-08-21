@@ -79,7 +79,7 @@ void describe('ProgressSession', () => {
     assert.deepEqual(tickOf(sink.events, 1), { current: 2, total: 3, message: 'two' });
   });
 
-  void it('set clamps cursor monotonically and emits with provided fields', () => {
+  void it('set drops backward or duplicate ticks (cursor is clamped monotonically)', () => {
     const sink = new MemorySink();
     const clock = makeClock();
     const session = new ProgressSession({
@@ -91,12 +91,11 @@ void describe('ProgressSession', () => {
     clock.advance(100);
     session.set({ current: 5, total: 10, message: 'five' });
     clock.advance(100);
-    // Regress attempt: should clamp to existing cursor (5).
-    session.set({ current: 2, message: 'should clamp' });
+    // Backward tick: spec requires strictly advancing, this is dropped.
+    session.set({ current: 2, message: 'should drop' });
 
-    assert.equal(sink.events.length, 2);
+    assert.equal(sink.events.length, 1);
     assert.deepEqual(tickOf(sink.events, 0), { current: 5, total: 10, message: 'five' });
-    assert.deepEqual(tickOf(sink.events, 1), { current: 5, message: 'should clamp' });
   });
 
   void it('complete emits a complete event carrying the current cursor', () => {

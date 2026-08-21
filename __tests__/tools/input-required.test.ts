@@ -47,6 +47,26 @@ describe('input_required infrastructure', () => {
     });
   });
 
+  describe('resolveRequestStateKey fallback', () => {
+    it('survives a short request state key environment variable', async () => {
+      const original = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+      process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = '12345678901234567890';
+      try {
+        const { requestStateCodec: dynamicCodec } = await import(
+          `../../src/tools/input-required.js?bust=${Date.now()}`
+        );
+        const state = await dynamicCodec.mint({ op: 'delete', paths: ['/a'] });
+        assert.ok(typeof state === 'string');
+      } finally {
+        if (original === undefined) {
+          delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+        } else {
+          process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = original;
+        }
+      }
+    });
+  });
+
   describe('buildInputRequired', () => {
     it('builds an input_required result with one request per item and sorted-path state', async () => {
       const op: PendingOp = 'delete';

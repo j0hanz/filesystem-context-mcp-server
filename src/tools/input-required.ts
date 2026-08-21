@@ -22,6 +22,7 @@ import {
 import { randomBytes } from 'node:crypto';
 
 import { ErrorCode, FsError } from '../core/errors.js';
+import { Logger } from '../core/observability.js';
 
 /** The destructive operation a pending confirmation authorizes. */
 export type PendingOp = 'delete' | 'move' | 'grant';
@@ -59,6 +60,9 @@ function resolveRequestStateKey(): Uint8Array {
   if (env) {
     const bytes = Buffer.from(env, 'utf8');
     if (bytes.length >= 32) return bytes;
+    Logger.warn(
+      `FILESYSTEM_MCP_REQUEST_STATE_KEY is ${String(bytes.length)} bytes; 32 are required. Falling back to a random per-boot key — in-flight input_required rounds will not survive a restart.`,
+    );
   }
   return randomBytes(32);
 }

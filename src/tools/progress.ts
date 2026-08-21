@@ -71,9 +71,11 @@ export class ProgressSession {
 
   set(input: { current: number; total?: number; message?: string }): void {
     if (this.#done) return;
-    if (input.current > this.#cursor) {
-      this.#cursor = input.current;
-    }
+    // The spec requires `progress` to increase on every notification, and the
+    // constructor already dispatched current: 0. A repeated or backward tick
+    // would put a duplicate value on the wire — drop it.
+    if (input.current <= this.#cursor) return;
+    this.#cursor = input.current;
     const total = input.total ?? this.#total;
     this.#dispatch({
       kind: 'tick',
