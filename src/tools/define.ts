@@ -101,6 +101,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 
 export interface DefinedTool {
   readonly name: string;
+  readonly annotations: ToolAnnotations;
   readonly inputSchema: Tool['inputSchema'];
   readonly outputSchema: Record<string, unknown>;
 
@@ -413,6 +414,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
   const tool: DefinedTool = {
     name: def.name,
+    annotations: def.annotations,
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
 

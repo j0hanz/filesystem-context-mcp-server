@@ -25,7 +25,7 @@ import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar } from './core/registrar.js';
 import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './core/schema.js';
-import { INSTRUCTION_SECTIONS, serverInstructionsContent } from './resources.js';
+import { buildServerInstructions, INSTRUCTION_SECTIONS } from './resources.js';
 
 // --- Types ---
 
@@ -380,7 +380,7 @@ export const promptsRegistrar: Registrar = {
   register(deps): void {
     const options = {
       pathGuard: deps.pathGuard,
-      instructions: serverInstructionsContent,
+      instructions: buildServerInstructions(deps.readOnly),
       instructionsUri: 'internal://instructions',
       isInitialized: deps.isInitialized,
       ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),

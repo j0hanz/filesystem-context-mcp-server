@@ -11,34 +11,46 @@ import { join } from 'node:path';
 
 import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
-import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
-import { CREATE } from '../src/tools/create.js';
 import type { DefinedTool } from '../src/tools/define.js';
-import { DELETE_FILE } from '../src/tools/delete-file.js';
-import { EDIT } from '../src/tools/edit.js';
+import { ALL_TOOLS } from '../src/tools/index.js';
 import { type PendingState, requestStateCodec } from '../src/tools/input-required.js';
-import { LIST } from '../src/tools/list.js';
-import { MOVE } from '../src/tools/move.js';
-import { READ_FILE } from '../src/tools/read.js';
-import { SEARCH_AND_REPLACE } from '../src/tools/replace-in-files.js';
-import { LIST_ALLOWED_DIRECTORIES } from '../src/tools/roots.js';
-import { SEARCH_CONTENT } from '../src/tools/search-content.js';
-import { SEARCH_FILES } from '../src/tools/search-files.js';
-import { GET_FILE_INFO } from '../src/tools/stat.js';
 
-const ALL_TOOLS = [
-  CALCULATE_HASH,
-  CREATE,
-  DELETE_FILE,
-  EDIT,
-  LIST,
-  MOVE,
-  READ_FILE,
-  SEARCH_AND_REPLACE,
-  LIST_ALLOWED_DIRECTORIES,
-  SEARCH_CONTENT,
-  SEARCH_FILES,
-  GET_FILE_INFO,
+/**
+ * The tool inventory as a human declares it, independent of what `src/` derives.
+ * Deliberately literal: tests use these to check the derivation, so deriving
+ * them from the same annotations would make those assertions tautological.
+ */
+export const ORACLE_ALL_TOOL_NAMES = [
+  'create',
+  'delete',
+  'edit',
+  'find_files',
+  'hash_file',
+  'list',
+  'list_roots',
+  'move',
+  'read',
+  'replace_text',
+  'search_text',
+  'stat',
+] as const;
+
+export const ORACLE_MUTATING_TOOL_NAMES = [
+  'create',
+  'delete',
+  'edit',
+  'move',
+  'replace_text',
+] as const;
+
+export const ORACLE_READ_ONLY_TOOL_NAMES = [
+  'find_files',
+  'hash_file',
+  'list',
+  'list_roots',
+  'read',
+  'search_text',
+  'stat',
 ] as const;
 
 interface TestContentBlock {

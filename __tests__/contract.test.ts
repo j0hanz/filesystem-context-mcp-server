@@ -12,36 +12,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { assertOk, createTestEnv, getStructured, type TestEnv } from './helpers.js';
+import {
+  assertOk,
+  createTestEnv,
+  getStructured,
+  ORACLE_ALL_TOOL_NAMES,
+  ORACLE_MUTATING_TOOL_NAMES,
+  ORACLE_READ_ONLY_TOOL_NAMES,
+  type TestEnv,
+} from './helpers.js';
 
-// Names of all 12 tools as registered
-const ALL_TOOLS = new Set([
-  'create',
-  'hash_file',
-  'delete',
-  'edit',
-  'list',
-  'move',
-  'read',
-  'replace_text',
-  'list_roots',
-  'search_text',
-  'find_files',
-  'stat',
-]);
-
-// Annotations by category
-const READ_ONLY_TOOLS = new Set([
-  'hash_file',
-  'list',
-  'read',
-  'list_roots',
-  'search_text',
-  'find_files',
-  'stat',
-]);
-
-const DESTRUCTIVE_TOOLS = new Set(['create', 'edit', 'delete', 'move', 'replace_text']);
+// The oracle is the single hand-declared inventory (__tests__/helpers.ts).
+// It stays literal on purpose: these assertions check the annotations the
+// server puts on the wire, so deriving the expectation from those same
+// annotations would make every check below tautological.
+const ALL_TOOLS = new Set<string>(ORACLE_ALL_TOOL_NAMES);
+const READ_ONLY_TOOLS = new Set<string>(ORACLE_READ_ONLY_TOOL_NAMES);
+const DESTRUCTIVE_TOOLS = new Set<string>(ORACLE_MUTATING_TOOL_NAMES);
 
 describe('Tool contract', () => {
   let env: TestEnv;

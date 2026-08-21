@@ -139,7 +139,10 @@ const OPTIONS_HELP: HelpRow[] = [
   { flags: '-v, --version', desc: 'Show the server version' },
   { flags: '--allow-cwd', desc: 'Add the current working directory as an allowed root' },
   { flags: '--port <number>', desc: 'Start HTTP transport on this port (Node Streamable HTTP)' },
-  { flags: '--read-only', desc: 'Disable write tools: create, edit, delete, move, replace' },
+  {
+    flags: '--read-only',
+    desc: `Disable write tools: ${[...MUTATING_TOOL_NAMES].sort().join(', ')}`,
+  },
   { flags: '--safe', desc: 'Alias for --read-only' },
   {
     flags: '--print-config',

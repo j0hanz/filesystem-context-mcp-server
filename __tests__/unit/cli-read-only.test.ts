@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import { parseArgs } from '../../src/cli.js';
+import { ORACLE_MUTATING_TOOL_NAMES, ORACLE_READ_ONLY_TOOL_NAMES } from '../helpers.js';
 
 describe('parseArgs --read-only / --safe flags (TASK-001)', () => {
   let originalArgv: string[];
@@ -33,7 +34,7 @@ describe('parseArgs --read-only / --safe flags (TASK-001)', () => {
   });
 });
 
-const MUTATING_TOOLS = ['create', 'edit', 'delete', 'move', 'replace_text'];
+const MUTATING_TOOLS = ORACLE_MUTATING_TOOL_NAMES;
 
 describe('createServer readOnly threading (TASK-003)', () => {
   it('createServer with readOnly:true omits mutating tools from registered set', async () => {
@@ -66,7 +67,7 @@ describe('createServer readOnly threading (TASK-003)', () => {
     await ctx.mcp.close();
   });
 });
-const READ_TOOLS = ['read', 'list', 'stat', 'find_files', 'search_text', 'hash_file'];
+const READ_TOOLS = ORACLE_READ_ONLY_TOOL_NAMES;
 
 describe('toolsRegistrar read-only gating (TASK-002)', () => {
   it('registers mutating tools in normal mode', async () => {

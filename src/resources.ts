@@ -37,16 +37,13 @@ import {
   parseEnvInt,
 } from './core/util.js';
 import {
+  ALL_REGISTERED_TOOL_NAMES,
   CALCULATE_HASH,
-  CREATE,
-  DELETE_FILE,
-  EDIT,
   GET_FILE_INFO,
   LIST,
   LIST_ALLOWED_DIRECTORIES,
-  MOVE,
+  MUTATING_TOOL_NAMES,
   READ_FILE,
-  SEARCH_AND_REPLACE,
   SEARCH_CONTENT,
   SEARCH_FILES,
 } from './tools/index.js';
@@ -60,6 +57,8 @@ export interface ResourceRegistrationOptions {
   iconInfo?: IconInfo;
   pathGuard?: PathGuard;
   server?: McpServer;
+  /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
+  readOnly?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -112,19 +111,25 @@ type ResourceContract = StaticResourceContract | TemplateResourceContract;
 // instructions
 // ═══════════════════════════════════════════════════════════════
 
-function buildToolsOverview(): string {
+function buildToolsOverview(readOnly = false): string {
   const rows: [string, string[]][] = [
     ['Navigate', [LIST_ALLOWED_DIRECTORIES.name, LIST.name, SEARCH_FILES.name]],
     ['Inspect', [GET_FILE_INFO.name, SEARCH_CONTENT.name, CALCULATE_HASH.name]],
     ['Read', [READ_FILE.name]],
-    ['Write', [CREATE.name, EDIT.name, MOVE.name, DELETE_FILE.name, SEARCH_AND_REPLACE.name]],
   ];
+
+  // Under --read-only the mutating tools are never registered, so advertising
+  // them here would point the model at tools that are not there. Drop the row
+  // rather than emit an empty one.
+  if (!readOnly) {
+    rows.push(['Write', ALL_REGISTERED_TOOL_NAMES.filter((n) => MUTATING_TOOL_NAMES.has(n))]);
+  }
 
   const rowLines = rows.map(([cat, names]) => `${cat}: ${names.join(', ')}`);
   return `\`\`\`\n${rowLines.join('\n')}\n\`\`\``;
 }
 
-function buildSectionsRecord(): Record<string, string> {
+function buildSectionsRecord(readOnly = false): Record<string, string> {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
   return {
     guidelines: [
@@ -136,7 +141,7 @@ function buildSectionsRecord(): Record<string, string> {
     ].join('\n'),
     tools_overview: [
       'Tools Overview:',
-      buildToolsOverview(),
+      buildToolsOverview(readOnly),
       '',
       'Full schemas, descriptions, and annotations are in `tools/list`.',
     ].join('\n'),
@@ -166,9 +171,17 @@ export const INSTRUCTION_SECTIONS: Record<string, string> = buildSectionsRecord(
 
 export const SERVER_INSTRUCTIONS_CONTENT = `\n${Object.values(INSTRUCTION_SECTIONS).join('\n\n')}\n`;
 
-export { SERVER_INSTRUCTIONS_CONTENT as serverInstructionsContent };
+/**
+ * The instructions text for one server, built against that server's `--read-only`
+ * setting. `SERVER_INSTRUCTIONS_CONTENT` above is the `readOnly: false` case,
+ * frozen at module load for callers that have no server context.
+ */
+export function buildServerInstructions(readOnly = false): string {
+  return `\n${Object.values(buildSectionsRecord(readOnly)).join('\n\n')}\n`;
+}
 
-function createInstructionsResource(): ResourceContract {
+function createInstructionsResource(options: ResourceRegistrationOptions): ResourceContract {
+  const text = buildServerInstructions(options.readOnly);
   return {
     name: 'filesystem-mcp-instructions',
     title: 'Server Instructions',
@@ -182,7 +195,7 @@ function createInstructionsResource(): ResourceContract {
           {
             uri: uri.href,
             mimeType: 'text/markdown',
-            text: SERVER_INSTRUCTIONS_CONTENT,
+            text,
           },
         ],
       };
@@ -468,7 +481,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
 
 export function getResourceContracts(options: ResourceRegistrationOptions): ResourceContract[] {
   return [
-    createInstructionsResource(),
+    createInstructionsResource(options),
     createResultResource(options),
     createFilesystemResource(options),
   ];
@@ -616,6 +629,7 @@ export const resourcesRegistrar: Registrar = (() => {
         pathGuard: deps.pathGuard,
         server: deps.server,
         ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+        ...(deps.readOnly ? { readOnly: true } : {}),
       });
       serverContracts.set(deps.server, contracts);
     },
