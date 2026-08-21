@@ -5,6 +5,7 @@ import { basename, dirname, resolve, sep } from 'node:path';
 
 import * as z from 'zod/v4';
 
+import { processInParallel } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
@@ -17,6 +18,7 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
+import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
@@ -280,21 +282,35 @@ async function handleMove(
     if (round !== undefined) return round;
   }
 
+  const executed = await processInParallel(
+    plans,
+    async (plan) => {
+      try {
+        const res = await executeMove(plan, ctx, pendingSorted);
+        ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
+        return { ok: true as const, res };
+      } catch (err) {
+        if (ctx.signal.aborted) throw err;
+        return { ok: false as const, failure: moveFailure(plan.move, err) };
+      }
+    },
+    PARALLEL_CONCURRENCY,
+    ctx.signal,
+  );
+
   const results: MoveItemResult[] = [];
   const failures = [...earlyFailures];
-  for (const plan of plans) {
-    try {
-      const res = await executeMove(plan, ctx, pendingSorted);
-      results.push(res);
-      ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
-    } catch (err) {
-      // A genuine abort propagates (the whole call is aborting); everything
-      // else — a declined overwrite, a TOCTOU race, a rename failure — is a
-      // per-move failure. rethrowIfAborted would conflate a declined-overwrite
-      // FsError(CANCELLED) with an abort-signal cancellation (both classify to
-      // CANCELLED), so gate on the signal itself instead.
-      if (ctx.signal.aborted) throw err;
-      failures.push(moveFailure(plan.move, err));
+  for (const { value: r } of executed.results) {
+    if (r.ok) {
+      results.push(r.res);
+    } else {
+      failures.push(r.failure);
+    }
+  }
+  for (const { index, error } of executed.errors) {
+    const plan = plans[index];
+    if (plan) {
+      failures.push(moveFailure(plan.move, error));
     }
   }
 

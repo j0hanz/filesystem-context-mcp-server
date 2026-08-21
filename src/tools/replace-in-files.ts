@@ -576,19 +576,13 @@ async function handleSearchAndReplace(
     const fullPath = join(summary.root, primaryFilePath);
 
     try {
-      const content = await (async (): Promise<string> => {
-        const fd = await ctx.fs.open(fullPath, 'r');
-        try {
-          const buffer = await readFileBufferWithLimit(fd, maxFileSize, fullPath, ctx.signal);
-          return buffer.toString('utf-8');
-        } finally {
-          await fd.close();
-        }
-      })();
-
+      const { content: rawBuffer } = await ctx.fs.readRaw(fullPath, {
+        signal: ctx.signal,
+      });
+      const content = rawBuffer.toString('utf-8');
       const mimeInfo = detectMimeFromContent(fullPath, content);
       const lineCount = countLines(content);
-      const size = Buffer.byteLength(content, 'utf-8');
+      const size = rawBuffer.length;
 
       const fileUri = buildFileResourceUri(fullPath);
       const link = buildFileResourceLink(fullPath, mimeInfo.mimeType, size);
