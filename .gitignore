@@ -58,6 +58,7 @@ graphify-out
 *~
 .DS_Store
 .agents
+.ua
 
 # OS files
 Thumbs.db
