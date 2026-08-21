@@ -833,9 +833,9 @@ function setupExpressApp(
         // instances). The bus publishes resource_updated; the router narrows per
         // stream. Attach errors are swallowed so the listen stream still opens.
         attachListenWatchers(parsedBody, watcherPathGuard, sharedRegistry, bus)
-          .catch((err: unknown) =>
-            { Logger.warn('[HTTP] listen watcher attach error:', formatUnknownErrorMessage(err)); },
-          )
+          .catch((err: unknown) => {
+            Logger.warn('[HTTP] listen watcher attach error:', formatUnknownErrorMessage(err));
+          })
           .then(() => modernNodeHandler(req, res, parsedBody))
           .catch(next);
       })

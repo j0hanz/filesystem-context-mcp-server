@@ -116,6 +116,10 @@ export async function createServer(
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,
+    cacheHints: {
+      'tools/list': { ttlMs: 60_000, cacheScope: 'public' },
+      'prompts/list': { ttlMs: 60_000, cacheScope: 'public' },
+    },
     // Multi-round-trip `requestState` integrity (protocol revision 2026-07-28):
     // the codec verifies the HMAC on every retried round before the handler
     // runs, so a tampered or expired state is rejected as `-32602` rather than
