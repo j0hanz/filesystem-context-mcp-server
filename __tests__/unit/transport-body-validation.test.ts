@@ -179,8 +179,18 @@ describe('HTTP transport JSON-RPC validation (integration)', () => {
       ProtocolErrorCode.InvalidRequest,
       `Should return InvalidRequest error code (${ProtocolErrorCode.InvalidRequest})`,
     );
-    assert.equal(body.error.message, 'Invalid Request');
-    assert.equal(body.id, null, 'Error response should have id: null');
+    // A POST missing `jsonrpc: '2.0'` carries no 2025 envelope, so the
+    // era-branch (isLegacyRequest) routes it to the modern leg, which owns the
+    // -32600 rejection for an unparseable body. The code is the same; the
+    // modern leg's message differs from the legacy stack's 'Invalid Request'.
+    assert.equal(
+      body.error.message,
+      'Bad Request: the request body is not a valid JSON-RPC message',
+    );
+    // The modern leg correlates the error to the id it read from the body
+    // (1 here) rather than nulling it — unlike the legacy stack, which could
+    // not parse the message and returned id: null.
+    assert.equal(body.id, 1, 'Error response echoes the request id from the body');
   });
 
   it('returns -32700 error for non-object body (Express rejects non-object JSON)', async () => {

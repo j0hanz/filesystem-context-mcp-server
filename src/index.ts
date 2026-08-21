@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Type-only imports are erased at runtime — safe to keep static.
-import type { McpServer } from '@modelcontextprotocol/server';
+import type { StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 
 import type * as http from 'node:http';
 import process from 'node:process';
@@ -23,11 +23,10 @@ liftFlagsToEnv();
 // lifted flags above are in effect when their module-level constants are set.
 const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
-const { createServer } = await import('./server.js');
 const { startHttpServer, startServer } = await import('./transport.js');
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-let activeServer: McpServer | undefined;
+let activeStdioHandle: StdioServerHandle | undefined;
 let activeHttpServer: http.Server | undefined;
 let shutdownStarted = false;
 
@@ -80,9 +79,9 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
         logRuntimeFailure('shutdown_http_error', 'process', 'shutdown', error);
       }
     }
-    if (activeServer) {
+    if (activeStdioHandle) {
       try {
-        await activeServer.close();
+        await activeStdioHandle.close();
       } catch (error: unknown) {
         logRuntimeFailure('shutdown_mcp_error', 'process', 'shutdown', error);
       }
@@ -160,13 +159,11 @@ async function main(): Promise<void> {
   } else {
     registerShutdownTrigger('end');
     registerShutdownTrigger('close');
-    const ctx = await createServer({
+    activeStdioHandle = startServer({
       allowCwd,
       cliAllowedDirs: allowedDirs,
       readOnly,
     });
-    activeServer = ctx.mcp;
-    await startServer(ctx);
   }
 }
 

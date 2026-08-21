@@ -58,6 +58,19 @@ export interface ResourceRegistrationOptions {
   server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
   readOnly: boolean;
+  /**
+   * Shared file-watcher registry for the modern (per-request) HTTP leg. When set,
+   * the resource uses this handler-scoped registry instead of creating its own
+   * per-server one, so file-change watchers persist across requests and publish
+   * to the shared ServerEventBus. Omitted (per-server registry) on legacy/stdio.
+   */
+  watcherRegistry?: WatcherRegistry;
+  /**
+   * Modern-leg notify sink: publishes a resource-updated event to the
+   * ServerEventBus (broadcast to `subscriptions/listen` streams). When set, the
+   * subscribe handler uses it instead of `sendResourceUpdated`.
+   */
+  notifyResourceUpdated?: (uri: string) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -213,7 +226,7 @@ function warnWatcherCap(uri: string): void {
  * `subscribe` awaits path validation midway, so callers re-check `isStale` and
  * `hasWatcher` after the await before attaching.
  */
-function createWatcherRegistry() {
+export function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
   const activeCallbacks = new Map<string, (uri: string) => void>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
@@ -318,9 +331,75 @@ function createWatcherRegistry() {
   };
 }
 
+export type WatcherRegistry = ReturnType<typeof createWatcherRegistry>;
+
+/**
+ * Best-effort filesystem-watcher attachment for the modern (per-request) HTTP
+ * leg. Mirrors `createFilesystemResource.subscribe`'s attach sequence but never
+ * throws: a bad or unreachable URI is skipped (returns `false`) rather than
+ * rejected, since the trigger is a client's `subscriptions/listen` filter, not a
+ * `resources/subscribe` call that owes the caller a precise error. Idempotent
+ * per URI — a second call for an already-watched URI re-registers the notify
+ * callback (one watcher per URI).
+ *
+ * ponytail: watchers persist for the server lifetime and are freed at shutdown
+ * (the shared registry's `destroy()`), not removed when a listen stream closes.
+ * Bounded by MAX_WATCHERS. Add per-stream refcounting only if distinct-URI churn
+ * across clients exhausts the cap.
+ */
+export async function attachFileWatcherForUri(
+  registry: WatcherRegistry,
+  pathGuard: PathValidator,
+  uri: string,
+  notify: (uri: string) => void,
+): Promise<boolean> {
+  if (registry.hasWatcher(uri)) {
+    registry.addCallback(uri, notify);
+    return true;
+  }
+  if (registry.isAtCap()) {
+    warnWatcherCap(uri);
+    return false;
+  }
+
+  const filePath = extractPath(uri);
+  if (filePath === undefined) return false;
+
+  let resolved: string;
+  try {
+    resolved = await pathGuard.validateExistingPath(filePath);
+  } catch {
+    return false;
+  }
+
+  // Re-check what the await could have changed.
+  if (registry.isStale(uri)) return false;
+  if (registry.hasWatcher(uri)) {
+    registry.addCallback(uri, notify);
+    return true;
+  }
+  if (registry.isAtCap()) {
+    warnWatcherCap(uri);
+    return false;
+  }
+
+  registry.addCallback(uri, notify);
+  if (!registry.attach(uri, resolved)) {
+    // fs.watch threw (inotify exhaustion, or a race deleted the path): roll back
+    // so no dangling callback is left believing a watcher exists.
+    registry.remove(uri);
+    return false;
+  }
+  return true;
+}
+
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
-  const registry = createWatcherRegistry();
+  const registry = options.watcherRegistry ?? createWatcherRegistry();
+  // Only the per-server (legacy/stdio) registry is owned by this resource and
+  // destroyed on dispose; the shared modern-leg registry is owned by the host
+  // and torn down at server shutdown.
+  const ownsRegistry = options.watcherRegistry === undefined;
 
   return {
     name: 'filesystem-mcp-file',
@@ -436,7 +515,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     destroy() {
-      registry.destroy();
+      if (ownsRegistry) registry.destroy();
     },
   };
 }
@@ -581,6 +660,10 @@ function registerResources(
           const subscribeResult = await contract.subscribe(
             requestedResource.toString(),
             (updatedUri) => {
+              if (options.notifyResourceUpdated) {
+                options.notifyResourceUpdated(updatedUri);
+                return;
+              }
               const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
               void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
                 const msg = formatUnknownErrorMessage(err);
@@ -635,6 +718,10 @@ export const resourcesRegistrar: Registrar = (() => {
         pathGuard: deps.pathGuard,
         server: deps.server,
         ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+        ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
+        ...(deps.notifyResourceUpdated
+          ? { notifyResourceUpdated: deps.notifyResourceUpdated }
+          : {}),
         readOnly: deps.readOnly ?? false,
       });
       serverContracts.set(deps.server, contracts);

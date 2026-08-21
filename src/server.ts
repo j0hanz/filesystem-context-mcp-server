@@ -14,7 +14,7 @@ import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
-import { INSTRUCTIONS_URI, resourcesRegistrar } from './resources.js';
+import { INSTRUCTIONS_URI, resourcesRegistrar, type WatcherRegistry } from './resources.js';
 import { toolsRegistrar } from './tools/index.js';
 import { requestStateCodec } from './tools/input-required.js';
 
@@ -91,7 +91,15 @@ function getLocalIconInfo(): Promise<IconInfo | undefined> {
   return cachedIconInfo;
 }
 
-export async function createServer(options: ServerOptions = {}): Promise<FilesystemServerContext> {
+export async function createServer(
+  options: ServerOptions = {},
+  extraDeps?: {
+    /** Shared file-watcher registry for the modern (per-request) HTTP leg. */
+    watcherRegistry?: WatcherRegistry;
+    /** Modern-leg resource-updated notify sink (publishes to the ServerEventBus). */
+    notifyResourceUpdated?: (uri: string) => void;
+  },
+): Promise<FilesystemServerContext> {
   const resourceStore = createInMemoryResourceStore();
   const localIcon = await getLocalIconInfo();
 
@@ -146,6 +154,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Filesys
     isInitialized,
     ...(localIcon ? { iconInfo: localIcon } : {}),
     ...(options.readOnly ? { readOnly: true } : {}),
+    ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
+    ...(extraDeps?.notifyResourceUpdated
+      ? { notifyResourceUpdated: extraDeps.notifyResourceUpdated }
+      : {}),
   };
 
   const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];

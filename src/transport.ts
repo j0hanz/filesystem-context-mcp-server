@@ -1,26 +1,34 @@
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
-import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import {
+  NodeStreamableHTTPServerTransport,
+  toNodeHandler,
+  toWebRequest,
+} from '@modelcontextprotocol/node';
 import type {
   EventId,
   EventStore,
   JSONRPCMessage,
+  McpServerFactory,
   RequestId,
   StreamId,
 } from '@modelcontextprotocol/server';
 import {
+  createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
+  InMemoryServerEventBus,
   isInitializedNotification,
   isInitializeRequest,
   isJSONRPCErrorResponse,
   isJSONRPCRequest,
   isJSONRPCResultResponse,
+  isLegacyRequest,
   JSONRPC_VERSION,
   parseJSONRPCMessage,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 // Moved to a Node-only subpath export upstream (not re-exported from the
 // package root, which stays platform-agnostic for non-Node runtimes).
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { serveStdio, type StdioServerHandle } from '@modelcontextprotocol/server/stdio';
 
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
@@ -30,6 +38,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './core/errors.js';
 import { Logger, withSession } from './core/observability.js';
+import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
@@ -44,6 +53,11 @@ import {
   resolveAllowedHosts,
   resolveTrustProxySetting,
 } from './http-policy.js';
+import {
+  attachFileWatcherForUri,
+  createWatcherRegistry,
+  type WatcherRegistry,
+} from './resources.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer } from './server.js';
 
@@ -157,40 +171,65 @@ export class InMemoryEventStore implements EventStore {
   }
 }
 
-export async function startServer(ctx: FilesystemServerContext): Promise<void> {
-  const { mcp: server } = ctx;
-  const transport = new StdioServerTransport();
+/**
+ * Serve filesystem-mcp over stdio, both eras. `serveStdio(factory, { legacy:
+ * 'serve' })` calls the factory once per connection (plus one discarded
+ * `server/discover` probe instance if the client falls back to `initialize`);
+ * the factory builds a fresh `FilesystemServerContext` via `createServer`.
+ *
+ * On a `legacy` opening the roots synchronizer is armed (the 2025 push-style
+ * `listRoots()`/`getClientCapabilities()` path is correct there); on a
+ * `modern` opening it is omitted — those methods throw on the 2026-07-28 era,
+ * so allowed directories come from configuration (`recomputeAllowedDirectories`
+ * already ran inside `createServer`).
+ *
+ * Unlike the old hand-wired transport, `createServer` now runs on the first
+ * inbound message, so a bad config surfaces as a serve-time error (reported
+ * via `onerror`) rather than at process boot — inherent to `serveStdio`.
+ */
+export function startServer(options: ServerOptions): StdioServerHandle {
+  let activeCtx: FilesystemServerContext | undefined;
+  const factory: McpServerFactory = async (ctx) => {
+    const c = await createServer(options);
+    if (ctx.era === 'legacy') {
+      c.synchronizer.registerHandlers(
+        c.mcp,
+        INIT_TIMEOUT_CLOSE
+          ? () => {
+              c.mcp.close().catch((err: unknown) => {
+                Logger.error('[Stdio] init-timeout close error:', formatUnknownErrorMessage(err));
+              });
+            }
+          : undefined,
+      );
+      c.synchronizer.logMissingDirectoriesIfNeeded();
+    }
+    activeCtx = c;
+    return c.mcp;
+  };
 
-  ctx.synchronizer.registerHandlers(
-    server,
-    INIT_TIMEOUT_CLOSE
-      ? () => {
-          server.close().catch((err: unknown) => {
-            Logger.error('Error closing MCP server on timeout:', formatUnknownErrorMessage(err));
-          });
+  const handle = serveStdio(factory, {
+    legacy: 'serve',
+    onerror: (error: unknown) => {
+      Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
+    },
+  });
+
+  // Wrap so shutdown runs our per-connection disposal (registrars/watcher
+  // state) before the SDK tears the transport down. disposeRuntimeState is
+  // idempotent, so this is safe even if the SDK already closed the instance.
+  return {
+    close: () =>
+      (async () => {
+        try {
+          activeCtx?.disposeRuntimeState();
+        } catch {
+          /* idempotent — disposeRuntimeState guards cleanedUp */
         }
-      : undefined,
-  );
-  await ctx.pathGuard.recomputeAllowedDirectories();
-
-  transport.onerror = (error: unknown) => {
-    Logger.error('[Stdio] Transport error:', formatUnknownErrorMessage(error));
+        activeCtx = undefined;
+        await handle.close();
+      })(),
   };
-
-  try {
-    await server.connect(transport);
-  } catch (error) {
-    ctx.disposeRuntimeState();
-    throw error;
-  }
-
-  const sdkOnClose = transport.onclose;
-  transport.onclose = () => {
-    ctx.disposeRuntimeState();
-    sdkOnClose?.();
-  };
-
-  ctx.synchronizer.logMissingDirectoriesIfNeeded();
 }
 
 const MAX_SESSION_ID_LENGTH = 256;
@@ -664,6 +703,10 @@ function setupExpressApp(
   allowedHosts: string[],
   options: ServerOptions,
   registry: HttpSessionRegistry,
+  modernNodeHandler: (req: Request, res: Response, parsedBody?: unknown) => Promise<void>,
+  watcherPathGuard: PathGuard,
+  sharedRegistry: WatcherRegistry,
+  bus: InMemoryServerEventBus,
 ): Express {
   // Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
   // app's allowedOrigins consumer). The compute and the OPTIONS preflight
@@ -770,7 +813,33 @@ function setupExpressApp(
   app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0));
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
-    handlePostMcp(req, res, options, registry).catch(next);
+    // Era-branch: a POST carrying the 2026-07-28 envelope routes to the
+    // modern leg (per-request instances, subscriptions/listen over the shared
+    // bus); everything else falls through to the 2025 sessionful stack, which
+    // stays byte-for-byte unchanged. GET/DELETE are bodyless session ops that
+    // isLegacyRequest always classifies legacy, so they never reach here.
+    const parsedBody = req.body as unknown;
+    toWebRequest(req, parsedBody)
+      .then((probe) => isLegacyRequest(probe, parsedBody))
+      .then((legacy) => {
+        if (legacy) {
+          handlePostMcp(req, res, options, registry).catch(next);
+          return;
+        }
+        // Modern file-watch: a `subscriptions/listen` stream narrows by
+        // resourceSubscriptions, but the SDK owns the listen router and gives the
+        // server no per-client filter hook — so attach filesystem watchers for the
+        // requested URIs here (the shared registry + bus persist across per-request
+        // instances). The bus publishes resource_updated; the router narrows per
+        // stream. Attach errors are swallowed so the listen stream still opens.
+        attachListenWatchers(parsedBody, watcherPathGuard, sharedRegistry, bus)
+          .catch((err: unknown) =>
+            { Logger.warn('[HTTP] listen watcher attach error:', formatUnknownErrorMessage(err)); },
+          )
+          .then(() => modernNodeHandler(req, res, parsedBody))
+          .catch(next);
+      })
+      .catch(next);
   });
 
   const getOrDeleteHandler = (req: Request, res: Response, next: NextFunction) => {
@@ -800,6 +869,80 @@ function setupExpressApp(
   return app;
 }
 
+/**
+ * Attach filesystem watchers for the URIs named in a `subscriptions/listen`
+ * filter. The SDK owns the listen router and gives the server no per-client
+ * filter hook, so this reads the filter off the already-parsed POST body (the
+ * documented `parsedBody` contract, not a re-read of the Request stream) and
+ * attaches one idempotent watcher per URI to the shared registry. The notify
+ * sink publishes `resource_updated` onto the shared bus; the router narrows per
+ * stream by `resourceSubscriptions`. See `attachFileWatcherForUri` for the
+ * lifecycle ceiling (watchers persist for the server lifetime).
+ */
+async function attachListenWatchers(
+  parsedBody: unknown,
+  pathGuard: PathGuard,
+  registry: WatcherRegistry,
+  bus: InMemoryServerEventBus,
+): Promise<void> {
+  if (typeof parsedBody !== 'object' || parsedBody === null) return;
+  const body = parsedBody as {
+    method?: unknown;
+    params?: { notifications?: { resourceSubscriptions?: unknown } };
+  };
+  if (body.method !== 'subscriptions/listen') return;
+  const uris = body.params?.notifications?.resourceSubscriptions;
+  if (!Array.isArray(uris)) return;
+  const sink = (uri: string): void => {
+    bus.publish({ kind: 'resource_updated', uri });
+  };
+  for (const uri of uris) {
+    if (typeof uri !== 'string') continue;
+    try {
+      await attachFileWatcherForUri(registry, pathGuard, uri, sink);
+    } catch (err: unknown) {
+      // Best-effort: one bad URI must not abort the rest or the listen stream.
+      Logger.warn(
+        `[HTTP] listen watcher attach failed for ${uri}:`,
+        formatUnknownErrorMessage(err),
+      );
+    }
+  }
+}
+
+// Modern (2026-07-28) HTTP leg: one fresh `createServer` per request, all
+// sharing a single watcher registry (so file-change interest persists across
+// per-request instances) and publishing resource updates onto a shared bus
+// that feeds `subscriptions/listen` streams. `legacy: 'reject'` means the
+// factory is only ever called with `ctx.era === 'modern'` — legacy POSTs are
+// routed away by the era-branch before they reach here.
+function makeHttpModernFactory(
+  options: ServerOptions,
+  bus: InMemoryServerEventBus,
+  sharedRegistry: WatcherRegistry,
+): McpServerFactory {
+  return async (ctx) => {
+    const c = await createServer(options, {
+      watcherRegistry: sharedRegistry,
+      notifyResourceUpdated: (uri) => {
+        bus.publish({ kind: 'resource_updated', uri });
+      },
+    });
+    if (ctx.era === 'modern') {
+      // createMcpHandler only calls `mcp.close()`, never our
+      // `disposeRuntimeState()` — chain it onto the low-level `onclose` so the
+      // per-request registrar/watcher state is torn down. The SDK reads
+      // `server.onclose` as `previousOnClose` and chains it.
+      const previousOnClose = c.mcp.server.onclose;
+      c.mcp.server.onclose = () => {
+        previousOnClose?.();
+        c.disposeRuntimeState();
+      };
+    }
+    return c.mcp;
+  };
+}
+
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
   const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
   const apiKey = process.env['API_KEY'];
@@ -824,7 +967,37 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     ),
   });
 
-  const app = setupExpressApp(httpHost, apiKey, allowedHosts, options, registry);
+  // Modern leg: shared bus + shared watcher registry survive across the
+  // per-request instances the factory builds. One handler serves every modern
+  // POST; Express mounts it via toNodeHandler.
+  const bus = new InMemoryServerEventBus();
+  const sharedRegistry = createWatcherRegistry();
+  // One PathGuard for the modern leg's proactive watcher attachment. Built once
+  // at startup (same options as the per-request guards `createServer` builds);
+  // neither hot-reloads. Cheap — `recomputeAllowedDirectories` already runs
+  // per-request today.
+  const watcherPathGuard = new PathGuard(options, true);
+  await watcherPathGuard.recomputeAllowedDirectories();
+  const modernHandler = createMcpHandler(makeHttpModernFactory(options, bus, sharedRegistry), {
+    legacy: 'reject',
+    bus,
+    onerror: (error: Error) => {
+      Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
+    },
+  });
+  const modernNodeHandler = toNodeHandler(modernHandler);
+
+  const app = setupExpressApp(
+    httpHost,
+    apiKey,
+    allowedHosts,
+    options,
+    registry,
+    modernNodeHandler,
+    watcherPathGuard,
+    sharedRegistry,
+    bus,
+  );
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;
@@ -843,10 +1016,12 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   registry.startSweep();
 
+  // Tear down both legs: the 2025 sessionful stack and the modern per-request
+  // handler, plus the shared watcher registry it owns.
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
-    registry
-      .closeAll()
+    sharedRegistry.destroy();
+    Promise.allSettled([modernHandler.close(), registry.closeAll()])
       .then(() => {
         originalClose(callback);
       })
@@ -862,12 +1037,15 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
-      registry.closeAll().catch((closeErr: unknown) => {
-        Logger.error(
-          '[HTTP] Error closing sessions on startup failure:',
-          formatUnknownErrorMessage(closeErr),
-        );
-      });
+      sharedRegistry.destroy();
+      Promise.allSettled([modernHandler.close(), registry.closeAll()]).catch(
+        (closeErr: unknown) => {
+          Logger.error(
+            '[HTTP] Error closing sessions on startup failure:',
+            formatUnknownErrorMessage(closeErr),
+          );
+        },
+      );
       reject(err);
     };
     httpServer.once('error', onError);

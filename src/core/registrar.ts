@@ -3,6 +3,7 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import type { WatcherRegistry } from '../resources.js';
 import { processInParallel, timedSignal } from './concurrency.js';
 import { formatUnknownErrorMessage, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
@@ -24,6 +25,10 @@ export interface ServerDeps {
   isInitialized: () => boolean;
   iconInfo?: IconInfo;
   readOnly?: boolean;
+  /** Shared file-watcher registry for the modern HTTP leg; omitted on legacy/stdio. */
+  watcherRegistry?: WatcherRegistry;
+  /** Modern-leg resource-updated notify sink (publishes to the ServerEventBus). */
+  notifyResourceUpdated?: (uri: string) => void;
 }
 
 export interface Registrar {
@@ -33,10 +38,10 @@ export interface Registrar {
 
 // ─── Root directory resolution helpers (relocated from path.ts) ───────────────
 // `Root` is deprecated (SEP-2577, 2026-07-28 era) in favor of passing paths via
-// tool parameters/resource URIs/config, but the MCP Roots protocol remains the
-// live, negotiated mechanism on the current default protocol version
-// (2025-11-25) and works correctly there. Migrating fully requires the new
-// input_required multi-round-trip pattern; tracked in repo memory, not done here.
+// tool parameters/resource URIs/config. The MCP Roots protocol remains the
+// live, negotiated mechanism on the 2025-11-25 era and works correctly there;
+// on the 2026-07-28 era the roots synchronizer is not armed (allowed
+// directories come from configuration), so these helpers only run on legacy.
 /* eslint-disable @typescript-eslint/no-deprecated -- Root: see comment above */
 
 function isFileRoot(root: Root): boolean {
@@ -199,10 +204,12 @@ export class McpRootsSynchronizer {
     }
     this.state = 'updating';
     // getClientCapabilities()/listRoots(): deprecated (SEP-2577, 2026-07-28 era);
-    // listRoots() throws on that era (push-style request model is replaced by
-    // input_required there). Both remain correct on the current default protocol
-    // version (2025-11-25); full migration needs the new multi-round-trip
-    // pattern, tracked in repo memory, not done here.
+    // listRoots() throws on that era (the push-style server→client request
+    // model is replaced by `input_required` there). This method is only reached
+    // on legacy-era connections — the serving factories gate
+    // `registerHandlers` to `ctx.era === 'legacy'` (stdio) or the legacy
+    // sessionful HTTP stack, so `updateRootsFromClient` never runs on a modern
+    // instance. The calls stay correct on the 2025-11-25 era they serve.
     /* eslint-disable @typescript-eslint/no-deprecated -- see comment above */
     try {
       const clientCapabilities = server.server.getClientCapabilities();
@@ -220,8 +227,8 @@ export class McpRootsSynchronizer {
     } catch (error) {
       /* eslint-enable @typescript-eslint/no-deprecated */
       // Ungated — a degraded-to-zero-roots server is exactly the case an
-      // operator must be told about. listRoots() throws outright on the
-      // 2026-07-28 protocol era, where the push-style request model is gone.
+      // operator must be told about. (listRoots() also throws outright on the
+      // 2026-07-28 era, but that path is unreachable here — see the gate above.)
       const detail = formatUnknownErrorMessage(error);
       const lower = detail.toLowerCase();
       const isExpectedNonFatal =
