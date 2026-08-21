@@ -1,8 +1,11 @@
 // __tests__/unit/http-auth-guard.test.ts
 import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprotocol/express';
+import { localhostAllowedHostnames } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
+
+import type { Request } from 'express';
 
 import {
   assertHttpBindingPolicy,
@@ -10,6 +13,9 @@ import {
   isAllowedLocalhostOrigin,
   isLoopbackHttpHost,
   parseAllowedHostsEnv,
+  protectedResourceUrl,
+  resolveAllowedHosts,
+  resolveTrustProxySetting,
   validateBearerAuthorization,
 } from '../../src/http-policy.js';
 
@@ -106,11 +112,50 @@ describe('parseAllowedHostsEnv', () => {
 
   it('agrees with assertHttpHostPolicy on what counts as configured', () => {
     assert.throws(() => {
-      assertHttpHostPolicy('0.0.0.0', ', ,', false);
+      assertHttpHostPolicy('0.0.0.0', parseAllowedHostsEnv(', ,'), false);
     }, /Refusing to bind wildcard host/);
     assert.doesNotThrow(() => {
-      assertHttpHostPolicy('0.0.0.0', 'public.example', false);
+      assertHttpHostPolicy('0.0.0.0', parseAllowedHostsEnv('public.example'), false);
     });
+  });
+});
+
+describe('resolveAllowedHosts', () => {
+  it('prefers a configured allowlist over the bind host', () => {
+    assert.deepEqual(resolveAllowedHosts('0.0.0.0', 'public.example'), ['public.example']);
+  });
+
+  it('takes the full localhost hostname set for a loopback bind', () => {
+    assert.deepEqual(resolveAllowedHosts('127.0.0.1', undefined), localhostAllowedHostnames());
+    assert.deepEqual(resolveAllowedHosts('localhost', undefined), localhostAllowedHostnames());
+  });
+
+  it('returns an empty list for a wildcard bind with no allowlist', () => {
+    assert.deepEqual(resolveAllowedHosts('0.0.0.0', undefined), []);
+    assert.deepEqual(resolveAllowedHosts('::', undefined), []);
+  });
+
+  it('takes just itself for a concrete non-loopback bind with no allowlist', () => {
+    assert.deepEqual(resolveAllowedHosts('192.168.1.1', undefined), ['192.168.1.1']);
+  });
+});
+
+describe('resolveTrustProxySetting', () => {
+  it('leaves the default (disabled) in place when unset or empty', () => {
+    assert.equal(resolveTrustProxySetting(undefined), undefined);
+    assert.equal(resolveTrustProxySetting(''), undefined);
+  });
+
+  it('parses a non-negative integer hop count as a number, including zero', () => {
+    assert.equal(resolveTrustProxySetting('0'), 0);
+    assert.equal(resolveTrustProxySetting('1'), 1);
+    assert.equal(resolveTrustProxySetting('3'), 3);
+  });
+
+  it('passes through a non-integer or negative value unchanged for Express to interpret', () => {
+    assert.equal(resolveTrustProxySetting('loopback'), 'loopback');
+    assert.equal(resolveTrustProxySetting('-1'), '-1');
+    assert.equal(resolveTrustProxySetting('10.0.0.0/8'), '10.0.0.0/8');
   });
 });
 
@@ -150,5 +195,35 @@ describe('assertHttpBindingPolicy', () => {
     assert.throws(() => {
       assertHttpBindingPolicy('192.168.1.1', '');
     }, /Refusing to bind HTTP server to non-loopback host/);
+  });
+});
+
+describe('protectedResourceUrl', () => {
+  const originalUrl = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+
+  afterEach(() => {
+    if (originalUrl === undefined) {
+      delete process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+    } else {
+      process.env['FILESYSTEM_MCP_PUBLIC_URL'] = originalUrl;
+    }
+  });
+
+  it('returns null when FILESYSTEM_MCP_PUBLIC_URL is unset and hostValidated is false', () => {
+    delete process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+    const req = { headers: { host: 'example.com' }, secure: true } as Request;
+    assert.equal(protectedResourceUrl(req, false), null);
+  });
+
+  it('returns the configured URL when it is set, regardless of hostValidated', () => {
+    process.env['FILESYSTEM_MCP_PUBLIC_URL'] = 'https://configured.example.com/mcp';
+    const req = { headers: { host: 'example.com' }, secure: true } as Request;
+    const urlFalse = protectedResourceUrl(req, false);
+    assert.ok(urlFalse);
+    assert.equal(urlFalse?.href, 'https://configured.example.com/mcp');
+
+    const urlTrue = protectedResourceUrl(req, true);
+    assert.ok(urlTrue);
+    assert.equal(urlTrue?.href, 'https://configured.example.com/mcp');
   });
 });

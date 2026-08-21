@@ -11,13 +11,12 @@ import {
   normalizePath,
   PathGuard,
 } from './core/path.js';
-import { isRecord, parseTrueEnvFlag } from './core/primitives.js';
+import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
 import { MAX_TEXT_FILE_SIZE } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
 const { version: SERVER_VERSION } = pkgInfo;
-const IS_WINDOWS = process.platform === 'win32';
 const CLI_VALIDATE_CONCURRENCY = 8;
 
 // ════════════════════════════════════════════════════════════
@@ -182,6 +181,10 @@ export const ENV_HELP: HelpRow[] = [
   { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
   { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
   { flags: 'API_KEY', desc: 'HTTP API key' },
+  {
+    flags: 'FILESYSTEM_MCP_TRUST_PROXY',
+    desc: 'Express trust-proxy setting: hop count or expression (unset = do not trust X-Forwarded-*)',
+  },
   {
     flags: 'ALLOW_SENSITIVE',
     desc: 'Allow sensitive system paths (any value enables this)',

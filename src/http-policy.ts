@@ -108,6 +108,39 @@ export function parseAllowedHostsEnv(value: string | undefined): string[] {
 }
 
 /**
+ * The Host header values this bind accepts. `FILESYSTEM_MCP_ALLOWED_HOSTS` wins
+ * when set; otherwise a loopback bind takes the whole localhost hostname set (a
+ * client dialing http://localhost:<port> sends `Host: localhost`, which a bare
+ * ['127.0.0.1'] list would 403), a wildcard bind takes none, and a concrete
+ * non-loopback bind takes itself. An empty result means no Host validation is
+ * mounted — only reachable under FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1.
+ */
+export function resolveAllowedHosts(
+  httpHost: string,
+  allowedHostsEnv: string | undefined,
+): string[] {
+  const configured = parseAllowedHostsEnv(allowedHostsEnv);
+  if (configured.length > 0) return configured;
+  if (isLoopbackHttpHost(httpHost)) return localhostAllowedHostnames();
+  if (httpHost === '0.0.0.0' || httpHost === '::') return [];
+  return [httpHost];
+}
+
+/**
+ * Express's `trust proxy` setting from `FILESYSTEM_MCP_TRUST_PROXY`. A
+ * non-negative integer hop count parses to a number (Express counts hops from
+ * the socket); anything else (a subnet name/expression, or a negative/
+ * non-integer string) passes through unchanged for Express to interpret.
+ * `undefined` means the env var was unset or empty — leave Express's default
+ * (disabled) in place.
+ */
+export function resolveTrustProxySetting(value: string | undefined): number | string | undefined {
+  if (!value) return undefined;
+  const hops = Number(value);
+  return Number.isInteger(hops) && hops >= 0 ? hops : value;
+}
+
+/**
  * Refuse to bind a wildcard host (`0.0.0.0` / `::`) without an explicit
  * `FILESYSTEM_MCP_ALLOWED_HOSTS` list. Clients never send `Host: 0.0.0.0`, so
  * defaulting the allowed-host set to the wildcard string would reject all real
@@ -117,14 +150,14 @@ export function parseAllowedHostsEnv(value: string | undefined): string[] {
  */
 export function assertHttpHostPolicy(
   host: string,
-  allowedHostsEnv: string | undefined,
+  allowedHosts: readonly string[],
   allowUnrestricted: boolean,
 ): void {
   if (isLoopbackHttpHost(host)) return;
   const isWildcard = host === '0.0.0.0' || host === '::';
   if (!isWildcard) return; // concrete non-loopback: Host validated against the bind host.
   if (allowUnrestricted) return;
-  if (parseAllowedHostsEnv(allowedHostsEnv).length > 0) return;
+  if (allowedHosts.length > 0) return;
   throw new FsError(
     ErrorCode.PERMISSION_DENIED,
     `Refusing to bind wildcard host '${host}' without FILESYSTEM_MCP_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 to accept the risk.`,
@@ -148,7 +181,7 @@ export function assertHttpHostPolicy(
  * and that the credential goes in the Authorization header, instead of a bare
  * challenge plus a 404 on the well-known path.
  */
-export function protectedResourceUrl(req: Request): URL | null {
+export function protectedResourceUrl(req: Request, hostValidated: boolean): URL | null {
   const configured = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
   if (configured) {
     const parsed = URL.parse(configured);
@@ -157,12 +190,10 @@ export function protectedResourceUrl(req: Request): URL | null {
       `[HTTP] Ignoring unparseable FILESYSTEM_MCP_PUBLIC_URL: ${configured}. Deriving the resource identifier from the Host header instead.`,
     );
   }
-  // Raw client input. The app's allowedHosts check constrains it ONLY when an
-  // allowlist is configured — a wildcard bind under
-  // FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 computes an empty list, and the
-  // SDK mounts its Host validator conditionally on that list being non-empty.
-  // So this parse can fail (a space or `%` is not a legal host); null then
-  // means callers omit the hint rather than name a resource we invented.
+  // With no Host validator mounted (FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1)
+  // the Host header is attacker-controlled, and naming a resource from it would
+  // publish an identifier the operator does not own. Answer with nothing instead.
+  if (!hostValidated) return null;
   const host = req.headers.host ?? '127.0.0.1';
   return URL.parse(`${req.secure ? 'https' : 'http'}://${host}/mcp`);
 }
@@ -172,8 +203,8 @@ export function protectedResourceUrl(req: Request): URL | null {
  * that presented something invalid gets `error="invalid_token"`. Clients use
  * the difference to tell "you must authenticate" from "your token is wrong".
  */
-function buildAuthChallenge(req: Request, hasCredentials: boolean): string {
-  const resource = protectedResourceUrl(req);
+function buildAuthChallenge(req: Request, hasCredentials: boolean, hostValidated: boolean): string {
+  const resource = protectedResourceUrl(req, hostValidated);
   const params: string[] = [];
   if (resource) {
     params.push(`resource_metadata="${getOAuthProtectedResourceMetadataUrl(resource)}"`);
@@ -191,7 +222,10 @@ function buildAuthChallenge(req: Request, hasCredentials: boolean): string {
  * app setup (passed in from startHttpServer) so the middleware and
  * assertHttpBindingPolicy share one source of truth.
  */
-export function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler {
+export function bearerAuthMiddleware(
+  apiKey: string | undefined,
+  hostValidated: boolean,
+): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!apiKey) {
       next();
@@ -203,7 +237,11 @@ export function bearerAuthMiddleware(apiKey: string | undefined): RequestHandler
     }
     res.writeHead(401, {
       'Content-Type': 'application/json',
-      'WWW-Authenticate': buildAuthChallenge(req, req.headers.authorization !== undefined),
+      'WWW-Authenticate': buildAuthChallenge(
+        req,
+        req.headers.authorization !== undefined,
+        hostValidated,
+      ),
     });
     // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to
     // "Unauthorized". The 401 body is inlined with the fixed JSON-RPC 2.0 "2.0"

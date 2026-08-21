@@ -2,42 +2,56 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { assertHttpHostPolicy, isOriginAllowed } from '../../src/http-policy.js';
+import {
+  assertHttpHostPolicy,
+  isOriginAllowed,
+  parseAllowedHostsEnv,
+} from '../../src/http-policy.js';
 
 describe('assertHttpHostPolicy (REQ-002)', () => {
   it('allows loopback binds without allowed-hosts config', () => {
-    assert.doesNotThrow(() => assertHttpHostPolicy('127.0.0.1', undefined, false));
-    assert.doesNotThrow(() => assertHttpHostPolicy('localhost', undefined, false));
-    assert.doesNotThrow(() => assertHttpHostPolicy('[::1]', undefined, false));
+    assert.doesNotThrow(() =>
+      assertHttpHostPolicy('127.0.0.1', parseAllowedHostsEnv(undefined), false),
+    );
+    assert.doesNotThrow(() =>
+      assertHttpHostPolicy('localhost', parseAllowedHostsEnv(undefined), false),
+    );
+    assert.doesNotThrow(() =>
+      assertHttpHostPolicy('[::1]', parseAllowedHostsEnv(undefined), false),
+    );
   });
 
   it('allows a concrete non-loopback bind (Host validated against the bind host)', () => {
-    assert.doesNotThrow(() => assertHttpHostPolicy('192.168.1.1', undefined, false));
+    assert.doesNotThrow(() =>
+      assertHttpHostPolicy('192.168.1.1', parseAllowedHostsEnv(undefined), false),
+    );
   });
 
   it('refuses a wildcard bind (0.0.0.0) without FILESYSTEM_MCP_ALLOWED_HOSTS', () => {
     assert.throws(
-      () => assertHttpHostPolicy('0.0.0.0', undefined, false),
+      () => assertHttpHostPolicy('0.0.0.0', parseAllowedHostsEnv(undefined), false),
       /Refusing to bind wildcard host.*FILESYSTEM_MCP_ALLOWED_HOSTS/,
     );
   });
 
   it('refuses a wildcard bind (::) without FILESYSTEM_MCP_ALLOWED_HOSTS', () => {
     assert.throws(
-      () => assertHttpHostPolicy('::', undefined, false),
+      () => assertHttpHostPolicy('::', parseAllowedHostsEnv(undefined), false),
       /Refusing to bind wildcard host.*FILESYSTEM_MCP_ALLOWED_HOSTS/,
     );
   });
 
   it('allows a wildcard bind when FILESYSTEM_MCP_ALLOWED_HOSTS is set', () => {
     assert.doesNotThrow(() =>
-      assertHttpHostPolicy('0.0.0.0', 'example.com,api.example.com', false),
+      assertHttpHostPolicy('0.0.0.0', parseAllowedHostsEnv('example.com,api.example.com'), false),
     );
   });
 
   it('allows a wildcard bind under the escape hatch (ALLOW_UNRESTRICTED_HOSTS=1)', () => {
-    assert.doesNotThrow(() => assertHttpHostPolicy('0.0.0.0', undefined, true));
-    assert.doesNotThrow(() => assertHttpHostPolicy('::', undefined, true));
+    assert.doesNotThrow(() =>
+      assertHttpHostPolicy('0.0.0.0', parseAllowedHostsEnv(undefined), true),
+    );
+    assert.doesNotThrow(() => assertHttpHostPolicy('::', parseAllowedHostsEnv(undefined), true));
   });
 });
 

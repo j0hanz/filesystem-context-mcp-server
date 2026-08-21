@@ -378,6 +378,7 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                                                   |
 | `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                                                 |
 | `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                                          |
+| `FILESYSTEM_MCP_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                     |
 | `FILESYSTEM_MCP_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                                                    |
 | `FILESYSTEM_MCP_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                                        |
 | `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS` | Set to 1 to bind a wildcard host with no Host validation (accepts the risk).                                      |

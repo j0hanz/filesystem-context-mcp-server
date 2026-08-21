@@ -15,7 +15,6 @@ import {
   isJSONRPCRequest,
   isJSONRPCResultResponse,
   JSONRPC_VERSION,
-  localhostAllowedHostnames,
   parseJSONRPCMessage,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
@@ -41,9 +40,9 @@ import {
   computeAllowedOriginHostnames,
   corsPreflightHandler,
   createRateLimiter,
-  isLoopbackHttpHost,
-  parseAllowedHostsEnv,
   protectedResourceUrl,
+  resolveAllowedHosts,
+  resolveTrustProxySetting,
 } from './http-policy.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer } from './server.js';
@@ -653,23 +652,10 @@ async function handleGetOrDeleteMcp(
 function setupExpressApp(
   httpHost: string,
   apiKey: string | undefined,
+  allowedHosts: string[],
   options: ServerOptions,
   registry: HttpSessionRegistry,
 ): Express {
-  const configuredHosts = parseAllowedHostsEnv(process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
-
-  // A loopback bind gets the whole localhost hostname set, not just the bind
-  // address: a client dialing http://localhost:<port> sends `Host: localhost`,
-  // which a bare ['127.0.0.1'] list would 403.
-  const allowedHosts =
-    configuredHosts.length > 0
-      ? configuredHosts
-      : isLoopbackHttpHost(httpHost)
-        ? localhostAllowedHostnames()
-        : httpHost === '0.0.0.0' || httpHost === '::'
-          ? []
-          : [httpHost];
-
   // Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
   // app's allowedOrigins consumer). The compute and the OPTIONS preflight
   // handler both live in http-policy; the same set is consulted end-to-end so
@@ -688,6 +674,15 @@ function setupExpressApp(
     ...(allowedOriginHostnames.length > 0 ? { allowedOrigins: allowedOriginHostnames } : {}),
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
+
+  // Express derives req.ip and req.secure from X-Forwarded-* only when told to
+  // trust a proxy. Off by default: trusting those headers on a direct bind lets
+  // any client forge its own address. Operators behind a TLS terminator set the
+  // hop count (or a subnet expression Express understands).
+  const trustProxy = resolveTrustProxySetting(process.env['FILESYSTEM_MCP_TRUST_PROXY']);
+  if (trustProxy !== undefined) {
+    app.set('trust proxy', trustProxy);
+  }
 
   // createMcpExpressApp already mounts hostHeaderValidation(allowedHosts)
   // app-wide when the list is non-empty — a second /mcp-scoped copy here would
@@ -718,7 +713,7 @@ function setupExpressApp(
   // served too, since clients that treat the origin as the resource probe it.
   if (apiKey) {
     const metadataHandler = (req: Request, res: Response): void => {
-      const resource = protectedResourceUrl(req);
+      const resource = protectedResourceUrl(req, allowedHosts.length > 0);
       if (!resource) {
         // The Host is unusable as a resource identifier and nothing else names
         // this server, so the request cannot be answered truthfully.
@@ -744,7 +739,7 @@ function setupExpressApp(
     app.get('/.well-known/oauth-protected-resource/mcp', metadataHandler);
   }
 
-  app.use('/mcp', bearerAuthMiddleware(apiKey));
+  app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0));
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     handlePostMcp(req, res, options, registry).catch(next);
@@ -781,9 +776,10 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
   const apiKey = process.env['API_KEY'];
   assertHttpBindingPolicy(httpHost, apiKey);
+  const allowedHosts = resolveAllowedHosts(httpHost, process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,
-    process.env['FILESYSTEM_MCP_ALLOWED_HOSTS'],
+    allowedHosts,
     process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
   );
 
@@ -800,7 +796,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     ),
   });
 
-  const app = setupExpressApp(httpHost, apiKey, options, registry);
+  const app = setupExpressApp(httpHost, apiKey, allowedHosts, options, registry);
 
   const httpServer = createHttpServer(app);
   httpServer.headersTimeout = 10_000;
