@@ -12,13 +12,21 @@ import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { DELETE_FILE } from '../../src/tools/delete-file.js';
-import { accept, registerAgainstStub, retryCtx, retryState } from '../helpers.js';
+import {
+  accept,
+  createTestEnv,
+  getStructured,
+  registerAgainstStub,
+  retryCtx,
+  retryState,
+  trySymlink,
+} from '../helpers.js';
 
 interface StructuredDelete {
   ok?: boolean;
@@ -279,6 +287,37 @@ describe('delete input_required round-trip', () => {
       assert.ok(!(sc.ok === true), 'a malformed retry does not succeed');
     } finally {
       await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+describe('delete: sensitive-file denial survives the ENOENT fallback', () => {
+  it('blocks deleting .aws/credentials reached through a symlinked parent', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const awsDir = join(env.tmpDir, '.aws');
+      await mkdir(awsDir);
+      const secret = join(awsDir, 'credentials');
+      await writeFile(secret, 'placeholder');
+
+      const linkDir = join(env.tmpDir, 'cfg');
+      if (!(await trySymlink(awsDir, linkDir, 'dir'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      const result = await env.client.callTool({
+        name: 'delete',
+        arguments: { paths: [join(linkDir, 'credentials')] },
+      });
+
+      const sc = getStructured(result);
+      assert.equal(sc['ok'], false, 'delete must report failure for a denylisted target');
+      const failures = sc['failures'] as { error: { code: string } }[];
+      assert.equal(failures[0]?.error.code, 'ACCESS_DENIED');
+      // The decisive assertion: the file is still on disk.
+      await stat(secret);
+    } finally {
+      await env.cleanup();
     }
   });
 });

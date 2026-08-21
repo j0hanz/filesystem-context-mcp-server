@@ -9,6 +9,8 @@ import { after, before, describe, it } from 'node:test';
 
 import { assertOk, createTestEnv, getStructured, type TestEnv } from '../helpers.js';
 
+const IS_WINDOWS = process.platform === 'win32';
+
 describe('edit tool — input validation', () => {
   let env: TestEnv;
 
@@ -337,5 +339,55 @@ describe('edit tool — ignoreWhitespace matching', () => {
     assertOk(res);
     const cont = await readFile(a, 'utf8');
     assert.ok(cont.includes('return 2;'), 'multi-line block should match across real newlines');
+  });
+});
+
+describe('edit: preserves the target file mode', () => {
+  it('keeps 0o600 across a write', async (t) => {
+    if (IS_WINDOWS) {
+      t.skip('POSIX permission bits are not modelled on Windows');
+      return;
+    }
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'secret.conf');
+      await writeFile(file, 'token = old\n');
+      await chmod(file, 0o600);
+
+      assertOk(
+        await env.client.callTool({
+          name: 'edit',
+          arguments: { path: file, edits: [{ oldText: 'old', newText: 'new' }] },
+        }),
+      );
+
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+    } finally {
+      await env.cleanup();
+    }
+  });
+});
+
+describe('edit: lineRange ordering', () => {
+  it('does not invert on a tail trim of a file with no final newline', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'trim.txt');
+      await writeFile(file, 'a\nb');
+
+      const result = await env.client.callTool({
+        name: 'edit',
+        arguments: { path: file, edits: [{ oldText: '\nb', newText: '' }] },
+      });
+
+      assertOk(result);
+      const value = (getStructured(result)['results'] as PerPathResult[])[0]?.value;
+      assert.ok(value);
+      const range = value['lineRange'] as [number, number] | undefined;
+      assert.ok(range, 'a tail trim is a change and must report a range');
+      assert.ok(range[0] <= range[1], `lineRange must not be inverted, got [${range.join(', ')}]`);
+    } finally {
+      await env.cleanup();
+    }
   });
 });

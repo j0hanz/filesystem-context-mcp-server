@@ -164,3 +164,70 @@ describe('replace_text — gitignore and single-file targeting', () => {
     );
   });
 });
+
+describe('replace_text: $ sequences are literal unless isRegex=true', () => {
+  it('does not expand $& / $\u0060 / $\u0027 / $$ on a literal search', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'compose.yml');
+      await writeFile(file, 'listen: MARKER\ntail line\n');
+
+      // Defaults: isRegex=false, caseSensitive=false — the regex matcher path.
+      // An expansion would collapse "$$" to a single "$".
+      assertOk(
+        await env.client.callTool({
+          name: 'replace_text',
+          arguments: { path: file, searchPattern: 'MARKER', replacement: '$$PORT' },
+        }),
+      );
+
+      assert.equal(await readFile(file, 'utf-8'), 'listen: $$PORT\ntail line\n');
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it("does not splice the file remainder for a replacement of $'", async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'prices.txt');
+      await writeFile(file, 'cost USD here\n');
+
+      assertOk(
+        await env.client.callTool({
+          name: 'replace_text',
+          arguments: { path: file, searchPattern: 'USD', replacement: "$'" },
+        }),
+      );
+
+      assert.equal(await readFile(file, 'utf-8'), "cost $' here\n");
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('still expands capture groups when isRegex=true', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'names.txt');
+      await writeFile(file, 'function oldName(\n');
+
+      assertOk(
+        await env.client.callTool({
+          name: 'replace_text',
+          arguments: {
+            path: file,
+            searchPattern: 'function (\\w+)\\(',
+            replacement: 'function $1_renamed(',
+            isRegex: true,
+            caseSensitive: true,
+          },
+        }),
+      );
+
+      assert.equal(await readFile(file, 'utf-8'), 'function oldName_renamed(\n');
+    } finally {
+      await env.cleanup();
+    }
+  });
+});

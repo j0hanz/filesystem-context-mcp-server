@@ -5,12 +5,13 @@ import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { MOVE } from '../../src/tools/move.js';
+import { trySymlink } from '../helpers.js';
 import {
   accept,
   assertOk,
@@ -410,6 +411,91 @@ describe('move input_required round-trip', () => {
       assert.equal(existsSync(source), false);
     } finally {
       await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('move: renames the symlink, not its target', () => {
+  it('leaves the target in place and moves the link itself', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const target = join(env.tmpDir, 'data.txt');
+      await writeFile(target, 'payload');
+      const link = join(env.tmpDir, 'link.txt');
+      if (!(await trySymlink(target, link, 'file'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      assertOk(
+        await env.client.callTool({
+          name: 'move',
+          arguments: { moves: [{ source: link, destination: join(env.tmpDir, 'moved.txt') }] },
+        }),
+      );
+
+      // The target must not have been renamed out from under the link.
+      assert.equal(await readFile(target, 'utf-8'), 'payload');
+      const moved = await lstat(join(env.tmpDir, 'moved.txt'));
+      assert.ok(moved.isSymbolicLink(), 'the moved entry must still be a symlink');
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('skips a self-move of a symlink instead of renaming it over its target', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const target = join(env.tmpDir, 'data.txt');
+      await writeFile(target, 'payload');
+      const link = join(env.tmpDir, 'link.txt');
+      if (!(await trySymlink(target, link, 'file'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      assertOk(
+        await env.client.callTool({
+          name: 'move',
+          arguments: { moves: [{ source: link, destination: link }] },
+        }),
+      );
+
+      assert.equal(
+        await readFile(target, 'utf-8'),
+        'payload',
+        'self-move must not touch the target',
+      );
+      assert.ok((await lstat(link)).isSymbolicLink(), 'the link must survive a self-move');
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('skips moving a symlink onto its own target', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const target = join(env.tmpDir, 'data.txt');
+      await writeFile(target, 'payload');
+      const link = join(env.tmpDir, 'link.txt');
+      if (!(await trySymlink(target, link, 'file'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      assertOk(
+        await env.client.callTool({
+          name: 'move',
+          arguments: { moves: [{ source: link, destination: target }] },
+        }),
+      );
+
+      // Renaming the link over data.txt would destroy the payload and leave a
+      // self-referential link.
+      assert.equal(await readFile(target, 'utf-8'), 'payload');
+      assert.equal((await lstat(target)).isSymbolicLink(), false);
+    } finally {
+      await env.cleanup();
     }
   });
 });

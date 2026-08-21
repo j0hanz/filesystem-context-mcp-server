@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { ErrorCode, FsError, isFsError, SKIPPABLE_FS_CODES } from '../../src/core/errors.js';
 import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { LIST } from '../../src/tools/list.js';
@@ -19,6 +20,7 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
+  trySymlink,
 } from '../helpers.js';
 
 // ─── roots ──────────────────────────────────────────────────────────────────
@@ -917,5 +919,72 @@ describe('move: partial failure support', () => {
     assert.equal(failureError['code'], 'NOT_FOUND');
     assert.equal(failureError['path'], missingSrc);
     assert.equal(typeof failureError['suggestion'], 'string');
+  });
+});
+
+describe('list: tolerates a broken symlink', () => {
+  it('skips the dangling entry and still lists its siblings', async (t) => {
+    const env = await createTestEnv();
+    try {
+      await writeFile(join(env.tmpDir, 'sibling.txt'), 'present');
+      // Target inside the allowed root, but never created.
+      const broken = join(env.tmpDir, 'broken.txt');
+      if (!(await trySymlink(join(env.tmpDir, 'missing.txt'), broken, 'file'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      const result = await env.client.callTool({
+        name: 'list',
+        arguments: { path: env.tmpDir },
+      });
+
+      assertOk(result);
+      const sc = getStructured(result);
+      const names = (sc['entries'] as { name: string }[]).map((e) => e.name);
+      assert.ok(names.includes('sibling.txt'), 'listing must survive the broken link');
+    } finally {
+      await env.cleanup();
+    }
+  });
+});
+
+function fakeGuardThrowing(error: FsError): PathGuard {
+  return {
+    isSensitive: () => false,
+    async validateExistingPathDetailed() {
+      throw error;
+    },
+    async isEntryAccessible() {
+      try {
+        await this.validateExistingPathDetailed();
+        return true;
+      } catch (caught) {
+        if (isFsError(caught) && SKIPPABLE_FS_CODES.has(caught.code)) return false;
+        throw caught;
+      }
+    },
+  } as unknown as PathGuard;
+}
+
+describe('list entry access: tolerates an EACCES symlink target', () => {
+  it('skips a symlink whose target reports PERMISSION_DENIED', async () => {
+    const fakeGuard = fakeGuardThrowing(
+      new FsError(ErrorCode.PERMISSION_DENIED, 'Cannot access path', '/root/denied.txt'),
+    );
+
+    const result = await fakeGuard.isEntryAccessible('/root/denied.txt', 'symlink', ['/root']);
+    assert.equal(result, false, 'a PERMISSION_DENIED symlink target must be skipped, not thrown');
+  });
+
+  it('still rethrows a non-skippable UNKNOWN from the same path (no over-widening)', async () => {
+    const fakeGuard = fakeGuardThrowing(
+      new FsError(ErrorCode.UNKNOWN, 'PathGuard not initialized', '/root/denied.txt'),
+    );
+
+    await assert.rejects(
+      () => fakeGuard.isEntryAccessible('/root/denied.txt', 'symlink', ['/root']),
+      (err: unknown) => err instanceof FsError && err.code === ErrorCode.UNKNOWN,
+    );
   });
 });

@@ -2,12 +2,14 @@
  * Integration tests for file I/O tools: read, write, read_many, edit.
  */
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { GuardedFileSystem } from '../../src/core/fs.js';
+import { PathGuard } from '../../src/core/path.js';
 import {
   assertInputRequiredFailClose,
   assertOk,
@@ -1049,3 +1051,146 @@ describe('edit tool', () => {
 });
 
 // (apply_patch removed)
+
+describe('read: all paths skipped by the size budget', () => {
+  it('returns per-path TOO_LARGE instead of failing the call', async () => {
+    const env = await createTestEnv();
+    try {
+      const big = join(env.tmpDir, 'big.log');
+      // Over the 512 KiB read-many total budget, under the 10 MiB file cap.
+      await writeFile(big, 'x'.repeat(600 * 1024));
+
+      const result = await env.client.callTool({
+        name: 'read',
+        arguments: { paths: [big] },
+      });
+
+      assertOk(result);
+      const sc = getStructured(result);
+      const results = sc['results'] as PerPathResult[];
+      assert.equal(results.length, 1);
+      assert.equal(results[0]?.error?.code, 'TOO_LARGE');
+      assert.deepEqual(sc['summary'], { total: 1, succeeded: 0, failed: 1 });
+    } finally {
+      await env.cleanup();
+    }
+  });
+});
+
+describe('read: tail continuation', () => {
+  it('omits the continuation rather than pointing at line tail+1', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'app.log');
+      const lines = Array.from({ length: 100 }, (_, i) => `line ${String(i + 1)}`);
+      await writeFile(file, lines.join('\n') + '\n');
+
+      const result = await env.client.callTool({
+        name: 'read',
+        arguments: { path: file, tail: 10 },
+      });
+
+      assertOk(result);
+      const value = (getStructured(result)['results'] as PerPathResult[])[0]?.value;
+      assert.ok(value);
+      assert.match(String(value['content']), /line 100$/u, 'tail must return the end of the file');
+      assert.equal(
+        value['continuation'],
+        undefined,
+        'a tail read must not hand back a continuation counted from line 1',
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+});
+
+describe('silent-failure-hunter file system tests', () => {
+  let tempDir: string;
+
+  before(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), `fsmcp-sfh-test-${randomUUID().slice(0, 8)}-`));
+
+    // Create a directory structure with nested .gitignore files
+    await writeFile(
+      join(tempDir, '.gitignore'),
+      `
+*.log
+!important.log
+/sub_ignored/
+`,
+    );
+
+    await mkdir(join(tempDir, 'sub_ignored'));
+    await writeFile(join(tempDir, 'sub_ignored', 'nested.txt'), 'content');
+
+    await mkdir(join(tempDir, 'sub'));
+    await writeFile(
+      join(tempDir, 'sub', '.gitignore'),
+      `
+*.txt
+!special.txt
+`,
+    );
+    await writeFile(join(tempDir, 'sub', 'nested.txt'), 'content');
+    await writeFile(join(tempDir, 'sub', 'special.txt'), 'content');
+  });
+
+  after(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+  describe('atomicWriteFile (suffix length)', () => {
+    it('uses a 12-character random suffix for temp files', async () => {
+      const target = join(tempDir, 'atomic.txt');
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      // Mock validatePathForWrite to return target
+      const { validPath } = await gfs.writeFile(target, 'content');
+      assert.equal(validPath.toLowerCase(), target.toLowerCase());
+    });
+  });
+
+  describe('isProbablyBinary (boundary UTF-8 split)', () => {
+    it('does not classify a text file with emoji at boundary as binary', async () => {
+      const target = join(tempDir, 'boundary-emoji.txt');
+      const content = 'a'.repeat(511) + '😊';
+      await writeFile(target, content, 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'full', skipBinary: true });
+      assert.equal(result.content, content);
+      assert.equal(result.truncated, false);
+    });
+  });
+
+  describe('readTailContent (hasMoreLines accuracy)', () => {
+    it('reports hasMoreLines as false when exactly tail lines are requested and read', async () => {
+      const target = join(tempDir, 'tail-exact.txt');
+      const lines = ['line 1', 'line 2', 'line 3'];
+      await writeFile(target, lines.join('\n'), 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'tail', lines: 3 });
+      assert.equal(result.content, lines.join('\n'));
+      assert.equal(result.hasMoreLines, false);
+    });
+
+    it('reports hasMoreLines as true when more lines exist than requested tail', async () => {
+      const target = join(tempDir, 'tail-more.txt');
+      const lines = ['line 1', 'line 2', 'line 3', 'line 4'];
+      await writeFile(target, lines.join('\n'), 'utf8');
+
+      const pg = await PathGuard.fromAllowedDirectories([tempDir]);
+      const gfs = new GuardedFileSystem(pg);
+
+      const result = await gfs.readFile(target, { kind: 'tail', lines: 3 });
+      assert.equal(result.content, ['line 2', 'line 3', 'line 4'].join('\n'));
+      assert.equal(result.hasMoreLines, true);
+    });
+  });
+});

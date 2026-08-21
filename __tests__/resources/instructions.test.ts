@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { buildSectionsRecord } from '../../src/resources.js';
+import { createTestEnv, getStructured, type PerPathResult } from '../helpers.js';
 
 const INSTRUCTION_SECTIONS = buildSectionsRecord(false);
 const SERVER_INSTRUCTIONS_CONTENT = `\n${Object.values(INSTRUCTION_SECTIONS).join('\n\n')}\n`;
@@ -73,6 +75,38 @@ describe('INSTRUCTION_SECTIONS', () => {
         SERVER_INSTRUCTIONS_CONTENT.includes(body.trim()),
         'rendered instructions must include every section body',
       );
+    }
+  });
+});
+
+describe('guidance text names only registered tools', () => {
+  it('no prompt or error suggestion mentions a tool that does not exist', async () => {
+    const env = await createTestEnv();
+    try {
+      const listed = await env.client.listTools();
+      const registered = new Set(listed.tools.map((t: { name: string }) => t.name));
+      // Names that were left behind by an earlier rename.
+      const retired = ['tree', 'ls', 'find', 'grep', 'read_many', 'roots'];
+      for (const name of retired) {
+        assert.equal(registered.has(name), false, `${name} is not a registered tool`);
+      }
+
+      // The NOT_FOUND suggestion ships on the most common failure path.
+      const missing = await env.client.callTool({
+        name: 'stat',
+        arguments: { path: join(env.tmpDir, 'nope.txt') },
+      });
+      const results = getStructured(missing)['results'] as PerPathResult[];
+      const combined = JSON.stringify(results[0]?.error ?? {});
+      for (const name of retired) {
+        assert.doesNotMatch(
+          combined,
+          new RegExp(`\\b${name}\\b`, 'u'),
+          `error guidance must not name the retired tool ${name}`,
+        );
+      }
+    } finally {
+      await env.cleanup();
     }
   });
 });

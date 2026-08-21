@@ -2,7 +2,7 @@
  * Integration tests for stat and stat_many tools.
  */
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -14,6 +14,7 @@ import {
   createTestEnv,
   getStructured,
   type TestEnv,
+  trySymlink,
 } from '../helpers.js';
 
 describe('stat tool', () => {
@@ -267,5 +268,58 @@ describe('stat_many tool', () => {
       arguments: { paths: [] },
     });
     assertToolError(raw);
+  });
+});
+
+describe('stat: symlink reporting', () => {
+  it('reports symlinkTarget for an actual symlink', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const target = join(env.tmpDir, 'target.txt');
+      await writeFile(target, 'payload');
+      const link = join(env.tmpDir, 'link.txt');
+      if (!(await trySymlink(target, link, 'file'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      const result = await env.client.callTool({ name: 'stat', arguments: { path: link } });
+      assertOk(result);
+      const value = (getStructured(result)['results'] as PerPathResult[])[0]?.value;
+      assert.ok(value);
+      assert.equal(value['type'], 'symlink');
+      assert.ok(
+        typeof value['symlinkTarget'] === 'string' && value['symlinkTarget'].length > 0,
+        'symlinkTarget must be populated for a symlink',
+      );
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('reports a regular file under a symlinked parent as a file', async (t) => {
+    const env = await createTestEnv();
+    try {
+      const realDir = join(env.tmpDir, 'real');
+      await mkdir(realDir);
+      await writeFile(join(realDir, 'notes.txt'), 'plain');
+      const linkDir = join(env.tmpDir, 'link');
+      if (!(await trySymlink(realDir, linkDir, 'dir'))) {
+        t.skip('symlink creation not permitted');
+        return;
+      }
+
+      const result = await env.client.callTool({
+        name: 'stat',
+        arguments: { path: join(linkDir, 'notes.txt') },
+      });
+      assertOk(result);
+      const value = (getStructured(result)['results'] as PerPathResult[])[0]?.value;
+      assert.ok(value);
+      assert.equal(value['type'], 'file', 'a symlinked ancestor must not retype the entry');
+      assert.equal(value['symlinkTarget'], undefined);
+    } finally {
+      await env.cleanup();
+    }
   });
 });

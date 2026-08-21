@@ -1,3 +1,5 @@
+import { Client } from '@modelcontextprotocol/client';
+import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { ResourceNotFoundError, type ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -6,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { buildFileResourceUri } from '../../src/core/file-uri.js';
 import { PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { resourcesRegistrar } from '../../src/resources.js';
@@ -229,5 +232,104 @@ describe('resources/subscribe — dedupe and leak', () => {
 
     const unsubscribe = handlers.get('resources/unsubscribe');
     await unsubscribe?.({ params: { uri: okUri } }, ctx);
+  });
+});
+
+describe('buildFileResourceUri', () => {
+  it('encodes characters that would otherwise truncate the URI', () => {
+    const uri = buildFileResourceUri('/allowed/notes#draft.md');
+    const parsed = new URL(uri);
+    assert.equal(parsed.hash, '', 'a # in the filename must not become a fragment');
+    assert.equal(decodeURIComponent(parsed.pathname.slice(1)), '/allowed/notes#draft.md');
+  });
+
+  it('round-trips a percent sign', () => {
+    const uri = buildFileResourceUri('/allowed/100%.txt');
+    const parsed = new URL(uri);
+    assert.equal(decodeURIComponent(parsed.pathname.slice(1)), '/allowed/100%.txt');
+  });
+
+  it('keeps separators readable and survives a Windows drive letter', () => {
+    const uri = buildFileResourceUri('c:\\proj\\src\\a.ts');
+    assert.ok(uri.startsWith('filesystem-mcp://file/'));
+    const parsed = new URL(uri);
+    assert.equal(decodeURIComponent(parsed.pathname.slice(1)), 'c:/proj/src/a.ts');
+  });
+});
+
+async function createResourceEnv(): Promise<{
+  client: Client;
+  tmpDir: string;
+  cleanup: () => Promise<void>;
+}> {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'fsmcp-res-'));
+  const server = new McpServer(
+    { name: 'test-server', version: '0.0.0' },
+    { capabilities: { resources: { subscribe: true } } },
+  );
+  const pathGuard = new PathGuard();
+  await pathGuard.setRoots([tmpDir]);
+  resourcesRegistrar.register({
+    server,
+    pathGuard,
+    resourceStore: createInMemoryResourceStore(),
+    isInitialized: () => true,
+  });
+
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await server.connect(st);
+  await client.connect(ct);
+
+  return {
+    client,
+    tmpDir,
+    cleanup: async () => {
+      try {
+        await client.close();
+      } catch {
+        /* transport may already be closed */
+      }
+      try {
+        await server.close();
+      } catch {
+        /* ignore */
+      }
+      resourcesRegistrar.dispose(server);
+      await rm(tmpDir, { recursive: true, force: true });
+    },
+  };
+}
+
+describe('resources/read accepts the URI that buildFileResourceUri mints', () => {
+  it('round-trips an ordinary path (drive colon encoded on Windows)', async () => {
+    const env = await createResourceEnv();
+    try {
+      const file = join(env.tmpDir, 'plain.txt');
+      await writeFile(file, 'payload');
+
+      const result = await env.client.readResource({ uri: buildFileResourceUri(file) });
+      assert.equal(result.contents[0]?.text, 'payload');
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('round-trips a filename containing # and %', async (t) => {
+    const env = await createResourceEnv();
+    try {
+      const file = join(env.tmpDir, 'notes#100%.txt');
+      try {
+        await writeFile(file, 'tricky');
+      } catch {
+        t.skip('filesystem rejects # or % in a filename');
+        return;
+      }
+
+      const result = await env.client.readResource({ uri: buildFileResourceUri(file) });
+      assert.equal(result.contents[0]?.text, 'tricky');
+    } finally {
+      await env.cleanup();
+    }
   });
 });

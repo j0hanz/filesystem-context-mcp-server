@@ -5,7 +5,7 @@ import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,6 +14,28 @@ import { createInMemoryResourceStore, type ResourceStore } from '../src/core/sto
 import type { DefinedTool } from '../src/tools/define.js';
 import { ALL_TOOLS } from '../src/tools/index.js';
 import { type PendingState, requestStateCodec } from '../src/tools/input-required.js';
+
+const IS_WINDOWS = process.platform === 'win32';
+
+/** Create a symlink, returning false when the platform denies it. */
+export async function trySymlink(
+  target: string,
+  link: string,
+  type?: 'dir' | 'file',
+): Promise<boolean> {
+  try {
+    await symlink(target, link, IS_WINDOWS ? (type === 'dir' ? 'junction' : 'file') : undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface PerPathResult {
+  path: string;
+  value?: Record<string, unknown>;
+  error?: { code: string; message: string };
+}
 
 /**
  * The mutating and read-only subsets as a human declares them, independent of

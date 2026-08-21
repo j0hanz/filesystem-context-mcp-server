@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { after, before, describe, it, test } from 'node:test';
 
-import { buildHiddenPatterns, globEntries } from '../../src/core/glob.js';
+import {
+  buildHiddenPatterns,
+  globEntries,
+  isIgnoredByGitignore,
+  loadRootGitignore,
+} from '../../src/core/glob.js';
 
 test('buildHiddenPatterns is bounded regardless of maxDepth (no per-depth unroll)', () => {
   // The search default is maxDepth 100; previously this yielded ~200 patterns.
@@ -100,4 +106,71 @@ test('globEntries with a trailing bare ** and includeHidden finds dotfiles', asy
     found.some((p) => p.endsWith('.deep/g.txt')),
     `missing depth-2 dotdir file; found ${JSON.stringify(found)}`,
   );
+});
+
+describe('GitignoreManager (nested gitignore support test setup)', () => {
+  let tempDir: string;
+
+  before(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), `fsmcp-sfh-test-${randomUUID().slice(0, 8)}-`));
+
+    // Create a directory structure with nested .gitignore files
+    await writeFile(
+      join(tempDir, '.gitignore'),
+      `
+*.log
+!important.log
+/sub_ignored/
+`,
+    );
+
+    await mkdir(join(tempDir, 'sub_ignored'));
+    await writeFile(join(tempDir, 'sub_ignored', 'nested.txt'), 'content');
+
+    await mkdir(join(tempDir, 'sub'));
+    await writeFile(
+      join(tempDir, 'sub', '.gitignore'),
+      `
+*.txt
+!special.txt
+`,
+    );
+    await writeFile(join(tempDir, 'sub', 'nested.txt'), 'content');
+    await writeFile(join(tempDir, 'sub', 'special.txt'), 'content');
+  });
+
+  after(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+  describe('GitignoreManager (nested gitignore support)', () => {
+    it('properly loads nested gitignores and evaluates them correctly', async () => {
+      const manager = await loadRootGitignore(tempDir);
+      assert.notEqual(manager, null);
+      if (!manager) return;
+
+      // 1. Root level ignores
+      assert.equal(isIgnoredByGitignore(manager, tempDir, join(tempDir, 'test.log')), true);
+      assert.equal(isIgnoredByGitignore(manager, tempDir, join(tempDir, 'important.log')), false);
+
+      // 2. Directory exclusion (sub_ignored/ is ignored, everything inside it should be ignored)
+      assert.equal(
+        isIgnoredByGitignore(manager, tempDir, join(tempDir, 'sub_ignored', 'nested.txt')),
+        true,
+      );
+
+      // 3. Nested gitignores (sub/ ignores *.txt but unignores special.txt)
+      assert.equal(
+        isIgnoredByGitignore(manager, tempDir, join(tempDir, 'sub', 'nested.txt'), {
+          isDirectory: false,
+        }),
+        true,
+      );
+      assert.equal(
+        isIgnoredByGitignore(manager, tempDir, join(tempDir, 'sub', 'special.txt'), {
+          isDirectory: false,
+        }),
+        false,
+      );
+    });
+  });
 });
