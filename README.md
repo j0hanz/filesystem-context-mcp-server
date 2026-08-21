@@ -376,6 +376,7 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `DENYLIST`                                | Comma-separated list of paths or patterns to block (mirrors `--deny`).                                            |
 | `MAX_FILE_SIZE`                           | Maximum file size for reads in bytes (mirrors `--max-file-size`).                                                 |
 | `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                                                   |
+| `LOG_FORMAT`                              | Log format: text or json (mirrors `--log-format`).                                                                |
 | `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                                                 |
 | `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                                          |
 | `FILESYSTEM_MCP_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                     |

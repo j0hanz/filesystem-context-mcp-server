@@ -228,6 +228,21 @@ describe('HTTP transport', () => {
     assert.equal(initializedResponse.status, 202);
   });
 
+  it('returns health status on GET /healthz without authentication', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
+    process.env['API_KEY'] = '1234567890abcdef123456';
+    const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });
+    servers.push(server);
+
+    const port = getServerPort(server);
+    const response = await fetch(`http://127.0.0.1:${String(port)}/healthz`);
+    assert.equal(response.status, 200);
+    const data = (await response.json()) as { status: string; uptime: number; sessions: number };
+    assert.equal(data.status, 'ok');
+    assert.equal(typeof data.uptime, 'number');
+    assert.equal(data.sessions, 0);
+  });
+
   it('accepts the current protocol version (2025-11-25)', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'fsmcp-http-'));
     const server = await startHttpServer(0, { cliAllowedDirs: [tempDir] });

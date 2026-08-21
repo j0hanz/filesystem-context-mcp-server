@@ -223,8 +223,14 @@ export class McpRootsSynchronizer {
       // operator must be told about. listRoots() throws outright on the
       // 2026-07-28 protocol era, where the push-style request model is gone.
       const detail = formatUnknownErrorMessage(error);
+      const lower = detail.toLowerCase();
+      const isExpectedNonFatal =
+        lower.includes('timeout') ||
+        lower.includes('method not found') ||
+        lower.includes('unsupported') ||
+        detail.includes('-32601');
       Logger.emit(
-        detail.includes('timeout') ? 'debug' : 'warning',
+        isExpectedNonFatal ? 'debug' : 'warning',
         `MCP Roots unavailable (${detail}). No roots discovered from the client — pass allowed directories as CLI arguments or set FS_ALLOWED_DIRS.`,
       );
       // A client whose listRoots() failed told us nothing; clear the last-known

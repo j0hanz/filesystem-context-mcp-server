@@ -369,7 +369,14 @@ class HttpSessionRegistry {
     }
   }
 
+  private isClosing = false;
+
+  isShuttingDown(): boolean {
+    return this.isClosing;
+  }
+
   async closeAll(): Promise<void> {
+    this.isClosing = true;
     if (this.sweepTimer) {
       clearInterval(this.sweepTimer);
       this.sweepTimer = undefined;
@@ -738,6 +745,22 @@ function setupExpressApp(
     };
     app.get('/.well-known/oauth-protected-resource/mcp', metadataHandler);
   }
+
+  app.get('/healthz', (_req: Request, res: Response) => {
+    if (registry.isShuttingDown()) {
+      res.status(503).json({
+        status: 'shutting_down',
+        uptime: process.uptime(),
+        sessions: registry.size(),
+      });
+      return;
+    }
+    res.status(200).json({
+      status: 'ok',
+      uptime: process.uptime(),
+      sessions: registry.size(),
+    });
+  });
 
   app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0));
 

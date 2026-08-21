@@ -24,6 +24,7 @@ export const FLAG_ENV_SPECS = {
   'http-host': { env: 'HTTP_HOST', lift: 'string' },
   'api-key': { env: 'API_KEY', lift: 'string' },
   'log-level': { env: 'LOG_LEVEL', lift: 'string' },
+  'log-format': { env: 'LOG_FORMAT', lift: 'string' },
   'max-file-size': { env: 'MAX_FILE_SIZE', lift: 'string' },
   'root-boundary': { env: 'ROOT_BOUNDARY', lift: 'string' },
   'allow-sensitive': { env: 'ALLOW_SENSITIVE', lift: 'boolean' },
