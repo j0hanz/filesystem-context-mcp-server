@@ -285,6 +285,116 @@ describe('move input_required round-trip', () => {
     }
   });
 
+  it('rejects a second source targeting a destination already claimed in the same batch', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-move-dupdest-'));
+    try {
+      const sourceA = join(tmp, 'source-a.txt');
+      const sourceB = join(tmp, 'source-b.txt');
+      const dest = join(tmp, 'dest.txt');
+      await writeFile(sourceA, 'content-a', 'utf8');
+      await writeFile(sourceB, 'content-b', 'utf8');
+      await writeFile(dest, 'original', 'utf8');
+
+      const handler = await registerAgainstStub(MOVE, tmp);
+      const moves = [
+        { source: sourceA, destination: dest },
+        { source: sourceB, destination: dest },
+      ];
+      const r1 = await handler({ moves }, retryCtx());
+      assert.ok(
+        isInputRequiredResult(r1),
+        'the first plan for the shared dest still needs overwrite confirmation',
+      );
+      const state = await retryState(r1);
+      assert.equal(state.paths.length, 1, 'only the first plan reaches the pending overwrite set');
+
+      const r2 = await handler({ moves }, retryCtx({ responses: accept(), state }));
+      assert.notEqual((r2 as { isError?: boolean }).isError, true);
+      const sc = structuredOf(r2);
+
+      assert.equal(sc.moves?.length, 1, 'exactly one of the two moves succeeds');
+      assert.equal(sc.moves?.[0]?.from?.toLowerCase(), sourceA.toLowerCase());
+
+      assert.equal(
+        sc.failures?.length,
+        1,
+        'the duplicate-destination move is reported as a failure',
+      );
+      assert.equal(sc.failures?.[0]?.source, sourceB);
+      assert.equal(sc.failures?.[0]?.error?.code, 'INVALID_INPUT');
+
+      // The destination was NOT overwritten a second time by the rejected duplicate.
+      assert.equal(await readFile(dest, 'utf8'), 'content-a');
+      assert.equal(existsSync(sourceA), false, 'the winning source is gone after the move');
+      assert.ok(existsSync(sourceB), 'the rejected duplicate source is left in place');
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('a chained grant + overwrite confirmation completes across three rounds', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fsmcp-move-chain-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'fsmcp-move-chain-out-'));
+    try {
+      const source = join(root, 'src.txt');
+      const dest = join(outside, 'dest.txt'); // out-of-root AND already exists
+      await writeFile(source, 'new content', 'utf8');
+      await writeFile(dest, 'original', 'utf8');
+
+      const handler = await registerAgainstStub(MOVE, root);
+
+      // Round 1: precheckGrant runs before move's own logic — the grant round
+      // fires first (the destination's parent, `outside`, is the grant target).
+      const r1 = await handler({ moves: [{ source, destination: dest }] }, retryCtx());
+      assert.ok(isInputRequiredResult(r1), 'round 1 returns input_required for the access grant');
+      const state1 = await retryState(r1);
+      assert.equal(state1.op, 'grant');
+      assert.equal(
+        await readFile(dest, 'utf8'),
+        'original',
+        'nothing moved while the grant is pending',
+      );
+
+      // Round 2: the grant is applied; move's own overwrite-confirmation round
+      // must now present its OWN input_required, not throw INVALID_INPUT for
+      // the (already-resolved) grant state.
+      const r2 = await handler(
+        { moves: [{ source, destination: dest }] },
+        retryCtx({ responses: accept(), state: state1 }),
+      );
+      assert.equal(
+        isInputRequiredResult(r2),
+        true,
+        'round 2 must present the overwrite confirmation, not error',
+      );
+      assert.notEqual((r2 as { isError?: boolean }).isError, true);
+      const state2 = await retryState(r2);
+      assert.equal(state2.op, 'move');
+      assert.equal(
+        await readFile(dest, 'utf8'),
+        'original',
+        'nothing moved while the overwrite confirmation is pending',
+      );
+
+      // Round 3: accept the overwrite — the grant from round 1 is still in
+      // effect, and the move completes.
+      const r3 = await handler(
+        { moves: [{ source, destination: dest }] },
+        retryCtx({ responses: accept(), state: state2 }),
+      );
+      assert.notEqual((r3 as { isError?: boolean }).isError, true);
+      assert.equal(
+        await readFile(dest, 'utf8'),
+        'new content',
+        'the out-of-root dest is overwritten after both confirmations',
+      );
+      assert.equal(existsSync(source), false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   it('R13: a move to a fresh destination completes in one round', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-move-fresh-'));
     try {

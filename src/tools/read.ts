@@ -1,6 +1,7 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { createHash } from 'node:crypto';
+import type { Stats } from 'node:fs';
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
@@ -11,6 +12,7 @@ import { buildFileResourceUri } from '../core/file-uri.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
+import { readFileWithStats } from '../core/read.js';
 import {
   ContinuationSchema,
   createReadRangeFields,
@@ -213,6 +215,8 @@ type PerPathReadValue = z.infer<typeof ReadPerPathValueSchema>;
 interface BatchFileInfo {
   index: number;
   size: number;
+  validPath: string;
+  stats: Stats;
 }
 
 async function collectFileBudget(
@@ -220,14 +224,22 @@ async function collectFileBudget(
   maxTotalSize: number,
   maxSize: number,
   ctx: Pick<ToolCtx, 'fs' | 'signal'>,
-): Promise<{ skippedBudget: Set<number> }> {
+): Promise<{
+  skippedBudget: Set<number>;
+  known: Map<string, { validPath: string; stats: Stats }>;
+}> {
   const indexed = filePaths.map((path, index) => ({ path, index }));
   const { results } = await processInParallel(
     indexed,
     async ({ path, index }): Promise<BatchFileInfo | undefined> => {
       try {
         const out = await ctx.fs.stat(path);
-        return { index, size: Math.min(out.stats.size, maxSize) };
+        return {
+          index,
+          size: Math.min(out.stats.size, maxSize),
+          validPath: out.validPath,
+          stats: out.stats,
+        };
       } catch (err: unknown) {
         Logger.debug(`collectFileBudget: stat failed for "${path}": ${String(err)}`);
         return undefined;
@@ -238,9 +250,17 @@ async function collectFileBudget(
   );
 
   const byIndex = new Map<number, number>();
+  const known = new Map<string, { validPath: string; stats: Stats }>();
   for (const { value: item } of results) {
     if (!item) continue;
     byIndex.set(item.index, item.size);
+    // Keyed by the ORIGINAL requested path string (not validPath) — that's
+    // what readOnePath is called with downstream, and what filePaths[i]
+    // holds.
+    const requestedPath = filePaths[item.index];
+    if (requestedPath !== undefined) {
+      known.set(requestedPath, { validPath: item.validPath, stats: item.stats });
+    }
   }
 
   let total = 0;
@@ -262,7 +282,7 @@ async function collectFileBudget(
     total += size;
   }
 
-  return { skippedBudget };
+  return { skippedBudget, known };
 }
 
 function preFilterByBudget(
@@ -345,9 +365,12 @@ async function readOnePath(
   filePath: string,
   args: ReadFileInput,
   ctx: ToolCtx,
+  known?: { validPath: string; stats: Stats },
 ): Promise<PerPathReadValue> {
   const spec = buildReadSpec(args, ctx.signal);
-  const result = await ctx.fs.readFile(filePath, spec);
+  const result = known
+    ? await readFileWithStats(filePath, known.validPath, known.stats, spec)
+    : await ctx.fs.readFile(filePath, spec);
 
   const mimeInfo = detectMimeFromContent(result.path, result.content);
 
@@ -407,6 +430,7 @@ export const READ_FILE = defineTool({
     let pathList: string[];
     let skippedResults = new Map<number, PerPathResult<PerPathReadValue>>();
     let survivors: string[];
+    let known = new Map<string, { validPath: string; stats: Stats }>();
 
     if (args.paths !== undefined) {
       pathList = args.paths;
@@ -416,6 +440,7 @@ export const READ_FILE = defineTool({
         MAX_TEXT_FILE_SIZE,
         ctx,
       );
+      known = budget.known;
       const filtered = preFilterByBudget(pathList, {
         skippedBudget: budget.skippedBudget,
         maxTotalSize: DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
@@ -442,7 +467,7 @@ export const READ_FILE = defineTool({
         : await runOverPaths<undefined, PerPathReadValue>(
             batchInput,
             ctx,
-            ({ path }) => readOnePath(path, args, ctx),
+            ({ path }) => readOnePath(path, args, ctx, known.get(path)),
             { defaultErrorCode: ErrorCode.NOT_FILE },
           );
 

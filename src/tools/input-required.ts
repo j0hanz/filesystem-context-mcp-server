@@ -112,12 +112,14 @@ export async function buildInputRequired(
 
 /**
  * The shared read-state → `buildInputRequired` → mismatch-throw flow used by
- * every destructive-confirmation handler (delete, move, grant). Round 1 (no
- * verified `requestState`) returns the `input_required` result carrying one
- * boolean confirmation per pending item; a retry whose verified state does
- * not bind this operation and pending set throws `FsError(INVALID_INPUT)`
- * (R9) — uniformly surfaced as an `isError` tool result by the handler's
- * catch. Returns `undefined` on a matching retry so the caller proceeds.
+ * every destructive-confirmation handler (delete, move, grant). No verified
+ * state, OR a verified state belonging to a different `op` (e.g. a chained
+ * call's grant round already resolved and this is now that same call's own
+ * delete/move confirmation round), mints a fresh `input_required` for this
+ * op. A retry whose verified state matches this op but not the pending path
+ * set throws `FsError(INVALID_INPUT)` (R9) — uniformly surfaced as an
+ * `isError` tool result by the handler's catch. Returns `undefined` on a
+ * matching same-op retry so the caller proceeds.
  *
  * One home for the R9 binding check means a future fix cannot miss two of three
  * sites. The caller supplies `buildInputs` so only the prompt text varies.
@@ -132,12 +134,19 @@ export interface PendingRoundTripOpts {
 export async function pendingRoundTrip(
   opts: PendingRoundTripOpts,
 ): Promise<InputRequiredResult | undefined> {
-  const state = opts.requestState ? opts.requestState() : undefined;
-  if (!state) {
+  const state = opts.requestState?.();
+  // No verified state yet, OR the verified state belongs to a different
+  // flow (e.g. an access-grant round's state is still the retried request's
+  // requestState after the grant was applied, and this call is now the
+  // destructive-confirmation round for the SAME tool call) — either way,
+  // this op has not yet had its own round-trip, so mint a fresh
+  // input_required rather than treating a foreign-but-valid state as a
+  // tamper/mismatch error.
+  if (state?.op !== opts.op) {
     return buildInputRequired({ op: opts.op, paths: opts.pending }, opts.buildInputs(opts.pending));
   }
-  // Retry (R9): the verified state must bind this operation and pending set.
-  if (state.op !== opts.op || !pathsEqual(state.paths, opts.pending)) {
+  // Retry for THIS op (R9): the verified state must bind the same pending set.
+  if (!pathsEqual(state.paths, opts.pending)) {
     throw new FsError(
       ErrorCode.INVALID_INPUT,
       `${opts.op}: confirmation does not match the requested paths`,

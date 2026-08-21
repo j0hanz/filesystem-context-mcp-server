@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Introduced `PathFormatter` boundary to decouple tools from `node:path`.
-- Created unified Search Coordinator.
-- Added `src/client-config.ts` for moved installer code.
-- Added `docs/mcp-decisions.md` recording protocol, transport, and security decisions.
-
 ### Fixed
 
 - **`--api-key` and `--http-host` had no effect.** Both were parsed and

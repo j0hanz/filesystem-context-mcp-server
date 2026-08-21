@@ -5,7 +5,7 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { withAbort } from '../core/concurrency.js';
-import { ErrorCode, Problem, rethrowIfAborted } from '../core/errors.js';
+import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
 import { formatBytes } from '../core/fmt.js';
 import { detectMimeFromContent } from '../core/mime.js';
@@ -19,6 +19,7 @@ import {
 } from '../core/schema.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
+import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -100,30 +101,29 @@ export const CREATE = defineTool({
   },
   accessPaths: (args) => args.files.map((f) => f.path),
   run: async (args, ctx) => {
-    const results: CreateFileResult[] = [];
-    const links: ContentBlock[] = [];
-    const failures: CreateFailureItem[] = [];
+    const batch = await runOverPaths<
+      { content: string },
+      { value: CreateFileResult; resourceLink?: ContentBlock }
+    >(
+      { files: args.files },
+      ctx,
+      async ({ path, override }) => {
+        const content = override?.content ?? '';
 
-    for (const file of args.files) {
-      try {
-        await withAbort(ctx.fs.mkdir(dirname(file.path), { recursive: true }), ctx.signal);
+        await withAbort(ctx.fs.mkdir(dirname(path), { recursive: true }), ctx.signal);
 
-        const { validPath } = await ctx.fs.writeFile(file.path, file.content, {
+        const { validPath } = await ctx.fs.writeFile(path, content, {
           encoding: 'utf-8',
           signal: ctx.signal,
         });
 
-        const { stats: fileStats } = await ctx.fs.stat(file.path, { signal: ctx.signal });
-        const bytesWritten = Buffer.byteLength(file.content, 'utf-8');
-        const lineCount = countLines(file.content);
-        const mimeInfo = detectMimeFromContent(validPath, file.content);
+        const { stats: fileStats } = await ctx.fs.stat(path, { signal: ctx.signal });
+        const bytesWritten = Buffer.byteLength(content, 'utf-8');
+        const lineCount = countLines(content);
+        const mimeInfo = detectMimeFromContent(validPath, content);
 
         const resourceUri = buildFileResourceUri(validPath);
-        if (ctx.resourceStore) {
-          links.push(buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten));
-        }
-
-        results.push({
+        const value: CreateFileResult = {
           ok: true as const,
           path: validPath,
           size: bytesWritten,
@@ -133,14 +133,28 @@ export const CREATE = defineTool({
           resourceUri,
           created: fileStats.birthtime.toISOString(),
           modified: fileStats.mtime.toISOString(),
-        });
-      } catch (err) {
-        rethrowIfAborted(err); // propagate cancellation
-        failures.push({
-          path: file.path,
-          error: Problem.fromUnknown(err, ErrorCode.UNKNOWN, file.path),
-        });
+        };
+
+        return ctx.resourceStore
+          ? {
+              value,
+              resourceLink: buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten),
+            }
+          : { value };
+      },
+      { defaultErrorCode: ErrorCode.UNKNOWN },
+    );
+
+    const results: CreateFileResult[] = [];
+    const failures: CreateFailureItem[] = [];
+    const links: ContentBlock[] = [];
+    for (const r of batch.results) {
+      if ('error' in r) {
+        failures.push({ path: r.path, error: r.error });
+        continue;
       }
+      results.push(r.value.value);
+      if (r.value.resourceLink) links.push(r.value.resourceLink);
     }
 
     const structured = {

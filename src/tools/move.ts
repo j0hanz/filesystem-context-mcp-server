@@ -232,13 +232,38 @@ async function handleMove(
   args: z.infer<typeof MoveInputSchema>,
   ctx: ToolCtx,
 ): Promise<z.infer<typeof MoveOutputSchema> | InputRequiredResult> {
-  const plans: MovePlan[] = [];
+  const allPlans: MovePlan[] = [];
   const earlyFailures: MoveFailureItem[] = [];
   for (const move of args.moves) {
     const r = await planMove(move, ctx.fs);
     if (r.status === 'fail') earlyFailures.push(r.failure);
-    else if (r.status === 'plan') plans.push(r.plan);
+    else if (r.status === 'plan') allPlans.push(r.plan);
     // 'noop' (self-move) is silently skipped, as before.
+  }
+
+  // Two sources targeting the same destination in one batch would otherwise
+  // collapse to a single shared overwrite confirmation and let the second
+  // move silently clobber the first's freshly-written content. Fail closed:
+  // only the first plan per destination proceeds; later ones targeting the
+  // same destination are reported as a per-move failure.
+  const seenDest = new Set<string>();
+  const plans: MovePlan[] = [];
+  for (const plan of allPlans) {
+    if (seenDest.has(plan.validDest)) {
+      earlyFailures.push(
+        moveFailure(
+          plan.move,
+          new FsError(
+            ErrorCode.INVALID_INPUT,
+            `Move cancelled: another entry in this batch already targets destination "${plan.move.destination}"`,
+            plan.move.destination,
+          ),
+        ),
+      );
+      continue;
+    }
+    seenDest.add(plan.validDest);
+    plans.push(plan);
   }
 
   const pendingSorted = [...new Set(plans.filter((p) => p.pending).map((p) => p.validDest))].sort();

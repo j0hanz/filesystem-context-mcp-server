@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -127,9 +128,12 @@ describe('read tool', () => {
   it('returns ACCESS_DENIED outside allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'read',
-      arguments: { path: '/etc/hostname' },
+      // os.tmpdir() is a real, existing directory outside env.tmpDir — a
+      // genuine non-root grant target, so this still exercises the
+      // legacy-era fail-close path (unlike a path whose full ancestor chain
+      // is missing, which now correctly fails ACCESS_DENIED instead).
+      arguments: { path: join(tmpdir(), 'fsmcp-security-outside.txt') },
     });
-    // Out-of-root fail-closes on the legacy-era wire harness — R6.
     assertInputRequiredFailClose(raw);
   });
 
@@ -377,6 +381,48 @@ describe('create tool', () => {
       arguments: {},
     });
     assert.ok(raw.isError, 'create without files must return an error');
+  });
+
+  it('a failure in the middle of a batch does not block the other files (parallel write)', async () => {
+    const good1 = join(env.tmpDir, 'batch-good-1.txt');
+    const good2 = join(env.tmpDir, 'batch-good-2.txt');
+    const good3 = join(env.tmpDir, 'batch-good-3.txt');
+    const good4 = join(env.tmpDir, 'batch-good-4.txt');
+    // A regular file used as a path segment makes mkdir(recursive) fail with
+    // ENOTDIR for any path underneath it — a guaranteed, non-grant-flow failure.
+    const blocker = join(env.tmpDir, 'batch-blocker.txt');
+    await writeFile(blocker, 'not a directory', 'utf8');
+    const bad = join(blocker, 'sub', 'file.txt');
+
+    const raw = await env.client.callTool({
+      name: 'create',
+      arguments: {
+        files: [
+          { path: good1, content: 'one' },
+          { path: good2, content: 'two' },
+          { path: bad, content: 'nope' },
+          { path: good3, content: 'three' },
+          { path: good4, content: 'four' },
+        ],
+      },
+    });
+    assertOk(raw);
+    const sc = getStructured(raw);
+    const files = sc['files'] as Record<string, unknown>[];
+    const failures = sc['failures'] as Record<string, unknown>[];
+
+    assert.equal(
+      files.length,
+      4,
+      'the four valid files all succeed despite the failure between them',
+    );
+    assert.equal(failures.length, 1, 'exactly one failure, for the invalid path');
+    assert.equal(failures[0]?.['path'], bad);
+
+    assert.equal(await readFile(good1, 'utf8'), 'one');
+    assert.equal(await readFile(good2, 'utf8'), 'two');
+    assert.equal(await readFile(good3, 'utf8'), 'three');
+    assert.equal(await readFile(good4, 'utf8'), 'four');
   });
 });
 

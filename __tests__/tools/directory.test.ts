@@ -204,9 +204,12 @@ describe('list tool', () => {
   it('returns ACCESS_DENIED for paths outside allowed roots', async () => {
     const raw = await env.client.callTool({
       name: 'list',
-      arguments: { path: '/etc' },
+      // os.tmpdir() is a real, existing directory outside env.tmpDir — a
+      // genuine non-root grant target, so this still exercises the
+      // legacy-era fail-close path (unlike a path whose full ancestor chain
+      // is missing, which now correctly fails ACCESS_DENIED instead).
+      arguments: { path: tmpdir() },
     });
-    // Out-of-root on the legacy-era wire harness fail-closes (R6).
     assertInputRequiredFailClose(raw);
   });
 

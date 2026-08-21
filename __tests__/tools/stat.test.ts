@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -111,9 +112,12 @@ describe('stat tool', () => {
   it('returns ACCESS_DENIED when path escapes allowed root', async () => {
     const raw = await env.client.callTool({
       name: 'stat',
-      arguments: { path: '/etc/passwd' },
+      // os.tmpdir() is a real, existing directory outside the allowed root — a
+      // genuine non-root grant target, so this still exercises the legacy-era
+      // fail-close path (unlike a path whose full ancestor chain is missing,
+      // which now correctly fails ACCESS_DENIED instead).
+      arguments: { path: join(tmpdir(), 'fsmcp-security-outside.txt') },
     });
-    // Out-of-root fail-closes on the legacy-era wire harness — R6.
     assertInputRequiredFailClose(raw);
   });
 

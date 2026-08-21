@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { lstat, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -31,10 +32,19 @@ describe('security: path boundary enforcement', () => {
     tool: string;
     args: (tmpDir: string) => Record<string, unknown>;
   }[] = [
-    { tool: 'read', args: () => ({ path: '/etc/passwd' }) },
+    // Out-of-root paths here must resolve to an ANCESTOR THAT EXISTS (os.tmpdir()
+    // itself, which is a real, existing directory outside env.tmpDir) so the
+    // grant-target walk finds a genuine non-root directory and still exercises
+    // the legacy-era fail-close path. A path whose entire ancestor chain is
+    // missing (e.g. `/etc/*` on a Windows box with no `C:\etc`) walks all the
+    // way to the bare filesystem root, which the fix in path.ts's
+    // precheckAccess now correctly refuses to offer as a grant target — that
+    // case fails closed with a normal ACCESS_DENIED instead, covered separately
+    // (see access-grant.test.ts's bare-filesystem-root test).
+    { tool: 'read', args: () => ({ path: join(tmpdir(), 'fsmcp-security-outside.txt') }) },
     { tool: 'create', args: () => ({ files: [{ path: '/tmp/escape.txt', content: 'x' }] }) },
-    { tool: 'stat', args: () => ({ path: '/etc/hostname' }) },
-    { tool: 'list', args: () => ({ path: '/etc' }) },
+    { tool: 'stat', args: () => ({ path: join(tmpdir(), 'fsmcp-security-outside.txt') }) },
+    { tool: 'list', args: () => ({ path: tmpdir() }) },
     { tool: 'delete', args: (d) => ({ paths: [join(d, '../escape.txt')] }) },
     {
       tool: 'create',
@@ -49,7 +59,7 @@ describe('security: path boundary enforcement', () => {
         replacement: 'y',
       }),
     },
-    { tool: 'hash_file', args: () => ({ path: '/etc/passwd' }) },
+    { tool: 'hash_file', args: () => ({ path: join(tmpdir(), 'fsmcp-security-outside.txt') }) },
   ];
 
   for (const { tool, args } of toolsAndArgs) {

@@ -12,7 +12,7 @@ import { isInputRequiredResult } from '@modelcontextprotocol/server';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { READ_FILE } from '../../src/tools/read.js';
@@ -122,6 +122,32 @@ describe('access-grant input_required round-trip', () => {
       await rm(root, { recursive: true, force: true });
       await rm(outsideX, { recursive: true, force: true });
       await rm(outsideY, { recursive: true, force: true });
+    }
+  });
+
+  it('a bare filesystem root is never offered as a grant target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fsmcp-grant-root-'));
+    try {
+      // Every intermediate directory of this path is missing, so
+      // resolveGrantTargetDir walks all the way up to the OS's own
+      // filesystem root — which must never be offered as a one-click grant.
+      const fsRoot = parse(root).root;
+      const missing = join(fsRoot, `fsmcp-nonexistent-${String(Date.now())}`, 'file.txt');
+
+      const handler = await registerAgainstStub(READ_FILE, root);
+      const r1 = await handler({ path: missing }, retryCtx());
+      if (isInputRequiredResult(r1)) {
+        const state = await retryState(r1);
+        assert.notEqual(
+          state.paths[0]?.toLowerCase(),
+          fsRoot.toLowerCase(),
+          'the bare filesystem root must not be offered as a grant target',
+        );
+      }
+      // Otherwise the call failed closed (ACCESS_DENIED/not-found) with no
+      // prompt at all, which also satisfies "root never offered".
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

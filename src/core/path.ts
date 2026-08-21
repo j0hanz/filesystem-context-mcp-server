@@ -565,6 +565,11 @@ export class PathGuard {
     return details.resolvedPath as ValidatedPath;
   }
 
+  /** True when a normalized path equals its own filesystem root (`C:\`, `/`). */
+  private isFilesystemRoot(normalizedPath: string): boolean {
+    return isSamePath(normalizedPath, parse(normalizedPath).root);
+  }
+
   /** Walk up from a blocked path to the closest existing ancestor directory. */
   private async resolveGrantTargetDir(blockedPath: string): Promise<string> {
     let targetDir = blockedPath;
@@ -602,6 +607,11 @@ export class PathGuard {
       const normalized = normalizePath(requested);
       if (isPathWithinDirectories(normalized, allowedDirs)) continue;
       const targetDir = normalizePath(await this.resolveGrantTargetDir(normalized));
+      // A grant target that IS a bare filesystem root means every intermediate
+      // directory in the requested path was missing — never offer the whole
+      // drive/filesystem as a one-click grant target (mirrors the
+      // --allow-cwd root check in isUnsafeCwdPath).
+      if (this.isFilesystemRoot(targetDir)) continue;
       if (grantDirs.includes(targetDir)) continue;
       if (!(await this.isWithinBoundary(targetDir))) continue;
       grantDirs.push(targetDir);
