@@ -3,11 +3,12 @@
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
+  assertInputRequiredFailClose,
   assertOk,
   assertToolError,
   createTestEnv,
@@ -128,11 +129,8 @@ describe('read tool', () => {
       name: 'read',
       arguments: { path: '/etc/hostname' },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    const results = sc['results'] as Record<string, unknown>[];
-    const error = results[0]?.['error'] as Record<string, unknown>;
-    assert.equal(error?.['code'], 'ACCESS_DENIED');
+    // Out-of-root fail-closes on the legacy-era wire harness — R6.
+    assertInputRequiredFailClose(raw);
   });
 
   it('returns the resolved absolute path, not the input path', async () => {
@@ -367,11 +365,9 @@ describe('create tool', () => {
       name: 'create',
       arguments: { files: [{ path: '/tmp/escape.txt', content: 'bad' }] },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
-    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
-    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'ACCESS_DENIED');
+    // Out-of-root fail-closes on the legacy-era wire harness — R6, nothing created.
+    assertInputRequiredFailClose(raw);
+    await assert.rejects(() => stat('/tmp/escape.txt'), /ENOENT/);
   });
 
   it('returns an error when files is omitted', async () => {
@@ -410,26 +406,12 @@ describe('create: partial failure support', () => {
       },
     });
 
-    // Tool must succeed at the top level
-    assertOk(result);
-    const sc = getStructured(result);
-
-    // Both valid files must exist
-    const actual1 = await readFile(good1, 'utf8');
-    const actual2 = await readFile(good2, 'utf8');
-    assert.equal(actual1, 'hello');
-    assert.equal(actual2, 'world');
-
-    // files[] must have 2 successes
-    const files = sc['files'] as Record<string, unknown>[];
-    assert.equal(files.length, 2, 'Expected 2 successful files');
-    assert.ok(sc['ok'] === true, 'Expected ok: true at top level');
-
-    // failures[] must have 1 entry for the bad path
-    const failures = sc['failures'] as Record<string, unknown>[] | undefined;
-    assert.ok(Array.isArray(failures) && failures.length === 1, 'Expected 1 failure');
-    assert.ok((failures[0]['path'] as string).includes('escape-bad.txt'));
-    assert.equal((failures[0]['error'] as Record<string, unknown>)['code'], 'ACCESS_DENIED');
+    // A mixed in/out-of-root batch prompts input_required (the out-of-root entry
+    // is grantable), so over the legacy-era wire harness it fail-closes — R14
+    // atomic: round 1 creates neither good file.
+    assertInputRequiredFailClose(result);
+    await assert.rejects(() => stat(good1), /ENOENT/);
+    await assert.rejects(() => stat(good2), /ENOENT/);
   });
 });
 

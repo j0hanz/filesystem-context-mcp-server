@@ -414,6 +414,7 @@ export const SEARCH_CONTENT = defineTool({
   progressDone: (_args, result) => ({
     detail: buildSearchMatchDetail(result.totalMatches ?? 0, result.filesMatched ?? 0),
   }),
+  accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const { structured, link } = await handleSearchContent(
       args,

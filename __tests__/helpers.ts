@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import type { ElicitResult } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
+import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -8,12 +9,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PathGuard } from '../src/core/path.js';
+import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createInMemoryResourceStore, type ResourceStore } from '../src/core/store.js';
 import { CALCULATE_HASH } from '../src/tools/calculate-hash.js';
 import { CREATE } from '../src/tools/create.js';
+import type { DefinedTool } from '../src/tools/define.js';
 import { DELETE_FILE } from '../src/tools/delete-file.js';
 import { EDIT } from '../src/tools/edit.js';
+import { type PendingState, requestStateCodec } from '../src/tools/input-required.js';
 import { LIST } from '../src/tools/list.js';
 import { MOVE } from '../src/tools/move.js';
 import { READ_FILE } from '../src/tools/read.js';
@@ -208,6 +211,26 @@ export function assertToolError(result: unknown, expectedCode?: string): void {
 }
 
 /**
+ * Over the legacy-era wire harness (no elicitation capability), an out-of-root
+ * call returns input_required and the SDK legacy shim fail-closes: isError:true
+ * with the missing-capability message (R6 — nothing on disk is touched). Asserts
+ * that fail-close shape. Not a raw input_required — see the plan's era constraint.
+ */
+export function assertInputRequiredFailClose(result: unknown): void {
+  const raw = result as { isError?: boolean; content?: { text?: string }[] };
+  assert.equal(
+    raw.isError,
+    true,
+    'out-of-root call must fail-closed (isError) on the legacy-era harness',
+  );
+  const text = raw.content?.[0]?.text ?? '';
+  assert.ok(
+    text.includes('did not declare the required capability'),
+    `expected legacy-era fail-close message, got: ${text}`,
+  );
+}
+
+/**
  * Assert that a tool call succeeded.
  * Fails with the error text if the result has isError: true.
  */
@@ -283,4 +306,91 @@ export async function readResourceLink(
   }
 
   return null;
+}
+
+// ── direct-handler round-trip stub harness (SEP-2577 input_required) ─────────
+
+/** The codec is created without a `bind` callback, so `verify` ignores its ctx. */
+export const NO_CTX = undefined as unknown as ServerContext;
+
+export type CapturedHandler = (args: unknown, ctx: ServerContext) => Promise<unknown>;
+
+export interface RegisteredShape {
+  inputSchema: { '~standard': { validate: (value: unknown) => unknown } };
+}
+
+/**
+ * Register `tool` against a stub server with `root` as the only allowed
+ * directory, and return its call handler. Args are parsed through the tool's
+ * own input schema first — the SDK does that in production. The PathGuard is
+ * captured at registration and persists across calls, so an accepted grant
+ * (applyGrant) mutates the same instance the next call pre-checks against.
+ * `init` seeds the PathGuard's roots; defaults to `initialize` (skips
+ * ROOT_BOUNDARY resolution) — pass `(pg, root) => pg.setRoots([root])` when a
+ * test needs ROOT_BOUNDARY resolved into `rootBoundaries`.
+ */
+export async function registerAgainstStub(
+  tool: DefinedTool,
+  root: string,
+  init: (pathGuard: PathGuard, root: string) => Promise<void> = async (pathGuard, r) =>
+    pathGuard.initialize(await resolveAllowedDirectoriesState([r])),
+): Promise<CapturedHandler> {
+  let handler: CapturedHandler | undefined;
+  let registeredSchema: RegisteredShape | undefined;
+  const mockServer = {
+    registerTool: (_name: string, schema: unknown, h: unknown): void => {
+      registeredSchema = schema as RegisteredShape;
+      handler = h as CapturedHandler;
+    },
+  } as unknown as McpServer;
+
+  const pathGuard = new PathGuard();
+  await init(pathGuard, root);
+
+  tool.register({
+    server: mockServer,
+    pathGuard,
+    resourceStore: createInMemoryResourceStore(),
+    isInitialized: () => true,
+  });
+
+  const registered = handler;
+  const validate = registeredSchema?.inputSchema['~standard'].validate;
+  assert.ok(registered, `Expected ${tool.name} to register a handler`);
+  assert.ok(validate, `Expected ${tool.name} to register a validating input schema`);
+  return (args, ctx) => {
+    const parsed = validate(args) as { value?: unknown; issues?: readonly unknown[] };
+    assert.ok(!parsed.issues, `Expected ${tool.name} args to validate`);
+    return registered(parsed.value, ctx);
+  };
+}
+
+export interface RetryCtxOpts {
+  responses?: Record<string, unknown>;
+  state?: PendingState;
+}
+
+/** A ServerContext carrying the retry round's `inputResponses` and verified state. */
+export function retryCtx(opts: RetryCtxOpts = {}): ServerContext {
+  return {
+    mcpReq: {
+      signal: new AbortController().signal,
+      notify: async () => undefined,
+      log: async () => undefined,
+      inputResponses: opts.responses,
+      requestState: () => opts.state,
+    },
+  } as unknown as ServerContext;
+}
+
+/** Verify the round-1 `input_required` result's requestState into the retried state. */
+export async function retryState(round1: unknown): Promise<PendingState> {
+  const r = round1 as { requestState?: string };
+  assert.ok(typeof r.requestState === 'string', 'round 1 must mint a requestState');
+  return await requestStateCodec.verify(r.requestState, NO_CTX);
+}
+
+/** A single-item accepted response for `confirm_0`. */
+export function accept(confirm = true): Record<string, unknown> {
+  return { confirm_0: { action: 'accept', content: { confirm } } };
 }

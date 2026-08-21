@@ -98,6 +98,7 @@ export const CREATE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
+  accessPaths: (args) => args.files.map((f) => f.path),
   run: async (args, ctx) => {
     const results: CreateFileResult[] = [];
     const links: ContentBlock[] = [];

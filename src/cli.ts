@@ -243,6 +243,10 @@ export const ENV_HELP: HelpRow[] = [
   },
   { flags: 'DEFAULT_SEARCH_TIMEOUT', desc: 'Search timeout in ms (default 5000, 100–60000)' },
   { flags: 'NO_COLOR', desc: 'Any value disables ANSI color output' },
+  {
+    flags: 'FILESYSTEM_MCP_REQUEST_STATE_KEY',
+    desc: 'HMAC key sealing input_required requestState across retry rounds (UTF-8, >=32 bytes; random per boot if unset)',
+  },
 ];
 
 const EXAMPLES_HELP = [

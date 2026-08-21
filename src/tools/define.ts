@@ -1,22 +1,21 @@
 import type {
   CallToolResult,
   ContentBlock,
-  ElicitRequestFormParams,
-  ElicitResult,
+  InputRequiredResult,
   McpServer,
   Notification,
-  PrimitiveSchemaDefinition,
   RequestMeta,
+  RequestStateAccessor,
   ServerContext,
   StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { SdkErrorCode } from '@modelcontextprotocol/server';
+import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
-import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, Problem } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -24,6 +23,7 @@ import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 import {
   McpProgressSink,
   ProgressSession,
@@ -43,7 +43,20 @@ export interface ToolCtx {
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
   readonly sendNotification?: (notification: Notification) => Promise<void>;
   readonly onProgress?: (params: { current: number; total?: number }) => void;
-  readonly elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
+  /**
+   * Multi-round-trip `inputResponses` carried by a retried `tools/call`
+   * (protocol revision 2026-07-28); `undefined` on the first round. Bare,
+   * unvalidated client values — handlers read them through
+   * `readAcceptedConfirm`.
+   */
+  readonly inputResponses?: Record<string, unknown> | undefined;
+  /**
+   * Reads the verified multi-round-trip `requestState` for the current round:
+   * the decoded `PendingState` the `requestStateCodec` verified, or `undefined`
+   * when the round carried no state (the first round). `undefined` when no
+   * live request context is available.
+   */
+  readonly requestState?: RequestStateAccessor | undefined;
   readonly server?: McpServer;
 }
 
@@ -71,7 +84,19 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly progress?: (args: z.infer<I>) => ProgressCtx;
   readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
   readonly defaultErrorCode?: ErrorCode;
-  readonly run: (args: z.infer<I>, ctx: ToolCtx) => Promise<RunResult<z.infer<O>>>;
+  /**
+   * The filesystem paths this tool will operate on, extracted from its parsed
+   * args. The executor runs an access-grant pre-check over these BEFORE `run`
+   * (R7): any path outside the granted roots yields an `input_required`
+   * round-trip requesting a grant, and nothing is touched until the client
+   * retries with an accepted grant (R8). Omit for tools that do not operate on
+   * caller-supplied filesystem paths.
+   */
+  readonly accessPaths?: (args: z.infer<I>) => readonly string[];
+  readonly run: (
+    args: z.infer<I>,
+    ctx: ToolCtx,
+  ) => Promise<RunResult<z.infer<O>> | InputRequiredResult>;
 }
 
 export interface DefinedTool {
@@ -80,66 +105,6 @@ export interface DefinedTool {
   readonly outputSchema: Record<string, unknown>;
 
   register(deps: ToolDeps): void;
-}
-
-/**
- * True when the connection cannot answer an elicitation at all — as opposed to
- * the user seeing the prompt and declining it. Two different SDK throws mean
- * the same thing to a caller:
- *
- * - `CapabilityNotSupported` — client never advertised elicitation (or not the
- *   requested mode).
- * - `MethodNotSupportedByProtocolVersion` — the 2026-07-28 era dropped
- *   push-style server→client requests, so `elicitInput` throws locally before
- *   anything reaches the client. Migrating to `inputRequired(...)` would let
- *   these tools prompt on that era; until then they must not read the era's
- *   refusal as a "no" from the user.
- *
- * Neither is a denial, and neither is a transport failure — each caller picks
- * the fallback that is safe for its own operation.
- */
-function isElicitationUnavailable(error: unknown): boolean {
-  return (
-    hasErrorShape(error, 'SdkError', SdkErrorCode.CapabilityNotSupported) ||
-    hasErrorShape(error, 'SdkError', SdkErrorCode.MethodNotSupportedByProtocolVersion)
-  );
-}
-
-/**
- * Owner of the elicit-a-boolean-then-check idiom: builds the single-field form,
- * sends it, and classifies the outcome. Returns `{ confirmed, unavailable, error }`
- * so each caller can apply its own fallback policy (proceed / fail-closed /
- * cancel) without re-implementing the form-build and error triage.
- */
-export async function confirmBoolean(
-  ctx: Pick<ToolCtx, 'elicitInput'>,
-  field: string,
-  message: string,
-  title: string,
-): Promise<{ confirmed: boolean; unavailable: boolean; error: unknown }> {
-  const { elicitInput } = ctx;
-  if (!elicitInput) return { confirmed: false, unavailable: true, error: undefined };
-  const fieldSchema: PrimitiveSchemaDefinition = { type: 'boolean', title };
-  try {
-    const result = await elicitInput({
-      mode: 'form',
-      message,
-      requestedSchema: {
-        type: 'object',
-        properties: { [field]: fieldSchema },
-        required: [field],
-      },
-    });
-    return {
-      confirmed: result.action === 'accept' && result.content?.[field] === true,
-      unavailable: false,
-      error: undefined,
-    };
-  } catch (err) {
-    if (isElicitationUnavailable(err))
-      return { confirmed: false, unavailable: true, error: undefined };
-    return { confirmed: false, unavailable: false, error: err };
-  }
 }
 
 // ============ Context Builder ============
@@ -166,14 +131,8 @@ function toToolCtx(
     fs: new GuardedFileSystem(deps.pathGuard),
     resourceStore: deps.resourceStore,
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
-    // elicitInput: deprecated (SEP-2577, 2026-07-28 era) — throws there since the
-    // push-style server-to-client request model is replaced by input_required.
-    // Remains correct on the current default protocol version (2025-11-25); the
-    // access-grant confirmation flow already treats a throw as a denial (see
-    // PathGuard.requestAccessGrant). Full migration needs the new
-    // multi-round-trip pattern, tracked in repo memory, not done here.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
-    elicitInput: (params) => ctx.mcpReq.elicitInput(params),
+    inputResponses: ctx.mcpReq.inputResponses,
+    requestState: ctx.mcpReq.requestState,
     server: deps.server,
   };
 }
@@ -196,7 +155,8 @@ function buildExecutionCtx(
     },
     ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
     onProgress,
-    ...(ctx.elicitInput ? { elicitInput: ctx.elicitInput } : {}),
+    inputResponses: ctx.inputResponses,
+    requestState: ctx.requestState,
   };
 }
 
@@ -314,48 +274,44 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     };
   }
 
-  private buildAccessDeniedHandler(): ((blockedPath: string) => Promise<boolean>) | undefined {
-    if (!this.toolCtx.elicitInput) return undefined;
-    const elicitInput = this.toolCtx.elicitInput;
-    const mcpServer = this.toolCtx.server;
-    if (mcpServer == null) return undefined;
-    // getClientCapabilities(): deprecated (SEP-2577, 2026-07-28 era) in favor of
-    // reading ctx.mcpReq.envelope per-request, but this runs outside a live
-    // per-request context (a lazily-built access-grant handler) where no
-    // envelope is available. The SDK backfills this accessor correctly for both
-    // protocol eras, so behavior remains correct; tracked in repo memory.
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
-    let caps: ReturnType<typeof mcpServer.server.getClientCapabilities>;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- see comment above
-      caps = mcpServer.server.getClientCapabilities();
-    } catch {
-      return undefined;
+  /**
+   * Access-grant pre-check (R7/R8/R9). Before `run` touches the filesystem,
+   * ask PathGuard which of the tool's declared paths are out-of-root and
+   * grantable. If any are and this round carries no verified `requestState`,
+   * return `input_required` (nothing is read or written — R7). On retry, the
+   * verified state must bind this grant set (R9); apply each accepted grant for
+   * the session (R8) and proceed. A declined or ungrantable path is left for
+   * `validateAccess` to fail closed during the operation. Returns `undefined`
+   * when no round-trip is needed and any applicable grants have been applied.
+   */
+  private async precheckGrant(): Promise<InputRequiredResult | undefined> {
+    const extract = this.def.accessPaths;
+    if (!extract) return undefined;
+    const paths = extract(this.parsedArgs);
+    if (paths.length === 0) return undefined;
+    const grantDirs = await this.toolCtx.pathGuard.precheckAccess(paths);
+    if (grantDirs.length === 0) return undefined;
+
+    const round = await pendingRoundTrip({
+      op: 'grant',
+      pending: grantDirs,
+      requestState: this.toolCtx.requestState,
+      buildInputs: (dirs) =>
+        dirs.map((dir, i) => confirmInput(`confirm_${i}`, `Grant filesystem access to "${dir}"?`)),
+    });
+    if (round !== undefined) return round;
+    // Apply accepted grants for the session (R8). Declined/missing dirs are
+    // skipped here; their paths fail with ACCESS_DENIED during the operation.
+    for (let i = 0; i < grantDirs.length; i++) {
+      const dir = grantDirs[i];
+      if (dir && readAcceptedConfirm(this.toolCtx.inputResponses, `confirm_${i}`)) {
+        await this.toolCtx.pathGuard.applyGrant(dir);
+      }
     }
-    if (!caps?.elicitation) return undefined;
-
-    const pathGuard = this.toolCtx.pathGuard;
-
-    const confirm = async (targetDir: string): Promise<boolean> => {
-      const r = await confirmBoolean(
-        { elicitInput },
-        'confirm',
-        `Grant filesystem access to: ${targetDir}?`,
-        'Confirm',
-      );
-      // No grant without a user saying yes, so an unaskable connection is
-      // still a denial — but a quiet one. requestAccessGrant's catch would
-      // otherwise warn on every out-of-root path for the whole session.
-      if (r.unavailable) return false;
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrow the elicitation failure verbatim so callers see the original error
-      if (r.error) throw r.error;
-      return r.confirmed;
-    };
-
-    return (blockedPath: string) => pathGuard.requestAccessGrant(blockedPath, { confirm });
+    return undefined;
   }
 
-  async execute(deps: ToolDeps): Promise<CallToolResult> {
+  async execute(deps: ToolDeps): Promise<CallToolResult | InputRequiredResult> {
     if (!deps.isInitialized()) {
       return {
         isError: true as const,
@@ -363,9 +319,23 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       };
     }
 
-    const runTool = async (): Promise<CallToolResult> => {
+    const runTool = async (): Promise<CallToolResult | InputRequiredResult> => {
       try {
+        // Access-grant pre-check before any filesystem touch (R7/R8/R9). A
+        // grant input_required short-circuits here (progress paused, not
+        // finished); an R9 mismatch throws, which this catch surfaces as an
+        // isError tool result like every other handler failure — not a raw
+        // JSON-RPC error (GRANT-1 impact #2).
+        const grantRequired = await this.precheckGrant();
+        if (grantRequired !== undefined) return grantRequired;
         const result = await this.def.run(this.parsedArgs, this.toolCtx);
+        // input_required is a return value, not a completed call: the client
+        // retries the same tools/call carrying inputResponses, and this
+        // handler re-enters from the top. Skip the progress "done" close and
+        // return it verbatim — progress is paused, not finished.
+        if (isInputRequiredResult(result)) {
+          return result;
+        }
         await this.completeProgress(result.structured);
         return buildSuccessResponse(result);
       } catch (error) {
@@ -375,13 +345,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       }
     };
 
-    const handler = this.buildAccessDeniedHandler();
-    // Scope the access-denied (elicitation) handler to this request's async
-    // chain via AsyncLocalStorage so concurrent tools/call calls sharing one
-    // PathGuard cannot overwrite each other's handler.
-    if (handler !== undefined) {
-      return this.toolCtx.pathGuard.runWithAccessDeniedHandler(handler, runTool);
-    }
     return runTool();
   }
 }
@@ -391,7 +354,7 @@ async function executeTool<I extends z.ZodType, O extends z.ZodType>(
   ctx: ToolCtx,
   deps: ToolDeps,
   args: z.infer<I>,
-): Promise<CallToolResult> {
+): Promise<CallToolResult | InputRequiredResult> {
   const executor = new ToolExecutor<I, O>(def.name, ctx, def, args);
   return executor.execute(deps);
 }
@@ -399,7 +362,7 @@ async function executeTool<I extends z.ZodType, O extends z.ZodType>(
 function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
   deps: ToolDeps,
-): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult> {
+): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult> {
   return async (args, ctx) => executeTool(def, toToolCtx(ctx, deps), deps, args);
 }
 

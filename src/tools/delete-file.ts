@@ -1,4 +1,5 @@
-import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/server';
+import type { InputRequiredResult } from '@modelcontextprotocol/server';
+import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -11,7 +12,8 @@ import { Logger } from '../core/observability.js';
 import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
-import { confirmBoolean, defineTool } from './define.js';
+import { defineTool } from './define.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z
@@ -99,35 +101,67 @@ function resolveItemType(
   return 'other';
 }
 
-async function tryElicitConfirmation(
-  validPath: string,
-  args: Pick<DeleteInput, 'recursive'>,
-  itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>,
-  fs: Pick<GuardedFileSystem, 'hasChildrenUnchecked'>,
-  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>,
-): Promise<boolean> {
-  if (!elicitInput || !args.recursive || !itemStats.stats.isDirectory()) {
-    return true; // Proceed if not applicable
+type LstatResult = Awaited<ReturnType<GuardedFileSystem['lstat']>>;
+type ItemType = 'directory' | 'symlink' | 'file' | 'other';
+
+/** A path's pre-checked plan: validated, statted, and flagged if it needs confirmation. */
+interface DeletePlan {
+  inputPath: string;
+  validPath: string;
+  itemType: ItemType;
+  firstStats: LstatResult;
+  /** Recursive + non-empty directory: needs a round-trip confirmation. */
+  pending: boolean;
+}
+
+type PlanResult =
+  | { status: 'fail'; failure: DeleteFailure }
+  | { status: 'noop'; item: DeletedItem }
+  | { status: 'plan'; plan: DeletePlan };
+
+/**
+ * Phase 1 (no mutation): validate, stat, and decide whether a path needs a
+ * confirmation before anything is deleted. A pending path is a recursive
+ * non-empty directory; everything else is ready to delete directly.
+ */
+async function planPath(
+  inputPath: string,
+  args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
+  fs: Pick<GuardedFileSystem, 'pathGuard' | 'lstat' | 'hasChildrenUnchecked'>,
+): Promise<PlanResult> {
+  let validPath: string;
+  try {
+    validPath = await fs.pathGuard.validatePathForDelete(inputPath);
+  } catch (error) {
+    return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
 
-  const nonEmpty = await fs.hasChildrenUnchecked(validPath);
-  if (!nonEmpty) {
-    return true; // Empty directory — nothing to recursively destroy, no prompt needed
+  if (fs.pathGuard.isAllowedRoot(validPath)) {
+    return {
+      status: 'fail',
+      failure: {
+        path: validPath,
+        error: Problem.accessDenied('Deleting a workspace root directory is not allowed', {
+          path: validPath,
+        }),
+      },
+    };
   }
 
-  const r = await confirmBoolean(
-    { elicitInput },
-    'confirm',
-    `Permanently delete "${validPath}" and all its contents? This cannot be undone.`,
-    'Yes, delete permanently',
-  );
-  if (r.unavailable) return true; // Connection cannot be asked at all — proceed unprompted.
-  if (r.error) {
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- r.error is the unknown elicitation failure, stringified for a warning only
-    Logger.warn(`delete: elicitation failed for "${validPath}": ${String(r.error)}`);
-    return false; // Fail closed for unknown transport errors
+  let firstStats: LstatResult;
+  try {
+    firstStats = await fs.lstat(validPath);
+  } catch (error) {
+    if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
+      return { status: 'noop', item: { path: validPath } };
+    }
+    return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
-  return r.confirmed;
+
+  const itemType = resolveItemType(firstStats);
+  const pending =
+    args.recursive && itemType === 'directory' && (await fs.hasChildrenUnchecked(validPath));
+  return { status: 'plan', plan: { inputPath, validPath, itemType, firstStats, pending } };
 }
 
 async function performDeletion(
@@ -146,128 +180,161 @@ async function performDeletion(
   }
 }
 
-async function deleteSinglePath(
-  inputPath: string,
+/**
+ * Phase 2 (mutation): TOCTOU re-stat against the plan's first stat, then
+ * delete. A type or identity change across the confirmation gap fails closed
+ * rather than deleting a replacement object the user never confirmed.
+ */
+async function finalizeDeletion(
+  plan: DeletePlan,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
-  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'elicitInput'>,
+  fsOps: Pick<GuardedFileSystem, 'lstat' | 'rm' | 'rmdir'>,
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
-  let validPath: string;
+  let currentStats: LstatResult;
   try {
-    validPath = await ctx.fs.pathGuard.validatePathForDelete(inputPath);
-  } catch (error) {
-    return { failure: toDeleteFailure(inputPath, error) };
-  }
-
-  if (ctx.fs.pathGuard.isAllowedRoot(validPath)) {
-    return {
-      failure: {
-        path: validPath,
-        error: Problem.accessDenied('Deleting a workspace root directory is not allowed', {
-          path: validPath,
-        }),
-      },
-    };
-  }
-
-  let itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>> | undefined;
-  try {
-    itemStats = await ctx.fs.lstat(validPath);
+    currentStats = await fsOps.lstat(plan.validPath);
   } catch (error) {
     if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
-      return { item: { path: validPath } };
+      return { item: { path: plan.validPath } };
     }
-    return { failure: toDeleteFailure(inputPath, error) };
-  }
-
-  const itemType = resolveItemType(itemStats);
-  const shouldProceed = await tryElicitConfirmation(
-    validPath,
-    args,
-    itemStats,
-    ctx.fs,
-    ctx.elicitInput,
-  );
-
-  if (!shouldProceed) {
-    return {
-      failure: {
-        path: validPath,
-        error: Problem.cancelled('Delete cancelled: confirmation prompt failed or was declined', {
-          path: validPath,
-        }),
-      },
-    };
-  }
-
-  // TOCTOU check: re-stat the path immediately before deletion
-  let currentStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>;
-  try {
-    currentStats = await ctx.fs.lstat(validPath);
-  } catch (error) {
-    if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
-      return { item: { path: validPath } };
-    }
-    return { failure: toDeleteFailure(inputPath, error) };
+    return { failure: toDeleteFailure(plan.inputPath, error) };
   }
 
   const currentItemType = resolveItemType(currentStats);
   // Identity comparison, not just the coarse category: a swap during the
-  // elicitation gap (delete original, create a same-named replacement) keeps
+  // confirmation gap (delete original, create a same-named replacement) keeps
   // the type but changes dev/ino/birthtimeMs. birthtimeMs is the primary
   // cross-platform signal — dev/ino can read 0 on some non-POSIX drivers — so
   // combine all three rather than trusting dev/ino alone.
   const identityChanged =
-    itemStats.stats.dev !== currentStats.stats.dev ||
-    itemStats.stats.ino !== currentStats.stats.ino ||
-    itemStats.stats.birthtimeMs !== currentStats.stats.birthtimeMs;
-  if (itemType !== 'other' && (currentItemType !== itemType || identityChanged)) {
+    plan.firstStats.stats.dev !== currentStats.stats.dev ||
+    plan.firstStats.stats.ino !== currentStats.stats.ino ||
+    plan.firstStats.stats.birthtimeMs !== currentStats.stats.birthtimeMs;
+  if (plan.itemType !== 'other' && (currentItemType !== plan.itemType || identityChanged)) {
     return {
       failure: {
-        path: validPath,
+        path: plan.validPath,
         error: Problem.invalidInput(
-          `Delete failed: item type changed from ${itemType} to ${currentItemType} during confirmation.`,
-          { path: validPath },
+          `Delete failed: item type changed from ${plan.itemType} to ${currentItemType} during confirmation.`,
+          { path: plan.validPath },
         ),
       },
     };
   }
 
   try {
-    await performDeletion(validPath, args, currentStats.stats.isDirectory(), ctx.fs);
+    await performDeletion(plan.validPath, args, currentStats.stats.isDirectory(), fsOps);
   } catch (error) {
-    return { failure: toDeleteFailure(inputPath, error) };
+    return { failure: toDeleteFailure(plan.inputPath, error) };
   }
 
-  Logger.info(`rm: ${inputPath}`);
-  return { item: { path: validPath } };
+  Logger.info(`rm: ${plan.inputPath}`);
+  return { item: { path: plan.validPath } };
 }
 
-async function handleDelete(args: DeleteInput, ctx: ToolCtx): Promise<DeleteOutput> {
-  const { results, errors } = await processInParallel(
+/**
+ * Execute one planned path on the retry round. A pending path deletes only on
+ * an accepted `confirm: true`; decline, cancel, or a missing key report
+ * `CANCELLED` for that path (R3 proceed, R4/R5 cancelled). A non-pending path
+ * deletes directly (R14: non-pending items proceed alongside accepted ones).
+ */
+async function executePlan(
+  plan: DeletePlan,
+  args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
+  ctx: Pick<ToolCtx, 'fs' | 'inputResponses'>,
+  pendingSorted: readonly string[],
+): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
+  if (plan.pending) {
+    const key = `confirm_${pendingSorted.indexOf(plan.validPath)}`;
+    if (!readAcceptedConfirm(ctx.inputResponses, key)) {
+      return {
+        failure: {
+          path: plan.validPath,
+          error: Problem.cancelled('Delete cancelled: confirmation was declined or missing', {
+            path: plan.validPath,
+          }),
+        },
+      };
+    }
+  }
+  return finalizeDeletion(plan, args, ctx.fs);
+}
+
+async function handleDelete(
+  args: DeleteInput,
+  ctx: ToolCtx,
+): Promise<DeleteOutput | InputRequiredResult> {
+  // Phase 1 (no mutation): plan every path.
+  const planned = await processInParallel(
     args.paths,
-    (inputPath) => deleteSinglePath(inputPath, args, ctx),
+    (inputPath) => planPath(inputPath, args, ctx.fs),
     PARALLEL_CONCURRENCY,
     ctx.signal,
   );
 
-  const successPaths: string[] = [];
-  const failures: DeleteFailureItem[] = [];
+  const plans: DeletePlan[] = [];
+  const earlyFailures: DeleteFailure[] = [];
+  const earlyNoop: DeletedItem[] = [];
+  for (const { value: r } of planned.results) {
+    if (r.status === 'fail') earlyFailures.push(r.failure);
+    else if (r.status === 'noop') earlyNoop.push(r.item);
+    else plans.push(r.plan);
+  }
+  for (const { index, error } of planned.errors) {
+    const path = args.paths[index] ?? '(unknown)';
+    earlyFailures.push({ path, error: { code: ErrorCode.UNKNOWN, message: error.message } });
+  }
 
-  for (const { value: r } of results) {
+  // Pending set: recursive + non-empty directories, sorted and de-duplicated.
+  // `buildInputRequired` seals exactly this set into the requestState, and the
+  // retried round recomputes it from the same args so a swapped retry (accept
+  // for X, retry with Y) is rejected — the codec only proves the state was not
+  // tampered, not that it matches the current request (R9).
+  const pendingSorted = [...new Set(plans.filter((p) => p.pending).map((p) => p.validPath))].sort();
+
+  if (pendingSorted.length > 0) {
+    // Round 1 returns input_required (atomic — R14: nothing deleted yet, not
+    // even the non-pending items in the same call); a retry whose verified
+    // state does not bind this pending set throws (R9) via `pendingRoundTrip`.
+    const round = await pendingRoundTrip({
+      op: 'delete',
+      pending: pendingSorted,
+      requestState: ctx.requestState,
+      buildInputs: (ps) =>
+        ps.map((p, i) =>
+          confirmInput(
+            `confirm_${i}`,
+            `Permanently delete "${p}" and all its contents? This cannot be undone.`,
+          ),
+        ),
+    });
+    if (round !== undefined) return round;
+  }
+
+  // Phase 2 (mutation): execute deletions for every planned path.
+  const executed = await processInParallel(
+    plans,
+    (plan) => executePlan(plan, args, ctx, pendingSorted),
+    PARALLEL_CONCURRENCY,
+    ctx.signal,
+  );
+
+  const successPaths: string[] = earlyNoop.map((n) => n.path);
+  const failures: DeleteFailureItem[] = [];
+  for (const f of earlyFailures) {
+    failures.push({ path: f.path, error: toPerFileError(f.error) });
+  }
+  for (const { value: r } of executed.results) {
     if ('failure' in r) {
       failures.push({ path: r.failure.path, error: toPerFileError(r.failure.error) });
     } else if (r.item.path) {
       successPaths.push(r.item.path);
     }
   }
-
-  // Guard against unexpected throws from deleteSinglePath (should not occur in practice)
-  for (const { index, error } of errors) {
-    const path = args.paths[index] ?? '(unknown)';
-    failures.push({
-      path,
-      error: { code: ErrorCode.UNKNOWN, message: error.message },
-    });
+  for (const { index, error } of executed.errors) {
+    const plan = plans[index];
+    const path = plan?.validPath ?? '(unknown)';
+    failures.push({ path, error: { code: ErrorCode.UNKNOWN, message: error.message } });
   }
 
   const ok = failures.length === 0;
@@ -303,8 +370,12 @@ export const DELETE_FILE = defineTool({
     label: 'Delete',
     subject: args.paths.map((p) => basename(p)).join(' · '),
   }),
+  accessPaths: (args) => [...args.paths],
   run: async (args, ctx) => {
     const structured = await handleDelete(args, ctx);
+    // input_required is a return value, not a completed call: surface it
+    // verbatim so the executor short-circuits before building a CallToolResult.
+    if (isInputRequiredResult(structured)) return structured;
     const deleted = structured.paths ?? (structured.path ? [structured.path] : []);
     const failCount = structured.failures?.length ?? 0;
     const delCount = deleted.length;

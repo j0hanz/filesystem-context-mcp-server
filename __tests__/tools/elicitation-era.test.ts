@@ -1,14 +1,15 @@
 /**
  * The 2026-07-28 protocol era removed push-style server->client requests, so
- * `ctx.mcpReq.elicitInput` throws locally — before anything reaches the client
- * — with SdkErrorCode.MethodNotSupportedByProtocolVersion. Tools that ask for
- * confirmation must read that as "this connection cannot be asked", the same
- * as a client that never advertised the capability, and NOT as a user saying
- * no. The wire-level handler cannot simulate this (the throw never leaves the
- * server), so these drive the registered handler directly.
+ * destructive confirmation no longer goes through a throwing `elicitInput`;
+ * it returns an `input_required` result the client retries with
+ * `inputResponses`. On a connection that offers no elicitation capability the
+ * behavior is identical: a destructive call returns `input_required` (not a
+ * throw, not a silent proceed) and the filesystem is untouched until an
+ * accepted retry (R6 fail-closed). These drive the registered handler directly
+ * — the wire-level handler cannot simulate the round-trip — supplying
+ * `mcpReq.inputResponses` and a verified `requestState` across two calls.
  */
-import type { McpServer, ServerContext } from '@modelcontextprotocol/server';
-import { SdkError, SdkErrorCode } from '@modelcontextprotocol/server';
+import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -16,101 +17,46 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.js';
-import { createInMemoryResourceStore } from '../../src/core/store.js';
-import type { DefinedTool } from '../../src/tools/define.js';
 import { DELETE_FILE } from '../../src/tools/delete-file.js';
 import { MOVE } from '../../src/tools/move.js';
-
-type CapturedHandler = (args: unknown, ctx: ServerContext) => Promise<unknown>;
-
-/**
- * Register `tool` against a stub server and return its call handler. Arguments
- * are parsed through the tool's own input schema first — the SDK does that in
- * production, so a stub that skipped it would hand handlers unparsed args
- * missing every schema default.
- */
-async function registerAgainstStub(tool: DefinedTool, root: string): Promise<CapturedHandler> {
-  let handler: CapturedHandler | undefined;
-  let registeredSchema: RegisteredShape | undefined;
-  const mockServer = {
-    registerTool: (_name: string, schema: unknown, h: unknown): void => {
-      registeredSchema = schema as RegisteredShape;
-      handler = h as CapturedHandler;
-    },
-  } as unknown as McpServer;
-
-  const pathGuard = new PathGuard();
-  pathGuard.initialize(await resolveAllowedDirectoriesState([root]));
-
-  tool.register({
-    server: mockServer,
-    pathGuard,
-    resourceStore: createInMemoryResourceStore(),
-    isInitialized: () => true,
-  });
-
-  const registered = handler;
-  const validate = registeredSchema?.inputSchema['~standard'].validate;
-  assert.ok(registered, `Expected ${tool.name} to register a handler`);
-  assert.ok(validate, `Expected ${tool.name} to register a validating input schema`);
-  return (args, ctx) => {
-    const parsed = validate(args) as { value?: unknown; issues?: readonly unknown[] };
-    assert.ok(!parsed.issues, `Expected ${tool.name} args to validate`);
-    return registered(parsed.value, ctx);
-  };
-}
-
-/** The shape `defineTool` hands to `registerTool` — the same object production uses. */
-interface RegisteredShape {
-  inputSchema: {
-    '~standard': { validate: (value: unknown) => unknown };
-  };
-}
-
-/** A ServerContext whose elicitInput fails the way the 2026-07-28 era does. */
-function eraContext(): ServerContext {
-  return {
-    mcpReq: {
-      signal: new AbortController().signal,
-      notify: async () => undefined,
-      log: async () => undefined,
-      elicitInput: () =>
-        Promise.reject(
-          new SdkError(
-            SdkErrorCode.MethodNotSupportedByProtocolVersion,
-            "Server-to-client requests are not available on protocol revision 2026-07-28: 'elicitation/create' cannot be sent",
-          ),
-        ),
-    },
-  } as unknown as ServerContext;
-}
+import { accept, registerAgainstStub, retryCtx, retryState } from '../helpers.js';
 
 describe('elicitation on a 2026-07-28 connection', () => {
-  it('delete: removes a non-empty directory instead of reporting it cancelled', async () => {
+  it('delete: a non-empty dir returns input_required and is untouched until an accepted retry', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-era-delete-'));
     try {
       const dir = join(tmp, 'to-delete');
       await mkdir(dir);
-      await writeFile(join(dir, 'file.txt'), 'content', 'utf8');
+      const file = join(dir, 'file.txt');
+      await writeFile(file, 'content', 'utf8');
 
       const handler = await registerAgainstStub(DELETE_FILE, tmp);
-      const raw = await handler({ paths: [dir], recursive: true }, eraContext());
 
-      const result = raw as {
-        isError?: boolean;
-        structuredContent?: { ok?: unknown; failures?: { error?: { code?: unknown } }[] };
-      };
-      assert.notEqual(result.isError, true);
-      assert.equal(result.structuredContent?.ok, true);
-      assert.equal(result.structuredContent?.failures, undefined);
-      await assert.rejects(readFile(join(dir, 'file.txt')), { code: 'ENOENT' });
+      // Round 1: no capability to be asked → input_required, nothing deleted (R6).
+      const r1 = await handler({ paths: [dir], recursive: true }, retryCtx());
+      assert.ok(isInputRequiredResult(r1), 'round 1 returns input_required, not a silent proceed');
+      assert.equal(await readFile(file, 'utf8'), 'content', 'the dir is untouched in round 1');
+
+      // Retry with the accepted confirmation and the verified state → deletes.
+      const state = await retryState(r1);
+      const r2 = await handler(
+        { paths: [dir], recursive: true },
+        retryCtx({ responses: accept(), state }),
+      );
+      assert.notEqual((r2 as { isError?: boolean }).isError, true);
+      const sc = (r2 as { structuredContent?: { ok?: boolean } }).structuredContent;
+      assert.equal(sc?.ok, true);
+      await assert.rejects(
+        readFile(file, 'utf8'),
+        { code: 'ENOENT' },
+        'dir is deleted on accepted retry',
+      );
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
   });
 
-  it('move: overwrites an existing destination instead of failing CANCELLED', async () => {
+  it('move: an overwrite returns input_required and the dest is untouched until an accepted retry', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-era-move-'));
     try {
       const source = join(tmp, 'src.txt');
@@ -119,11 +65,31 @@ describe('elicitation on a 2026-07-28 connection', () => {
       await writeFile(destination, 'original dest', 'utf8');
 
       const handler = await registerAgainstStub(MOVE, tmp);
-      const raw = await handler({ moves: [{ source, destination }] }, eraContext());
 
-      const result = raw as { isError?: boolean };
-      assert.notEqual(result.isError, true);
-      assert.equal(await readFile(destination, 'utf8'), 'source content');
+      // Round 1: the existing dest forces input_required; nothing moves (R6).
+      const r1 = await handler({ moves: [{ source, destination }] }, retryCtx());
+      assert.ok(
+        isInputRequiredResult(r1),
+        'round 1 returns input_required, not a silent overwrite',
+      );
+      assert.equal(
+        await readFile(destination, 'utf8'),
+        'original dest',
+        'the dest is untouched in round 1',
+      );
+
+      // Retry with the accepted overwrite and the verified state → moves.
+      const state = await retryState(r1);
+      const r2 = await handler(
+        { moves: [{ source, destination }] },
+        retryCtx({ responses: accept(), state }),
+      );
+      assert.notEqual((r2 as { isError?: boolean }).isError, true);
+      assert.equal(
+        await readFile(destination, 'utf8'),
+        'source content',
+        'dest is overwritten on accepted retry',
+      );
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }

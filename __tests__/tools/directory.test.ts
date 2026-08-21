@@ -13,6 +13,7 @@ import { PathGuard, resolveAllowedDirectoriesState } from '../../src/core/path.j
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { LIST } from '../../src/tools/list.js';
 import {
+  assertInputRequiredFailClose,
   assertOk,
   assertToolError,
   createTestEnv,
@@ -205,7 +206,8 @@ describe('list tool', () => {
       name: 'list',
       arguments: { path: '/etc' },
     });
-    assertToolError(raw, 'ACCESS_DENIED');
+    // Out-of-root on the legacy-era wire harness fail-closes (R6).
+    assertInputRequiredFailClose(raw);
   });
 
   it('returns NOT_DIRECTORY for a file path', async () => {
@@ -445,20 +447,14 @@ describe('create tool (directory creation)', () => {
   });
 
   it('rejects creation outside allowed root', async () => {
+    const escapePath = `/tmp/escape-${Date.now()}`;
     const raw = await env.client.callTool({
       name: 'create',
-      arguments: { files: [{ path: `/tmp/escape-${Date.now()}`, content: '' }] },
+      arguments: { files: [{ path: escapePath, content: '' }] },
     });
-    assertOk(raw);
-    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-    assert.ok(
-      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-      'create must report ACCESS_DENIED in failures[]',
-    );
-    assert.equal(
-      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-      'ACCESS_DENIED',
-    );
+    // Out-of-root fail-closes on the legacy-era wire harness — R6, nothing created.
+    assertInputRequiredFailClose(raw);
+    await assert.rejects(() => stat(escapePath), /ENOENT/);
   });
 });
 
@@ -522,25 +518,13 @@ describe('rm tool', () => {
       name: 'delete',
       arguments: { paths: [dir], recursive: true },
     });
-    assertOk(raw);
+    // A recursive non-empty delete prompts input_required; with no retry over the
+    // legacy-era wire harness it fail-closes — R6, nothing is deleted.
+    assertInputRequiredFailClose(raw);
 
-    // Verify content: terse summary with deletion confirmation, no resource links
-    assert.equal(
-      raw.content.length,
-      1,
-      'Expected exactly one content block (P3 confirmation-only pattern)',
-    );
-    assert.equal(raw.content[0].type, 'text', 'Expected text content');
-    const summaryText = raw.content[0].text;
-    assert.ok(summaryText.startsWith('delete:'), 'Expected summary to start with "delete-file:"');
-
-    // Verify structured content has path and ok (P3 pattern)
-    const sc = getStructured(raw);
-    assert.ok(sc['ok'] === true, 'Expected ok: true');
-    assert.ok(sc['path'], 'Expected path field to be set');
-
-    // Verify directory was actually deleted
-    await assert.rejects(() => stat(dir), /ENOENT/);
+    // The directory and its inner file must survive the fail-closed call.
+    assert.ok((await stat(dir)).isDirectory(), 'dir must still exist after fail-close');
+    assert.equal(await readFile(join(dir, 'inner.txt'), 'utf8'), 'inner');
   });
 
   it('returns NOT_FOUND error for missing file', async () => {

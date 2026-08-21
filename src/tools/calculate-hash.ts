@@ -326,6 +326,7 @@ export const CALCULATE_HASH = defineTool({
     label: 'Hash',
     subject: basename(args.path),
   }),
+  accessPaths: (args) => [args.path],
   run: async (args, ctx) => {
     const onProgress = ctx.onProgress
       ? ({ current, total }: { total?: number; current: number }): void => {
