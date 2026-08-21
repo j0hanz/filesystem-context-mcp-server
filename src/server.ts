@@ -121,7 +121,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Filesys
 
   serverConfig.instructions =
     'filesystem-mcp: Secure local filesystem MCP server. ' +
-    'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
+    'Start with: list_roots -> list/find_files -> stat -> read. Never guess paths. ' +
     `For full guidance, read ${INSTRUCTIONS_URI} or run the get-help prompt.`;
 
   const implementation: Implementation = {

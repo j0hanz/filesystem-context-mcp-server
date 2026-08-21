@@ -293,11 +293,11 @@ export function isFsError(error: unknown): error is FsError {
 export function hasErrorShape(
   error: unknown,
   name: string,
-  code?: string,
-): error is Error & { code: string } {
+  code?: string | number,
+): error is Error & { code: string | number } {
   if (!(error instanceof Error) || error.name !== name) return false;
   const c = (error as { code?: unknown }).code;
-  if (typeof c !== 'string') return false;
+  if (typeof c !== 'string' && typeof c !== 'number') return false;
   return code === undefined || c === code;
 }
 

@@ -332,11 +332,22 @@ describe('hasErrorShape / isFsError (REQ-001)', () => {
     assert.equal(hasErrorShape(protocolErr, 'ProtocolError', 'invalid_request'), true);
     assert.equal(hasErrorShape(protocolErr, 'ProtocolError', 'other'), false);
     assert.equal(hasErrorShape(protocolErr, 'SdkError'), false);
+
+    // Numeric codes (e.g. ProtocolErrorCode enum values like -32600)
+    const numericCodeErr = Object.assign(new Error('invalid params'), {
+      name: 'ProtocolError',
+      code: -32602,
+    });
+    assert.equal(hasErrorShape(numericCodeErr, 'ProtocolError'), true);
+    assert.equal(hasErrorShape(numericCodeErr, 'ProtocolError', -32602), true);
+    assert.equal(hasErrorShape(numericCodeErr, 'ProtocolError', -32600), false);
+
     // A plain Error with no code property does not match even if name is set.
     const noCode = Object.assign(new Error('x'), { name: 'ProtocolError' });
     assert.equal(hasErrorShape(noCode, 'ProtocolError'), false);
     // Non-Error values are rejected.
     assert.equal(hasErrorShape({ name: 'ProtocolError', code: 'x' }, 'ProtocolError'), false);
+    assert.equal(hasErrorShape({ name: 'ProtocolError', code: -32600 }, 'ProtocolError'), false);
     assert.equal(hasErrorShape(null, 'ProtocolError'), false);
   });
 });
