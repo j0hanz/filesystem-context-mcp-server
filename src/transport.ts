@@ -81,8 +81,10 @@ export class InMemoryEventStore implements EventStore {
     let stream = this.streams.get(streamId);
     if (!stream) {
       stream = [];
-      this.streams.set(streamId, stream);
+    } else {
+      this.streams.delete(streamId);
     }
+    this.streams.set(streamId, stream);
 
     stream.push({ id: eventId, message });
     this.eventIdToStreamId.set(eventId, streamId);
@@ -743,7 +745,10 @@ function setupExpressApp(
         resource_name: 'filesystem-mcp',
       });
     };
-    app.get('/.well-known/oauth-protected-resource/mcp', metadataHandler);
+    app.get(
+      ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'],
+      metadataHandler,
+    );
   }
 
   app.get('/healthz', (_req: Request, res: Response) => {

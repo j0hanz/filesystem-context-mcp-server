@@ -70,6 +70,27 @@ describe('InMemoryEventStore', () => {
     assert.equal(await store.getStreamIdForEventId(firstEventId), undefined);
   });
 
+  it('preserves an active stream across stream cap eviction when new events are stored to it', async () => {
+    const store = new InMemoryEventStore();
+    const MAX_EVENT_STREAMS = 1000;
+    // stream-0 is inserted first (simulating the long-lived _GET_stream)
+    await store.storeEvent('stream-0', msg(0));
+
+    // Fill up to stream-999
+    for (let i = 1; i < MAX_EVENT_STREAMS; i++) {
+      await store.storeEvent(`stream-${i}`, msg(i));
+    }
+
+    // Append to stream-0, refreshing its recency
+    const freshStream0EventId = await store.storeEvent('stream-0', msg(100));
+
+    // Exceed the cap by adding stream-1000
+    await store.storeEvent('stream-1000', msg(1000));
+
+    // stream-1 was never refreshed and should be evicted instead of stream-0
+    assert.equal(await store.getStreamIdForEventId(freshStream0EventId), 'stream-0');
+  });
+
   it('clear() wipes every stream', async () => {
     const store = new InMemoryEventStore();
     const idA = await store.storeEvent('stream-a', msg(1));

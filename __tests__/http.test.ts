@@ -1153,6 +1153,16 @@ describe('HTTP transport', () => {
       assert.equal(response.statusCode, 200);
       const doc = JSON.parse(response.body) as { resource?: string };
       assert.equal(doc.resource, 'https://mcp.example.com/mcp');
+
+      const bareResponse = await rawHttpRequest({
+        port,
+        method: 'GET',
+        path: '/.well-known/oauth-protected-resource',
+      });
+
+      assert.equal(bareResponse.statusCode, 200);
+      const bareDoc = JSON.parse(bareResponse.body) as { resource?: string };
+      assert.equal(bareDoc.resource, 'https://mcp.example.com/mcp');
     });
 
     it('accepts the matching bearer token', async () => {
