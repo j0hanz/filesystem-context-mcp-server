@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:p
 
 import { isNodeError, isNotFoundErrno, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
-import type { PathGuard } from './path.js';
+import type { PathValidator } from './path.js';
 import {
   isPathWithinDirectories,
   isSamePath,
@@ -86,7 +86,7 @@ function findAllowedRootByName(rootName: string, allowed: readonly string[]): st
   return allowed.find((candidate) => basename(candidate).toLowerCase() === normalizedRootName);
 }
 
-function resolveNamedRootPath(value: string, allowed: string[]): string | undefined {
+function resolveNamedRootPath(value: string, allowed: readonly string[]): string | undefined {
   const parsed = parseNamedRootInput(value);
   if (!parsed) return undefined;
   const root = findAllowedRootByName(parsed.rootName, allowed);
@@ -96,7 +96,7 @@ function resolveNamedRootPath(value: string, allowed: string[]): string | undefi
 
 function resolveNamedRootContext(
   currentValue: string,
-  allowed: string[],
+  allowed: readonly string[],
 ): { searchDir: string; prefix: string } | undefined {
   const parsed = parseNamedRootInput(currentValue);
   if (!parsed) return undefined;
@@ -106,7 +106,10 @@ function resolveNamedRootContext(
   return resolveFromBase(root, parsed.remainder, trailingSeparator);
 }
 
-async function isAllowedCompletionDirectory(path: string, allowed: string[]): Promise<boolean> {
+async function isAllowedCompletionDirectory(
+  path: string,
+  allowed: readonly string[],
+): Promise<boolean> {
   if (!isPathWithinDirectories(path, allowed)) return false;
   try {
     const stats = await stat(path);
@@ -126,7 +129,7 @@ async function isAllowedCompletionDirectory(path: string, allowed: string[]): Pr
 
 async function toAllowedContextDirectory(
   resolved: string,
-  allowed: string[],
+  allowed: readonly string[],
 ): Promise<string | undefined> {
   const parent = dirname(resolved);
   const [resolvedOk, parentOk] = await Promise.all([
@@ -138,7 +141,10 @@ async function toAllowedContextDirectory(
   return undefined;
 }
 
-function resolveContextCandidatePath(candidate: string, allowed: string[]): string | undefined {
+function resolveContextCandidatePath(
+  candidate: string,
+  allowed: readonly string[],
+): string | undefined {
   if (isAbsolute(candidate)) return normalizePath(candidate);
   if (allowed.length === 1) {
     const base = allowed[0];
@@ -151,7 +157,7 @@ function resolveContextCandidatePath(candidate: string, allowed: string[]): stri
 async function resolveContextBaseDirectory(
   argumentName: string,
   contextArguments: Record<string, string> | undefined,
-  allowed: string[],
+  allowed: readonly string[],
 ): Promise<string | undefined> {
   if (!contextArguments || Object.keys(contextArguments).length === 0) {
     return undefined;
@@ -189,7 +195,7 @@ function getRootPrefix(currentValue: string): string {
   return (slashIndex === -1 ? normalizedInput : normalizedInput.slice(0, slashIndex)).toLowerCase();
 }
 
-function findRootPrefixMatches(currentValue: string, allowed: string[]): string[] {
+function findRootPrefixMatches(currentValue: string, allowed: readonly string[]): string[] {
   const rootPrefix = getRootPrefix(currentValue);
   if (!rootPrefix) return collectAllowedRoots(allowed, () => true);
   return collectAllowedRoots(allowed, (root) =>
@@ -197,7 +203,11 @@ function findRootPrefixMatches(currentValue: string, allowed: string[]): string[
   );
 }
 
-function findMatchingRoots(searchDir: string, prefix: string, allowed: string[]): string[] {
+function findMatchingRoots(
+  searchDir: string,
+  prefix: string,
+  allowed: readonly string[],
+): string[] {
   const lowerPrefix = prefix.toLowerCase();
   const normalizedSearchDir = normalizePath(searchDir);
   return collectAllowedRoots(allowed, (root) => {
@@ -231,7 +241,7 @@ function mergeCompletionMatches(...matchGroups: readonly (readonly string[])[]):
 async function findMatchesInDirectory(
   searchDir: string,
   prefix: string,
-  allowed: string[],
+  allowed: readonly string[],
   isSensitive?: (path: string) => boolean,
 ): Promise<string[]> {
   const matches: string[] = [];
@@ -269,7 +279,7 @@ async function findMatchesInDirectory(
 
 function getSearchContext(
   currentValue: string,
-  allowed: string[],
+  allowed: readonly string[],
   contextBase?: string,
 ): { searchDir: string; prefix: string } | undefined {
   const trailingSeparator = hasTrailingSeparator(currentValue);
@@ -293,9 +303,9 @@ function getSearchContext(
 
 export class PathCompleter {
   private cache = new Map<string, CacheEntry>();
-  private readonly pathGuard: PathGuard;
+  private readonly pathGuard: PathValidator;
 
-  constructor(pathGuard: PathGuard) {
+  constructor(pathGuard: PathValidator) {
     this.pathGuard = pathGuard;
   }
 

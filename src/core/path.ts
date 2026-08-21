@@ -38,6 +38,32 @@ export { IS_WINDOWS, isSlash, toPosixPath };
 declare const ValidatedPathBrand: unique symbol;
 export type ValidatedPath = string & { readonly [ValidatedPathBrand]: true };
 
+export interface ValidatedPathDetails {
+  requestedPath: string;
+  resolvedPath: string;
+  isSymlink: boolean;
+}
+
+export interface PathValidator {
+  getAllowedDirectories(): readonly string[];
+  getRootBoundaries(): readonly string[];
+  isSensitive(filePath: string): boolean;
+  isEntryAccessible(
+    entryPath: string,
+    entryType: EntryType,
+    bounds: readonly string[],
+  ): Promise<boolean>;
+  validateExistingPath(requestedPath: string): Promise<ValidatedPath>;
+  validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails>;
+  validateExistingDirectory(requestedPath: string): Promise<string>;
+  validatePathForWrite(requestedPath: string): Promise<ValidatedPath>;
+  validatePathForDelete(requestedPath: string): Promise<ValidatedPath>;
+  precheckAccess(paths: readonly string[]): Promise<string[]>;
+  applyGrant(targetDir: string): Promise<boolean>;
+  resolvePathOrRoot(pathValue: string | undefined): string;
+  isAllowedRoot(normalizedPath: string): boolean;
+}
+
 export interface ServerOptions {
   allowCwd?: boolean;
   cliAllowedDirs?: string[];
@@ -209,12 +235,6 @@ export function isPathWithinDirectories(
 export interface AllowedDirectoriesState {
   primary: string[];
   expanded: string[];
-}
-
-interface ValidatedPathDetails {
-  requestedPath: string;
-  resolvedPath: string;
-  isSymlink: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +463,7 @@ export function isSafeGlobSyntax(pattern: string): boolean {
  * O_NOFOLLOW / operate on the resolved fd) throughout core/fs.ts. Acceptable
  * tradeoff for a local, single-user filesystem server today.
  */
-export class PathGuard {
+export class PathGuard implements PathValidator {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private readonly sensitive = new SensitiveMatcher();
   private rootDirectories: string[] = [];

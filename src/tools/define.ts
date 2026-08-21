@@ -21,7 +21,7 @@ import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
-import type { PathGuard } from '../core/path.js';
+import type { PathValidator } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 import type { ProgressSink } from './progress.js';
@@ -56,7 +56,7 @@ export interface ToolCtx {
 interface ToolDeps {
   readonly isInitialized: () => boolean;
   readonly server: McpServer;
-  readonly pathGuard: PathGuard;
+  readonly pathGuard: PathValidator;
   readonly resourceStore: ResourceStore | undefined;
 }
 

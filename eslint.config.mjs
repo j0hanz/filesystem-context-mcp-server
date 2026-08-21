@@ -21,6 +21,8 @@ export default tseslint.config(
       'node_modules/**',
       '.agents/**',
       '.claude/**',
+      '.ua/**',
+      'graphify-out/**',
       'logs/**',
       '.worktrees/**',
     ],

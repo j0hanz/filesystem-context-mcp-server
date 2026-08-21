@@ -25,7 +25,7 @@ import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
-import type { PathGuard } from './core/path.js';
+import type { PathValidator } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
@@ -54,7 +54,7 @@ import {
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   iconInfo?: IconInfo;
-  pathGuard?: PathGuard;
+  pathGuard?: PathValidator;
   server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
   readOnly: boolean;
@@ -217,11 +217,17 @@ function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
   const activeCallbacks = new Map<string, (uri: string) => void>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
+  const debounceTimers = new Map<string, NodeJS.Timeout>();
   let destroyed = false;
 
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
+    const timer = debounceTimers.get(uri);
+    if (timer) {
+      clearTimeout(timer);
+      debounceTimers.delete(uri);
+    }
     watcher.close();
     watchers.delete(uri);
     activeCallbacks.delete(uri);
@@ -229,13 +235,23 @@ function createWatcherRegistry() {
   };
 
   const notifyAll = (uri: string): void => {
-    const cb = activeCallbacks.get(uri);
-    if (!cb) return;
-    try {
-      cb(uri);
-    } catch (err) {
-      Logger.warn(`Notify callback error for ${uri}: ${formatUnknownErrorMessage(err)}`);
+    if (!activeCallbacks.has(uri)) return;
+    const existing = debounceTimers.get(uri);
+    if (existing) {
+      clearTimeout(existing);
     }
+    const timer = setTimeout(() => {
+      debounceTimers.delete(uri);
+      const cb = activeCallbacks.get(uri);
+      if (!cb) return;
+      try {
+        cb(uri);
+      } catch (err) {
+        Logger.warn(`Notify callback error for ${uri}: ${formatUnknownErrorMessage(err)}`);
+      }
+    }, 50);
+    timer.unref();
+    debounceTimers.set(uri, timer);
   };
 
   return {
@@ -271,6 +287,11 @@ function createWatcherRegistry() {
     remove(uri: string): void {
       desiredState.set(uri, 'unsubscribed');
       activeCallbacks.delete(uri);
+      const timer = debounceTimers.get(uri);
+      if (timer) {
+        clearTimeout(timer);
+        debounceTimers.delete(uri);
+      }
       const watcher = watchers.get(uri);
       if (watcher) {
         dropWatcher(uri, watcher);
@@ -279,6 +300,10 @@ function createWatcherRegistry() {
 
     destroy(): void {
       destroyed = true;
+      for (const timer of debounceTimers.values()) {
+        clearTimeout(timer);
+      }
+      debounceTimers.clear();
       for (const watcher of watchers.values()) {
         try {
           watcher.close();
