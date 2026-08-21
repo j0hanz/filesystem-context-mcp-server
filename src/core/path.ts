@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Stats } from 'node:fs';
 import { lstat, readlink, realpath, stat } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -420,12 +419,6 @@ export function isSafeGlobSyntax(pattern: string): boolean {
   return true;
 }
 
-export interface AccessGrantDeps {
-  /** Ask the user to approve granting access to targetDir.
-   *  Injected so PathGuard stays free of the MCP elicitation surface. */
-  confirm: (targetDir: string) => Promise<boolean>;
-}
-
 /**
  * Accepted risk: validation methods resolve/verify a path (symlinks, boundaries,
  * sensitivity) and then return a plain string; the actual fs operation happens
@@ -442,7 +435,11 @@ export class PathGuard {
   private readonly sensitive = new SensitiveMatcher();
   private rootDirectories: string[] = [];
   private rootBoundaries: string[] = [];
-  private readonly denialCache = new Set<string>();
+
+  // ponytail: one mutex per PathGuard. If per-session grant throughput ever
+  // matters, split into per-grant-dir locks; a single lock is correct for the
+  // stdio + InMemoryEventStore single-process model (decision record 11).
+  #mutex = Promise.resolve();
 
   readonly options: ServerOptions | undefined;
   /**
@@ -452,33 +449,9 @@ export class PathGuard {
    */
   readonly isServerContext: boolean;
 
-  /**
-   * Per-request access-denied handler, scoped via AsyncLocalStorage so concurrent
-   * tools/call invocations sharing one PathGuard cannot clobber each other's
-   * handler. Set by {@link PathGuard.runWithAccessDeniedHandler} for the duration
-   * of a single tool execution; read by {@link PathGuard.checkAndPromptAccess}.
-   * Per-instance, not static: each server builds its own guard, and one guard's
-   * handler must not be visible through another.
-   */
-  readonly #accessDeniedStorage = new AsyncLocalStorage<
-    (blockedPath: string) => Promise<boolean>
-  >();
-
   constructor(options?: ServerOptions, isServerContext = false) {
     this.options = options;
     this.isServerContext = isServerContext;
-  }
-
-  /**
-   * Run `fn` with `handler` as the active access-denied callback for this
-   * async chain. Used by the tool executor to attach a per-request elicitation
-   * handler without mutating shared state.
-   */
-  runWithAccessDeniedHandler<R>(
-    handler: (blockedPath: string) => Promise<boolean>,
-    fn: () => Promise<R>,
-  ): Promise<R> {
-    return this.#accessDeniedStorage.run(handler, fn);
   }
 
   static async fromAllowedDirectories(
@@ -502,7 +475,21 @@ export class PathGuard {
     return this.allowedDirectoriesState !== undefined;
   }
 
-  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
+  /**
+   * Run `fn` as the next holder of the guard's single mutation lock. Every root
+   * change goes through this so concurrent grants (and concurrent root refreshes)
+   * cannot interleave their read-`await`-write and lose a grant (GRANT-1).
+   */
+  private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const result = this.#mutex.then(fn, fn);
+    this.#mutex = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  async #setRootsLocked(resolvedRoots: readonly string[]): Promise<void> {
     const next = [...resolvedRoots];
     const previous = this.rootDirectories;
     this.rootDirectories = next;
@@ -514,6 +501,11 @@ export class PathGuard {
       this.rootDirectories = previous;
       throw error;
     }
+  }
+
+  /** Set the allowed roots under the mutation lock. */
+  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
+    return this.runExclusive(() => this.#setRootsLocked(resolvedRoots));
   }
 
   getAllowedDirectories(): string[] {
@@ -573,17 +565,6 @@ export class PathGuard {
     return details.resolvedPath as ValidatedPath;
   }
 
-  private async checkAndPromptAccess(checkPath: string): Promise<boolean> {
-    const handler = this.#accessDeniedStorage.getStore();
-    if (!handler) return false;
-    return handler(checkPath);
-  }
-
-  /** Clear remembered denials (e.g. on server teardown). */
-  clearDenialCache(): void {
-    this.denialCache.clear();
-  }
-
   /** Walk up from a blocked path to the closest existing ancestor directory. */
   private async resolveGrantTargetDir(blockedPath: string): Promise<string> {
     let targetDir = blockedPath;
@@ -602,68 +583,86 @@ export class PathGuard {
   }
 
   /**
-   * Access-grant policy: resolve the target directory, honor remembered denials,
-   * ask the user, enforce ROOT_BOUNDARY, then grant by extending the roots.
-   * MCP elicitation is injected via `deps` so this stays a pure access-control
-   * concern.
+   * Pre-check (no mutation, no callback): given the paths a tool is about to
+   * operate on, return the sorted, de-duplicated grant-target directories for
+   * those that are outside the allowed roots AND grantable (within ROOT_BOUNDARY
+   * when it is configured). A path whose nearest existing ancestor escapes the
+   * boundary is NOT grantable and is omitted — the operation will fail with
+   * ACCESS_DENIED for it rather than prompt. The caller returns an
+   * `input_required` result carrying exactly this set (R7), and on retry applies
+   * each accepted grant via {@link applyGrant} (R8). `requestState` binds this
+   * set so a grant accepted for X cannot authorize Y (R9).
    */
-  async requestAccessGrant(blockedPath: string, deps: AccessGrantDeps): Promise<boolean> {
-    const targetDir = await this.resolveGrantTargetDir(blockedPath);
-
-    if (this.denialCache.has(targetDir)) return false;
-
-    let approved: boolean;
-    try {
-      approved = await deps.confirm(targetDir);
-    } catch (err) {
-      Logger.warn('requestAccessGrant: confirm threw, treating as denial', {
-        targetDir,
-        error: String(err),
-      });
-      return false;
+  async precheckAccess(paths: readonly string[]): Promise<string[]> {
+    if (!this.allowedDirectoriesState || paths.length === 0) return [];
+    const allowedDirs = this.allowedDirectoriesState.expanded;
+    const grantDirs: string[] = [];
+    for (const requested of paths) {
+      if (!requested) continue;
+      const normalized = normalizePath(requested);
+      if (isPathWithinDirectories(normalized, allowedDirs)) continue;
+      const targetDir = normalizePath(await this.resolveGrantTargetDir(normalized));
+      if (grantDirs.includes(targetDir)) continue;
+      if (!(await this.isWithinBoundary(targetDir))) continue;
+      grantDirs.push(targetDir);
     }
-
-    if (!approved) {
-      this.denialCache.add(targetDir);
-      return false;
-    }
-
-    if (this.rootBoundaries.length > 0) {
-      // The guard already realpath-resolved ROOT_BOUNDARY into rootBoundaries
-      // during recomputeAllowedDirectories. Reuse that single source of truth so
-      // the grant path checks the same boundary the rest of the guard enforces,
-      // instead of re-reading the env and re-resolving each entry by hand.
-      let resolvedTarget: string;
-      try {
-        resolvedTarget = normalizePath(await realpath(targetDir));
-      } catch {
-        resolvedTarget = normalizePath(targetDir);
-      }
-      if (!isPathWithinDirectories(resolvedTarget, this.rootBoundaries)) {
-        return false;
-      }
-    }
-
-    await this.setRoots([...this.getAllowedDirectories(), targetDir]);
-    return true;
+    return grantDirs.sort();
   }
 
-  private async validateAccessAndSensitivity(requestedPath: string): Promise<{
+  /**
+   * Apply an accepted access grant: enforce ROOT_BOUNDARY again (a TOCTOU
+   * re-check against the boundary resolved at config time), then extend the
+   * allowed roots for the remainder of the session (R8, A4). Returns false when
+   * the boundary blocks the grant; the caller leaves the path to fail with
+   * ACCESS_DENIED during the operation. Idempotent: re-granting an already
+   * allowed directory is a no-op via `setRoots` dedup.
+   */
+  async applyGrant(targetDir: string): Promise<boolean> {
+    if (!(await this.isWithinBoundary(targetDir))) return false;
+    // Read + write under the mutation lock so a concurrent grant cannot
+    // interleave and lose this grant (GRANT-1). #setRootsLocked (not the
+    // locked public setRoots) — runExclusive is not reentrant.
+    return this.runExclusive(async () => {
+      await this.#setRootsLocked([...this.getAllowedDirectories(), targetDir]);
+      return true;
+    });
+  }
+
+  // The guard already realpath-resolved ROOT_BOUNDARY into rootBoundaries
+  // during recomputeAllowedDirectories. Reuse that single source of truth so
+  // grant paths check the same boundary the rest of the guard enforces,
+  // instead of re-reading the env and re-resolving each entry.
+  private async isWithinBoundary(targetDir: string): Promise<boolean> {
+    if (this.rootBoundaries.length === 0) return true;
+    let resolved: string;
+    try {
+      resolved = normalizePath(await realpath(targetDir));
+    } catch {
+      resolved = normalizePath(targetDir);
+    }
+    return isPathWithinDirectories(resolved, this.rootBoundaries);
+  }
+
+  private validateAccessAndSensitivity(requestedPath: string): {
     normalizedRequested: string;
     allowedDirs: string[];
     accessDeniedHint: string;
-  }> {
-    const result = await this.validateAccess(requestedPath);
+  } {
+    const result = this.validateAccess(requestedPath);
     this.assertNotSensitiveFile(requestedPath, requestedPath);
     this.assertNotSensitiveFile(result.normalizedRequested, requestedPath);
     return result;
   }
 
-  private async validateAccess(requestedPath: string): Promise<{
+  // Synchronous since the access-grant round-trip moved to the executor's
+  // pre-check: validateAccess only does lexical containment math and throws,
+  // no async I/O remains. Callers still `await` it for uniform control-flow;
+  // awaiting a non-thenable returns it unchanged.
+  private validateAccess(requestedPath: string): {
     normalizedRequested: string;
     allowedDirs: string[];
     accessDeniedHint: string;
-  }> {
+  } {
     if (!this.allowedDirectoriesState) {
       throw new FsError(
         ErrorCode.UNKNOWN,
@@ -696,14 +695,13 @@ export class PathGuard {
         : 'No allowed directories configured.';
 
     if (!isPathWithinDirectories(normalizedRequested, allowedDirs)) {
-      // Prompt for access, then re-check against the (possibly extended) set.
-      // Both "no handler / denied" and "granted but still outside" land here:
-      // the post-prompt containment test is the only real gate, so the
-      // granted boolean never changed the outcome — one re-check replaces it.
-      await this.checkAndPromptAccess(normalizedRequested);
-      if (!isPathWithinDirectories(normalizedRequested, this.allowedDirectoriesState.expanded)) {
-        this.throwAccessDenied(requestedPath, accessDeniedHint);
-      }
+      // Out of root. The access-grant `input_required` round-trip is driven by
+      // the executor's pre-check (precheckAccess) BEFORE the operation runs, so
+      // by the time validation reaches here any grantable out-of-root path has
+      // already been accepted and added to the allowed set. A path still out of
+      // root here was either declined, ungrantable (outside ROOT_BOUNDARY), or
+      // never pre-checked — fail closed.
+      this.throwAccessDenied(requestedPath, accessDeniedHint);
     }
 
     return {
@@ -765,7 +763,7 @@ export class PathGuard {
 
   async validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      await this.validateAccessAndSensitivity(requestedPath);
+      this.validateAccessAndSensitivity(requestedPath);
 
     let realPath: string;
     try {
@@ -933,7 +931,7 @@ export class PathGuard {
 
   async validatePathForWrite(requestedPath: string): Promise<ValidatedPath> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      await this.validateAccessAndSensitivity(requestedPath);
+      this.validateAccessAndSensitivity(requestedPath);
 
     const { realAncestor, resolvedTarget } = await this.resolveNearestExistingAncestor(
       requestedPath,
@@ -953,7 +951,7 @@ export class PathGuard {
 
   async validatePathForDelete(requestedPath: string): Promise<ValidatedPath> {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
-      await this.validateAccessAndSensitivity(requestedPath);
+      this.validateAccessAndSensitivity(requestedPath);
 
     const parent = dirname(normalizedRequested);
     let realParent: string;

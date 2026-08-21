@@ -317,6 +317,7 @@ export const LIST = defineTool({
     label: 'List',
     subject: args.path ? basename(args.path) : '.',
   }),
+  accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const output = await handleList(args, ctx.fs, ctx.signal, ctx.resourceStore, ctx.onProgress);
     return { structured: output, text: output.markdown };

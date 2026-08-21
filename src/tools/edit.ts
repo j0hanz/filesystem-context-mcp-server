@@ -22,6 +22,7 @@ import {
   OperationSummarySchema,
   PerFileErrorSchema,
   PositiveInt,
+  singleOrBatchAccessPaths,
   singleOrBatchPathsInput,
 } from '../core/schema.js';
 import type { Regex } from '../core/search.js';
@@ -525,6 +526,7 @@ export const EDIT = defineTool({
     }
     return { label: `Edit${dryLabel}`, subject };
   },
+  accessPaths: singleOrBatchAccessPaths,
   run: async (args, ctx) => {
     const sharedEdits = args.edits ?? [];
     const batchInput =

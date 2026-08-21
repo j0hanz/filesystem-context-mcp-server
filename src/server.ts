@@ -16,6 +16,7 @@ import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
 import { resourcesRegistrar } from './resources.js';
 import { toolsRegistrar } from './tools/index.js';
+import { requestStateCodec } from './tools/input-required.js';
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
@@ -56,7 +57,6 @@ export class FilesystemServerContext {
     this.cleanedUp = true;
     this.synchronizer.destroy();
     for (const r of this.registrars) r.dispose(this.mcp);
-    this.pathGuard.clearDenialCache();
   }
 
   async close(): Promise<void> {
@@ -108,6 +108,15 @@ export async function createServer(options: ServerOptions = {}): Promise<Filesys
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,
+    // Multi-round-trip `requestState` integrity (protocol revision 2026-07-28):
+    // the codec verifies the HMAC on every retried round before the handler
+    // runs, so a tampered or expired state is rejected as `-32602` rather than
+    // trusted. The decoded `PendingState` reaches handlers via
+    // `ctx.mcpReq.requestState<T>()`.
+    // verify is a closure returned by createRequestStateCodec, not a
+    // `this`-bound method; the SDK's own doc comment says to pass it directly.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    requestState: { verify: requestStateCodec.verify },
   };
 
   serverConfig.instructions =

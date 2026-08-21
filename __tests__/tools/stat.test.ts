@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import {
+  assertInputRequiredFailClose,
   assertOk,
   assertToolError,
   createTestEnv,
@@ -112,13 +113,8 @@ describe('stat tool', () => {
       name: 'stat',
       arguments: { path: '/etc/passwd' },
     });
-    assertOk(raw);
-    const sc = getStructured(raw);
-    assert.equal(sc['ok'], true);
-    const results = sc['results'] as Record<string, unknown>[];
-    assert.equal(results.length, 1);
-    const error = results[0]?.['error'] as Record<string, unknown>;
-    assert.equal(error?.['code'], 'ACCESS_DENIED');
+    // Out-of-root fail-closes on the legacy-era wire harness — R6.
+    assertInputRequiredFailClose(raw);
   });
 
   it('stat JSON schema has flat properties with optional path and paths', async () => {

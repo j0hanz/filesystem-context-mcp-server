@@ -413,6 +413,23 @@ export function singleOrBatchPathsInput<
   }) as unknown as ReturnType<typeof singleOrBatchPathsInput<TExtra, TPerFile>>;
 }
 
+/**
+ * Extract the filesystem paths from a {@link singleOrBatchPathsInput} shape
+ * (`{ path?, paths?, files?[{path}] }`) for the executor's access-grant
+ * pre-check. Exactly one of the three is set (enforced by the schema's
+ * superRefine), so they are checked in priority order.
+ */
+export function singleOrBatchAccessPaths(args: {
+  path?: string | undefined;
+  paths?: string[] | undefined;
+  files?: readonly { path: string }[] | undefined;
+}): string[] {
+  if (args.path) return [args.path];
+  if (args.paths) return [...args.paths];
+  if (args.files) return args.files.map((f) => f.path);
+  return [];
+}
+
 export const ContinuationSchema = z
   .strictObject({
     tool: z.string().describe('Tool name to call for the next chunk'),

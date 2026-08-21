@@ -641,6 +641,7 @@ export const SEARCH_AND_REPLACE = defineTool({
       subject: `${truncateProgressPattern(args.searchPattern)} → ${truncateProgressPattern(args.replacement)}`,
     };
   },
+  accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
     const onProgress = (params: { current: number; total?: number }): void => {

@@ -17,6 +17,7 @@ import {
   NonNegInt,
   OperationSummarySchema,
   PerFileErrorSchema,
+  singleOrBatchAccessPaths,
   singleOrBatchPathsInput,
 } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
@@ -199,6 +200,7 @@ export const GET_FILE_INFO = defineTool({
     }
     return { label: 'Stat', subject: args.path ?? '' };
   },
+  accessPaths: singleOrBatchAccessPaths,
   run: async (args, ctx) => {
     const batchInput = args.path !== undefined ? { path: args.path } : { paths: args.paths ?? [] };
 

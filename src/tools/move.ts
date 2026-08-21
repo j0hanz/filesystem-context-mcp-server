@@ -1,3 +1,6 @@
+import type { InputRequiredResult } from '@modelcontextprotocol/server';
+import { isInputRequiredResult } from '@modelcontextprotocol/server';
+
 import { basename, dirname, resolve, sep } from 'node:path';
 
 import * as z from 'zod/v4';
@@ -16,7 +19,8 @@ import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import type { ToolCtx } from './define.js';
-import { confirmBoolean, defineTool } from './define.js';
+import { defineTool } from './define.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),
@@ -60,47 +64,221 @@ const MoveOutputSchema = z.strictObject({
 
 type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
 
-async function tryElicitOverwriteConfirmation(
-  destination: string,
-  validDest: string,
-  ctx: Pick<ToolCtx, 'fs' | 'elicitInput'>,
-): Promise<boolean> {
-  if (!ctx.elicitInput) return false;
+/** A move pre-checked up to the point a confirmation decision is needed. */
+interface MovePlan {
+  move: { source: string; destination: string };
+  renamePath: string;
+  validDest: string;
+  isCaseOnlyRename: boolean;
+  /** Whether the destination existed when planned (drives the TOCTOU guard). */
+  destExistedOriginally: boolean;
+  /** Destination exists and is not a self/case-only move → needs overwrite confirmation. */
+  pending: boolean;
+}
 
-  let destExists = false;
+type MovePlanResult =
+  | { status: 'fail'; failure: MoveFailureItem }
+  | { status: 'noop' }
+  | { status: 'plan'; plan: MovePlan };
+
+function moveFailure(
+  move: { source: string; destination: string },
+  error: unknown,
+): MoveFailureItem {
+  return {
+    source: move.source,
+    destination: move.destination,
+    error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, move.source),
+  };
+}
+
+/**
+ * Phase 1 (no mutation): validate source and destination, reject self-moves and
+ * moves into a subdirectory of the source, and stat the destination to decide
+ * whether this move needs an overwrite confirmation. No `mkdir` happens here —
+ * the old flow created the destination's parent before asking, which mutated
+ * the filesystem before a confirmation; that now waits for phase 2 (R14).
+ */
+async function planMove(
+  move: { source: string; destination: string },
+  fs: ToolCtx['fs'],
+): Promise<MovePlanResult> {
+  let renamePath: string;
+  let realPath: string;
   try {
-    await ctx.fs.stat(validDest);
-    destExists = true;
-  } catch {
-    // Destination does not exist - no confirmation needed.
+    ({ renamePath, realPath } = await validateMoveSource(move.source, fs));
+  } catch (error) {
+    return { status: 'fail', failure: moveFailure(move, error) };
   }
 
-  if (!destExists) return false;
+  let validDest: string;
+  try {
+    validDest = await fs.pathGuard.validatePathForWrite(move.destination);
+  } catch (error) {
+    return { status: 'fail', failure: moveFailure(move, error) };
+  }
 
-  const r = await confirmBoolean(
-    ctx,
-    'confirmOverwrite',
-    `"${destination}" already exists. Overwrite it?`,
-    'Yes, overwrite',
-  );
-  if (r.unavailable) return false; // Connection cannot be asked at all - proceed without confirming.
-  if (r.error) {
-    // Transport or unexpected failure - fail closed, don't move.
+  // Comparisons run on the resolved source; only the fs call below uses
+  // renamePath. validatePathForWrite resolves the destination through a
+  // symlink too, so both sides of every check must be resolved to match.
+  const resolvedSource = resolve(realPath);
+  const resolvedDest = resolve(validDest);
+
+  if (resolvedSource === resolvedDest) {
+    // Self-move — silently skip.
+    return { status: 'noop' };
+  }
+
+  const platform = process.platform;
+  const normalizedDest =
+    platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
+  const normalizedSource =
+    platform === 'win32' || platform === 'darwin'
+      ? (resolvedSource + sep).toLowerCase()
+      : resolvedSource + sep;
+
+  if (normalizedDest.startsWith(normalizedSource)) {
+    return {
+      status: 'fail',
+      failure: moveFailure(
+        move,
+        new FsError(
+          ErrorCode.INVALID_INPUT,
+          'Cannot move a directory into its own subdirectory',
+          move.source,
+        ),
+      ),
+    };
+  }
+
+  const isCaseOnlyRename = isSamePath(resolvedSource, resolvedDest);
+  let destExistedOriginally = false;
+  if (!isCaseOnlyRename) {
+    try {
+      await fs.stat(validDest);
+      destExistedOriginally = true;
+    } catch (err) {
+      if (isNodeError(err) && err.code !== 'ENOENT') {
+        Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
+      }
+    }
+  }
+
+  const pending = !isCaseOnlyRename && destExistedOriginally;
+  return {
+    status: 'plan',
+    plan: { move, renamePath, validDest, isCaseOnlyRename, destExistedOriginally, pending },
+  };
+}
+
+/**
+ * Phase 2 (mutation): confirm an overwrite if needed, create the destination's
+ * parent, TOCTOU-check the destination, then rename (with cross-device fallback).
+ * A declined/missing confirmation throws `CANCELLED`, collected as a per-move
+ * failure by the caller. A destination that appeared between plan and rename
+ * (created during the confirmation gap) also fails closed.
+ */
+async function executeMove(
+  plan: MovePlan,
+  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
+  pendingSorted: readonly string[],
+): Promise<MoveItemResult> {
+  if (plan.pending) {
+    const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
+    if (!readAcceptedConfirm(ctx.inputResponses, key)) {
+      throw new FsError(
+        ErrorCode.CANCELLED,
+        `Move cancelled: overwrite of "${plan.move.destination}" was declined or missing`,
+        plan.move.destination,
+      );
+    }
+  }
+
+  await withAbort(ctx.fs.mkdir(dirname(plan.validDest), { recursive: true }), ctx.signal);
+
+  // TOCTOU check immediately before the rename: a destination that did not exist
+  // when planned but exists now was created during the confirmation gap.
+  let existsNow = false;
+  if (!plan.isCaseOnlyRename) {
+    try {
+      await ctx.fs.stat(plan.validDest);
+      existsNow = true;
+    } catch (err) {
+      if (isNodeError(err) && err.code !== 'ENOENT') {
+        Logger.warn(`move: dest stat failed unexpectedly for "${plan.validDest}": ${String(err)}`);
+      }
+    }
+  }
+  if (existsNow && !plan.destExistedOriginally) {
     throw new FsError(
       ErrorCode.CANCELLED,
-      `Move cancelled: could not confirm overwrite of "${destination}".`,
-      destination,
+      `Move cancelled: destination "${plan.move.destination}" was created during confirmation.`,
+      plan.move.destination,
     );
   }
-  if (!r.confirmed) {
-    // User declined - surface as a cancellation error.
-    throw new FsError(
-      ErrorCode.CANCELLED,
-      `Move cancelled: "${destination}" already exists and overwrite was declined.`,
-      destination,
-    );
+
+  await performRenameWithFallback(plan.renamePath, plan.validDest, ctx.fs, plan.move.source);
+  return { ok: true as const, from: plan.renamePath, to: plan.validDest };
+}
+
+/**
+ * Two-phase move: pre-check every move (no mutation) to build the overwrite
+ * pending set; if any move is pending and the round carries no verified
+ * `requestState`, return `input_required` moving nothing (R14). On retry, R9
+ * checks the state binds this move set, then each pending move proceeds only on
+ * an accepted overwrite. Non-pending moves proceed alongside them.
+ */
+async function handleMove(
+  args: z.infer<typeof MoveInputSchema>,
+  ctx: ToolCtx,
+): Promise<z.infer<typeof MoveOutputSchema> | InputRequiredResult> {
+  const plans: MovePlan[] = [];
+  const earlyFailures: MoveFailureItem[] = [];
+  for (const move of args.moves) {
+    const r = await planMove(move, ctx.fs);
+    if (r.status === 'fail') earlyFailures.push(r.failure);
+    else if (r.status === 'plan') plans.push(r.plan);
+    // 'noop' (self-move) is silently skipped, as before.
   }
-  return true;
+
+  const pendingSorted = [...new Set(plans.filter((p) => p.pending).map((p) => p.validDest))].sort();
+
+  if (pendingSorted.length > 0) {
+    // Round 1 returns input_required; a retry whose verified state does not
+    // bind this overwrite set throws (R9) via `pendingRoundTrip`.
+    const round = await pendingRoundTrip({
+      op: 'move',
+      pending: pendingSorted,
+      requestState: ctx.requestState,
+      buildInputs: (ds) =>
+        ds.map((d, i) => confirmInput(`confirm_${i}`, `"${d}" already exists. Overwrite it?`)),
+    });
+    if (round !== undefined) return round;
+  }
+
+  const results: MoveItemResult[] = [];
+  const failures = [...earlyFailures];
+  for (const plan of plans) {
+    try {
+      const res = await executeMove(plan, ctx, pendingSorted);
+      results.push(res);
+      ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
+    } catch (err) {
+      // A genuine abort propagates (the whole call is aborting); everything
+      // else — a declined overwrite, a TOCTOU race, a rename failure — is a
+      // per-move failure. rethrowIfAborted would conflate a declined-overwrite
+      // FsError(CANCELLED) with an abort-signal cancellation (both classify to
+      // CANCELLED), so gate on the signal itself instead.
+      if (ctx.signal.aborted) throw err;
+      failures.push(moveFailure(plan.move, err));
+    }
+  }
+
+  return {
+    ok: true as const,
+    moves: results,
+    ...(failures.length > 0 ? { failures } : {}),
+  };
 }
 
 function buildSummary(
@@ -230,104 +408,12 @@ export const MOVE = defineTool({
     return { label: 'Move', subject: `${String(args.moves.length)} files` };
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
+  accessPaths: (args) => args.moves.flatMap((m) => [m.source, m.destination]),
   run: async (args, ctx) => {
-    const results: MoveItemResult[] = [];
-    const failures: MoveFailureItem[] = [];
-
-    for (const move of args.moves) {
-      try {
-        const { renamePath, realPath } = await validateMoveSource(move.source, ctx.fs);
-        const validDest = await ctx.fs.pathGuard.validatePathForWrite(move.destination);
-
-        // Comparisons run on the resolved source; only the fs call below uses
-        // renamePath. validatePathForWrite resolves the destination through a
-        // symlink too, so both sides of every check must be resolved to match.
-        const resolvedSource = resolve(realPath);
-        const resolvedDest = resolve(validDest);
-
-        if (resolvedSource === resolvedDest) {
-          continue;
-        }
-
-        const platform = process.platform;
-        const normalizedDest =
-          platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
-        const normalizedSource =
-          platform === 'win32' || platform === 'darwin'
-            ? (resolvedSource + sep).toLowerCase()
-            : resolvedSource + sep;
-
-        if (normalizedDest.startsWith(normalizedSource)) {
-          throw new FsError(
-            ErrorCode.INVALID_INPUT,
-            'Cannot move a directory into its own subdirectory',
-            move.source,
-          );
-        }
-
-        const isCaseOnlyRename = isSamePath(resolvedSource, resolvedDest);
-        let destExistedOriginally = false;
-
-        if (!isCaseOnlyRename) {
-          try {
-            await ctx.fs.stat(validDest);
-            destExistedOriginally = true;
-          } catch (err) {
-            if (isNodeError(err) && err.code !== 'ENOENT') {
-              Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
-            }
-          }
-        }
-
-        await withAbort(ctx.fs.mkdir(dirname(validDest), { recursive: true }), ctx.signal);
-
-        if (!isCaseOnlyRename) {
-          await tryElicitOverwriteConfirmation(move.destination, validDest, ctx);
-        }
-
-        // TOCTOU check immediately before actual renaming/moving
-        let existsNow = false;
-        if (!isCaseOnlyRename) {
-          try {
-            await ctx.fs.stat(validDest);
-            existsNow = true;
-          } catch (err) {
-            if (isNodeError(err) && err.code !== 'ENOENT') {
-              Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
-            }
-          }
-        }
-
-        if (existsNow && !destExistedOriginally) {
-          throw new FsError(
-            ErrorCode.CANCELLED,
-            `Move cancelled: destination "${move.destination}" was created during confirmation.`,
-            move.destination,
-          );
-        }
-
-        await performRenameWithFallback(renamePath, validDest, ctx.fs, move.source);
-
-        results.push({ ok: true as const, from: renamePath, to: validDest });
-        ctx.log?.('info', `move: ${move.source} -> ${move.destination}`, 'move');
-      } catch (err) {
-        // Re-throw cancellation (user-declined overwrite or abort signal)
-        rethrowIfAborted(err);
-        // Collect all other errors as per-move failures
-        const structured = Problem.fromUnknown(err, ErrorCode.UNKNOWN, move.source);
-        failures.push({
-          source: move.source,
-          destination: move.destination,
-          error: structured,
-        });
-      }
-    }
-
-    const output: z.infer<typeof MoveOutputSchema> = {
-      ok: true as const,
-      moves: results,
-      ...(failures.length > 0 ? { failures } : {}),
-    };
-    return { structured: output, text: buildSummary(results, failures) };
+    const output = await handleMove(args, ctx);
+    // input_required is a return value, not a completed call: surface it
+    // verbatim so the executor short-circuits before building a CallToolResult.
+    if (isInputRequiredResult(output)) return output;
+    return { structured: output, text: buildSummary(output.moves, output.failures ?? []) };
   },
 });

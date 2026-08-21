@@ -21,6 +21,7 @@ import {
   PerFileErrorSchema,
   PositiveInt,
   Sha256Hex,
+  singleOrBatchAccessPaths,
   singleOrBatchPathsInput,
   validateReadRange,
 } from '../core/schema.js';
@@ -401,6 +402,7 @@ export const READ_FILE = defineTool({
     }
     return { label: READ_TOOL_LABEL, subject: name, ...(scope ? { scope } : {}) };
   },
+  accessPaths: singleOrBatchAccessPaths,
   run: async (args, ctx) => {
     let pathList: string[];
     let skippedResults = new Map<number, PerPathResult<PerPathReadValue>>();

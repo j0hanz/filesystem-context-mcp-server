@@ -6,7 +6,13 @@ import { lstat, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { assertOk, assertToolError, createTestEnv, type TestEnv } from './helpers.js';
+import {
+  assertInputRequiredFailClose,
+  assertOk,
+  assertToolError,
+  createTestEnv,
+  type TestEnv,
+} from './helpers.js';
 
 // ─── Path boundary enforcement ───────────────────────────────────────────────
 
@@ -52,28 +58,11 @@ describe('security: path boundary enforcement', () => {
         name: tool,
         arguments: args(env.tmpDir),
       });
-      // delete/create return ok:true with failures[] for per-path errors.
-      // read/stat now also return ok:true with inline per-path errors.
-      if (tool === 'delete' || tool === 'create') {
-        assertOk(raw);
-        const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-        assert.ok(
-          Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-          `${tool} must report ACCESS_DENIED in failures[]`,
-        );
-        assert.equal(
-          (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-          'ACCESS_DENIED',
-        );
-      } else if (tool === 'read' || tool === 'stat') {
-        assertOk(raw);
-        const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-        const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
-        assert.ok(Array.isArray(results) && results.length > 0, `${tool} must return results[]`);
-        assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
-      } else {
-        assertToolError(raw, 'ACCESS_DENIED');
-      }
+      // Out-of-root on the legacy-era wire harness: precheckGrant returns
+      // input_required, and the SDK legacy shim fail-closes (R6 — nothing
+      // touched). The grant round-trip itself is covered by the direct-handler
+      // tests; here we assert the wire-observable fail-close shape.
+      assertInputRequiredFailClose(raw);
     });
   }
 });
@@ -98,11 +87,9 @@ describe('security: path traversal via ".."', () => {
       name: 'read',
       arguments: { path: escaped },
     });
-    assertOk(raw);
-    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
-    assert.ok(Array.isArray(results) && results.length > 0, 'read must return results[]');
-    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
+    // path.join resolves ".." away, so this reaches precheckGrant (out-of-root)
+    // and fail-closes on the legacy-era harness — R6.
+    assertInputRequiredFailClose(raw);
   });
 
   it('stat: rejects traversal above tmpDir', async () => {
@@ -111,11 +98,7 @@ describe('security: path traversal via ".."', () => {
       name: 'stat',
       arguments: { path: escaped },
     });
-    assertOk(raw);
-    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-    const results = sc?.['results'] as { error?: { code?: string } }[] | undefined;
-    assert.ok(Array.isArray(results) && results.length > 0, 'stat must return results[]');
-    assert.equal(results[0]?.error?.code, 'ACCESS_DENIED');
+    assertInputRequiredFailClose(raw);
   });
 
   it('create: rejects traversal above tmpDir', async () => {
@@ -124,16 +107,7 @@ describe('security: path traversal via ".."', () => {
       name: 'create',
       arguments: { files: [{ path: escaped, content: 'exploit' }] },
     });
-    assertOk(raw);
-    const sc = (raw as { structuredContent?: Record<string, unknown> }).structuredContent;
-    assert.ok(
-      Array.isArray(sc?.['failures']) && sc['failures'].length > 0,
-      'create must report ACCESS_DENIED in failures[]',
-    );
-    assert.equal(
-      (sc?.['failures'] as { error: { code: string } }[])[0]?.error?.code,
-      'ACCESS_DENIED',
-    );
+    assertInputRequiredFailClose(raw);
   });
 });
 

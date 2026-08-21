@@ -19,10 +19,13 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
   );
 
   // Verify ToolExecutor execute has explicit return type annotation
-  const executeMatch = /async execute\(deps: ToolDeps\): Promise<CallToolResult>/.exec(fileContent);
+  const executeMatch =
+    /async execute\(deps: ToolDeps\): Promise<CallToolResult \| InputRequiredResult>/.exec(
+      fileContent,
+    );
   assert(
     executeMatch,
-    'execute should have explicit return type annotation: Promise<CallToolResult>',
+    'execute should have explicit return type annotation: Promise<CallToolResult | InputRequiredResult>',
   );
 
   // Verify the unsafe cast has been removed
@@ -33,12 +36,12 @@ test('coreHandler has explicit Promise<CallToolResult> return type annotation', 
 
   // Verify createServerToolHandler has an explicit server-context handler return type.
   const serverCtxMatch =
-    /function createServerToolHandler<[^>]+>\([\s\S]*?\): \(args: z\.infer<I>, ctx: ServerContext\) => Promise<CallToolResult>/.exec(
+    /function createServerToolHandler<[^>]+>\([\s\S]*?\): \(args: z\.infer<I>, ctx: ServerContext\) => Promise<CallToolResult \| InputRequiredResult>/.exec(
       fileContent,
     );
   assert(
     serverCtxMatch,
-    'createServerToolHandler should have explicit return type annotation: (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult>',
+    'createServerToolHandler should have explicit return type annotation: (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult>',
   );
 });
 
