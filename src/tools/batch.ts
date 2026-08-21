@@ -17,8 +17,6 @@ export interface BatchResult<T> {
   summary: { total: number; succeeded: number; failed: number };
 }
 
-// ============ Batch Execution ============
-
 type BatchInput<TOverride> =
   { path: string } | { paths: string[] } | { files: ({ path: string } & TOverride)[] };
 

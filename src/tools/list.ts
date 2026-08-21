@@ -4,7 +4,6 @@ import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import type { GuardedFileSystem } from '../core/fs.js';
 import {
   DEFAULT_EXCLUDE_PATTERNS,
   type EntryType,
@@ -23,7 +22,6 @@ import {
   OptionalPath,
   PositiveInt,
 } from '../core/schema.js';
-import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   DEFAULT_TREE_ENTRIES,
@@ -31,9 +29,7 @@ import {
   MAX_TREE_DEPTH,
 } from '../core/util.js';
 import { putJsonResource } from './_helpers.js';
-import { defineTool } from './define.js';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { defineTool, type ToolCtx } from './define.js';
 
 interface CollectedEntry {
   name: string;
@@ -56,8 +52,6 @@ interface CollectResult {
   totalFiles: number;
   totalDirectories: number;
 }
-
-// ─── collect — single DFS via globEntries ────────────────────────────────────
 
 function entryTypeRank(type: EntryType): number {
   if (type === 'directory') return 0;
@@ -150,8 +144,6 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
   };
 }
 
-// ─── renderMarkdown — pure, box-drawing ASCII tree ───────────────────────────
-
 const TEE = '├── ';
 const ELBOW = '└── ';
 const PIPE = '│   ';
@@ -192,8 +184,6 @@ function renderMarkdown(rootName: string, entries: CollectedEntry[]): string {
   renderChildren('', '');
   return lines.join('\n');
 }
-
-// ─── Schemas ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_LIST_DEPTH = 1;
 const DEFAULT_LIST_ENTRIES = DEFAULT_TREE_ENTRIES;
@@ -239,33 +229,28 @@ const ListOutputSchema = z.strictObject({
     ),
 });
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
-
 async function handleList(
   args: z.infer<typeof ListInputSchema>,
-  fs: GuardedFileSystem,
-  signal?: AbortSignal,
-  resourceStore?: ResourceStore,
-  onProgress?: (progress: { current: number; total?: number }) => void,
+  ctx: ToolCtx,
 ): Promise<z.infer<typeof ListOutputSchema>> {
   const path = args.path;
-  const resolvedPath = fs.pathGuard.resolvePathOrRoot(path);
-  const validDir = await fs.pathGuard.validateExistingDirectory(resolvedPath);
+  const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
+  const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
 
   const result = await collect(validDir, {
     maxDepth: args.maxDepth,
     includeHidden: args.includeHidden,
     includeIgnored: args.includeIgnored,
-    signal: timedSignal(signal, DEFAULT_SEARCH_TIMEOUT_MS),
-    pathGuard: fs.pathGuard,
-    ...(onProgress ? { onProgress } : {}),
+    signal: timedSignal(ctx.signal, DEFAULT_SEARCH_TIMEOUT_MS),
+    pathGuard: ctx.fs.pathGuard,
+    ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
   });
 
   const inlineEntries = result.entries.slice(0, args.maxEntries);
   const markdown = renderMarkdown(basename(validDir), inlineEntries);
 
   let resourceUri: string | undefined;
-  if (result.totalEntries > inlineEntries.length && resourceStore) {
+  if (result.totalEntries > inlineEntries.length && ctx.resourceStore) {
     const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
     const fullTruncated = result.totalEntries > result.entries.length;
     const fullOutput = {
@@ -276,7 +261,7 @@ async function handleList(
       totalDirectories: result.totalDirectories,
       ...(fullTruncated ? { truncated: true } : {}),
     };
-    const { entry } = putJsonResource(resourceStore, 'list-result.json', fullOutput);
+    const { entry } = putJsonResource(ctx.resourceStore, 'list-result.json', fullOutput);
     resourceUri = entry.uri;
   }
 
@@ -294,8 +279,6 @@ async function handleList(
 
   return output;
 }
-
-// ─── Tool ─────────────────────────────────────────────────────────────────────
 
 export const LIST = defineTool({
   name: 'list',
@@ -319,7 +302,7 @@ export const LIST = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const output = await handleList(args, ctx.fs, ctx.signal, ctx.resourceStore, ctx.onProgress);
+    const output = await handleList(args, ctx);
     return { structured: output, text: output.markdown };
   },
 });

@@ -31,8 +31,6 @@ import {
   StderrProgressSink,
 } from './progress.js';
 
-// ============ Type Definitions ============
-
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
@@ -115,8 +113,6 @@ export interface DefinedTool {
   register(deps: ToolDeps): void;
 }
 
-// ============ Context Builder ============
-
 function toToolCtx(
   ctx: ServerContext | undefined,
   deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server'>,
@@ -168,8 +164,6 @@ function buildExecutionCtx(
   };
 }
 
-// ============ Execution Helpers ============
-
 function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
   args: z.infer<I>,
@@ -196,8 +190,6 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
     structuredContent: result.structured,
   };
 }
-
-// ============ Tool Execution ============
 
 class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   readonly signal: AbortSignal;
@@ -373,8 +365,6 @@ function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
 ): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult> {
   return async (args, ctx) => executeTool(def, toToolCtx(ctx, deps), deps, args);
 }
-
-// ============ Tool Definition ============
 
 // WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a
 // StandardSchemaWithJSON from a plain JSON Schema, but it validates at runtime using

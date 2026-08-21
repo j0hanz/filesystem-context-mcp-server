@@ -38,7 +38,6 @@ import {
 } from '../core/schema.js';
 import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -47,7 +46,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,
@@ -480,16 +479,13 @@ function createReplacementMatcher(args: SearchAndReplaceArgs): ReplacementMatche
 
 async function handleSearchAndReplace(
   args: SearchAndReplaceArgs,
-  fsOps: GuardedFileSystem,
-  signal?: AbortSignal,
-  onProgress: (progress: { total?: number; current: number }) => void = () => undefined,
-  resourceStore?: ResourceStore,
+  ctx: ToolCtx,
 ): Promise<{
   structured: SearchAndReplaceOutput;
   link?: ContentBlock;
 }> {
   const maxFileSize = MAX_TEXT_FILE_SIZE;
-  const { root, singleFile } = await resolveSearchRoot(args.path, fsOps);
+  const { root, singleFile } = await resolveSearchRoot(args.path, ctx.fs);
   const effectivePattern = args.pattern ?? '**/*';
 
   // An explicit single-file target bypasses baseNameMatch/exclude/hidden/
@@ -529,19 +525,19 @@ async function handleSearchAndReplace(
       replacement: args.replacement,
       matcher,
       maxFileSize,
-      signal,
+      signal: ctx.signal,
       summary,
-      fs: fsOps,
+      fs: ctx.fs,
     };
 
     scan = await processEntriesConcurrently(entries, {
-      signal,
+      signal: ctx.signal,
       concurrency: REPLACE_CONCURRENCY,
       ...(args.maxFiles !== undefined ? { maxEntries: args.maxFiles } : {}),
       shouldStop: () => summary.totalMatches >= args.maxResults,
       onEntry: () => {
         summary.processedFiles++;
-        onProgress({ current: summary.processedFiles });
+        ctx.onProgress?.({ current: summary.processedFiles });
       },
       onError: (entryPath, err) => {
         summary.failedFiles++;
@@ -558,7 +554,7 @@ async function handleSearchAndReplace(
   const stoppedReason = scan.resolve();
   if (stoppedReason !== undefined) summary.stoppedReason = stoppedReason;
 
-  onProgress({ current: summary.processedFiles });
+  ctx.onProgress?.({ current: summary.processedFiles });
 
   if (!args.dryRun && summary.totalMatches > 0) {
     Logger.info(
@@ -569,7 +565,7 @@ async function handleSearchAndReplace(
   const structured = buildSearchAndReplaceStructuredResult(summary, args);
 
   // Store primary file in resource store if available
-  if (resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
+  if (ctx.resourceStore && summary.changedFiles.length > 0 && summary.filesChanged > 0) {
     const primaryFile = summary.changedFiles[0];
     if (!primaryFile) return { structured };
 
@@ -578,9 +574,9 @@ async function handleSearchAndReplace(
 
     try {
       const content = await (async (): Promise<string> => {
-        const fd = await fsOps.open(fullPath, 'r');
+        const fd = await ctx.fs.open(fullPath, 'r');
         try {
-          const buffer = await readFileBufferWithLimit(fd, maxFileSize, fullPath, signal);
+          const buffer = await readFileBufferWithLimit(fd, maxFileSize, fullPath, ctx.signal);
           return buffer.toString('utf-8');
         } finally {
           await fd.close();
@@ -644,19 +640,7 @@ export const SEARCH_AND_REPLACE = defineTool({
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
-    const onProgress = (params: { current: number; total?: number }): void => {
-      ctx.onProgress?.({
-        current: params.current,
-        ...(params.total !== undefined ? { total: params.total } : {}),
-      });
-    };
-    const { structured, link } = await handleSearchAndReplace(
-      args,
-      ctx.fs,
-      ctx.signal,
-      onProgress,
-      ctx.resourceStore,
-    );
+    const { structured, link } = await handleSearchAndReplace(args, ctx);
     if (!args.dryRun) {
       ctx.log?.(
         'info',

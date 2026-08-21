@@ -5,7 +5,6 @@ import type { StoppedReason } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
-import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import {
@@ -19,14 +18,13 @@ import {
   SafeGlobPattern,
 } from '../core/schema.js';
 import { searchFiles } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
 import { putJsonResource } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 // ---------------------------------------------------------------------------
 
@@ -109,15 +107,13 @@ function applySummaryFields(
 
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
-  fs: GuardedFileSystem,
-  signal?: AbortSignal,
-  resourceStore?: ResourceStore,
+  ctx: ToolCtx,
 ): Promise<{
   structured: z.infer<typeof SearchFilesOutputSchema>;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
-  const basePath = await fs.pathGuard.validateExistingDirectory(
-    fs.pathGuard.resolvePathOrRoot(args.path),
+  const basePath = await ctx.fs.pathGuard.validateExistingDirectory(
+    ctx.fs.pathGuard.resolvePathOrRoot(args.path),
   );
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
   const { offset: cursorOffset, fetchMax } = openPage({
@@ -130,14 +126,14 @@ async function handleSearchFiles(
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
     ...(args.maxDepth !== undefined ? { maxDepth: args.maxDepth } : {}),
-    ...(signal !== undefined ? { signal } : {}),
+    signal: ctx.signal,
   };
   const result = await searchFiles(
     basePath,
     args.pattern,
     excludePatterns,
     searchOptions,
-    fs.pathGuard,
+    ctx.fs.pathGuard,
   );
   // fetchMax covers the full capped set (see openPage), so the page window is
   // bounded here by pageSize, not by the fetch cap.
@@ -161,9 +157,9 @@ async function handleSearchFiles(
   // response is incomplete: `nextCursor` covers the multi-page case, and
   // `summary.truncated` covers a single page that already hit the hard result
   // cap (no nextCursor, but more matches exist beyond the cap).
-  if (resourceStore !== undefined && (nextCursor !== undefined || result.summary.truncated)) {
+  if (ctx.resourceStore !== undefined && (nextCursor !== undefined || result.summary.truncated)) {
     const { entry, link } = putJsonResource(
-      resourceStore,
+      ctx.resourceStore,
       `${args.pattern} files`,
       relativeResults,
     );
@@ -206,12 +202,7 @@ export const SEARCH_FILES = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const { structured, link } = await handleSearchFiles(
-      args,
-      ctx.fs,
-      ctx.signal,
-      ctx.resourceStore,
-    );
+    const { structured, link } = await handleSearchFiles(args, ctx);
     const text =
       structured.results.length > 0
         ? structured.results.map((r) => r.path).join('\n')

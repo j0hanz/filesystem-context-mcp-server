@@ -9,8 +9,6 @@ function reportDetachedError(toolName: string, context: string, error: unknown):
   Logger.emit('warning', `${toolName}: ${context} failed: ${message}`);
 }
 
-// ============ Progress Types ============
-
 export type ProgressEvent =
   | { kind: 'tick'; current: number; total?: number; message: string }
   | { kind: 'complete'; current: number; total?: number; message: string }
@@ -201,8 +199,6 @@ export class StderrProgressSink implements ProgressSink {
     }
   }
 }
-
-// ============ Progress Tracking ============
 
 export class McpProgressSink implements ProgressSink {
   readonly name = 'mcp';

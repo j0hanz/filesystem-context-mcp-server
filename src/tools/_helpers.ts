@@ -6,8 +6,6 @@ import { buildFileResourceUri } from '../core/file-uri.js';
 import type { FileInfo } from '../core/fs.js';
 import type { ResourceStore } from '../core/store.js';
 
-// ============ Resource Store Helpers ============
-
 interface PutResourceResult {
   entry: { uri: string; size: number; mimeType: string; expiresAt: string };
   link: ContentBlock;
@@ -30,8 +28,6 @@ function buildLinkBlock(
     annotations: { audience },
   };
 }
-
-// ============ File Resource Link Helpers ============
 
 export function buildFileResourceLink(
   validPath: string,
@@ -76,8 +72,6 @@ export function putJsonResource(
     link,
   };
 }
-
-// ============ FileInfo Helper ============
 
 interface FileInfoPayload {
   name: string;

@@ -4,7 +4,6 @@ import { StoppedReasonSchema } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
-import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import {
@@ -35,7 +34,7 @@ import {
   parseEnvInt,
 } from '../core/util.js';
 import { putJsonResource } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 /**
  * Configuration constants for the Search Content tool.
@@ -337,15 +336,13 @@ function finalizeSearchOutput(
 
 async function handleSearchContent(
   args: SearchInput,
-  fs: GuardedFileSystem,
-  signal?: AbortSignal,
-  resourceStore?: ResourceStore,
+  ctx: ToolCtx,
 ): Promise<{
   structured: SearchOutput;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
-  const basePath = await fs.pathGuard.validateExistingDirectory(
-    fs.pathGuard.resolvePathOrRoot(args.path),
+  const basePath = await ctx.fs.pathGuard.validateExistingDirectory(
+    ctx.fs.pathGuard.resolvePathOrRoot(args.path),
   );
   const regexMatcher = createSearchMatcher(args);
 
@@ -357,8 +354,8 @@ async function handleSearchContent(
   const result = await searchContent(
     basePath,
     args.searchPattern,
-    buildSearchContentOptions({ ...args, maxResults: fetchMax }, signal),
-    fs.pathGuard,
+    buildSearchContentOptions({ ...args, maxResults: fetchMax }, ctx.signal),
+    ctx.fs.pathGuard,
   );
 
   // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
@@ -380,7 +377,7 @@ async function handleSearchContent(
   const { structured, link } = finalizeSearchOutput(
     fullStructured,
     preview,
-    resourceStore,
+    ctx.resourceStore,
     args.searchPattern,
   );
 
@@ -416,12 +413,7 @@ export const SEARCH_CONTENT = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const { structured, link } = await handleSearchContent(
-      args,
-      ctx.fs,
-      ctx.signal,
-      ctx.resourceStore,
-    );
+    const { structured, link } = await handleSearchContent(args, ctx);
     const text =
       structured.matches.length > 0
         ? structured.matches.map((m) => `${m.file}:${String(m.line)}: ${m.content}`).join('\n')

@@ -31,7 +31,7 @@ import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { buildFileResourceLink } from './_helpers.js';
 import { runOverPaths } from './batch.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z
@@ -410,19 +410,21 @@ async function applyEdits(
   return finalizeEditResult(content, newContent, appliedEdits, unmatchedEdits, lineRange);
 }
 
+interface EditFileOptions {
+  dryRun: boolean;
+  ignoreWhitespace: boolean;
+}
+
 async function handleEditFile(
   filePath: string,
   edits: z.infer<typeof EditSpecSchema>[],
-  dryRun: boolean,
-  ignoreWhitespace: boolean,
-  fs: GuardedFileSystem,
-  resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal,
+  options: EditFileOptions,
+  ctx: ToolCtx,
 ): Promise<{ value: EditFileValue; resourceLink?: ContentBlock }> {
-  const { validPath, content } = await loadEditableFile(filePath, fs, signal);
-  const editResult = await applyEdits(content, edits, ignoreWhitespace);
+  const { validPath, content } = await loadEditableFile(filePath, ctx.fs, ctx.signal);
+  const editResult = await applyEdits(content, edits, options.ignoreWhitespace);
 
-  if (dryRun) {
+  if (options.dryRun) {
     if (editResult.appliedEdits > 0) {
       editResult.diff = await buildPatchDiff(basename(validPath), content, editResult.content);
     }
@@ -431,7 +433,7 @@ async function handleEditFile(
       editResult.content,
       validPath,
       editResult.appliedEdits,
-      resourceStore,
+      ctx.resourceStore,
     );
     return {
       value: buildEditFileValue(validPath, meta, new Date().toISOString(), editResult),
@@ -448,9 +450,9 @@ async function handleEditFile(
   }
 
   if (editResult.appliedEdits > 0) {
-    await fs.writeFile(filePath, editResult.content, {
+    await ctx.fs.writeFile(filePath, editResult.content, {
       encoding: 'utf-8',
-      signal,
+      signal: ctx.signal,
     });
     Logger.info(
       `edit: ${filePath} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
@@ -460,12 +462,12 @@ async function handleEditFile(
   // `modified` is read from a post-write stat and is advisory: under a concurrent
   // writer it may reflect that writer's mtime while `size`/content below come from
   // this edit's atomic write. The file content itself is always consistent.
-  const { stats: fileStats } = await fs.stat(filePath, signal ? { signal } : undefined);
+  const { stats: fileStats } = await ctx.fs.stat(filePath, { signal: ctx.signal });
   const meta = buildEditFileMetadata(
     editResult.content,
     validPath,
     editResult.appliedEdits,
-    resourceStore,
+    ctx.resourceStore,
   );
   return {
     value: buildEditFileValue(validPath, meta, fileStats.mtime.toISOString(), editResult),
@@ -536,22 +538,18 @@ export const EDIT = defineTool({
           ? { paths: args.paths }
           : { files: args.files ?? [] };
 
+    const options: EditFileOptions = {
+      dryRun: args.dryRun,
+      ignoreWhitespace: args.ignoreWhitespace,
+    };
+
     const batch = await runOverPaths<
       { edits: z.infer<typeof EditSpecSchema>[] },
       { value: EditFileValue; resourceLink?: ContentBlock }
     >(
       batchInput,
       ctx,
-      ({ path, override }) =>
-        handleEditFile(
-          path,
-          override?.edits ?? sharedEdits,
-          args.dryRun,
-          args.ignoreWhitespace,
-          ctx.fs,
-          ctx.resourceStore,
-          ctx.signal,
-        ),
+      ({ path, override }) => handleEditFile(path, override?.edits ?? sharedEdits, options, ctx),
       { defaultErrorCode: ErrorCode.UNKNOWN },
     );
 

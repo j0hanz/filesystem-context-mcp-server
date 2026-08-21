@@ -12,10 +12,9 @@ import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/gl
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../core/schema.js';
-import type { ResourceStore } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { putJsonResource } from './_helpers.js';
-import { defineTool } from './define.js';
+import { defineTool, type ToolCtx } from './define.js';
 
 const SUPPORTED_ALGORITHMS = ['sha256', 'md5', 'sha1', 'sha512'] as const;
 
@@ -237,18 +236,11 @@ async function hashDirectory(
   };
 }
 
-async function handleCalculateHash(
-  args: z.infer<typeof HashInputSchema>,
-  fsOps: GuardedFileSystem,
-  pathGuard: PathGuard,
-  resourceStore: ResourceStore | undefined,
-  signal?: AbortSignal,
-  onProgress?: (progress: { total?: number; current: number }) => void,
-) {
+async function handleCalculateHash(args: z.infer<typeof HashInputSchema>, ctx: ToolCtx) {
   const { algorithms } = args;
 
   // Check if path is a directory or file
-  const { stats, validPath } = await fsOps.stat(args.path, signal ? { signal } : undefined);
+  const { stats, validPath } = await ctx.fs.stat(args.path, { signal: ctx.signal });
 
   let hashes: Record<string, string>;
   let fileCount: number | undefined;
@@ -265,16 +257,16 @@ async function handleCalculateHash(
           'Hash individual files to use other algorithms.',
       );
     }
-    const { hash, fileCount: count } = await hashDirectory(validPath, fsOps, pathGuard, {
-      ...(signal ? { signal } : {}),
-      ...(onProgress ? { onProgress } : {}),
+    const { hash, fileCount: count } = await hashDirectory(validPath, ctx.fs, ctx.pathGuard, {
+      signal: ctx.signal,
+      ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
     });
     hashes = { sha256: hash };
     fileCount = count;
   } else {
     // For files, calculate requested algorithms
-    hashes = await calculateMultipleHashes(fsOps, validPath, algorithms, signal);
-    onProgress?.({ current: 1 });
+    hashes = await calculateMultipleHashes(ctx.fs, validPath, algorithms, ctx.signal);
+    ctx.onProgress?.({ current: 1, total: 1 });
   }
 
   const summary = Object.entries(hashes)
@@ -283,8 +275,8 @@ async function handleCalculateHash(
 
   let resourceUri: string | undefined;
   let link: ReturnType<typeof putJsonResource>['link'] | undefined;
-  if (resourceStore) {
-    const result = putJsonResource(resourceStore, basename(validPath), hashes);
+  if (ctx.resourceStore) {
+    const result = putJsonResource(ctx.resourceStore, basename(validPath), hashes);
     resourceUri = result.entry.uri;
     link = result.link;
   }
@@ -327,20 +319,6 @@ export const CALCULATE_HASH = defineTool({
     subject: basename(args.path),
   }),
   accessPaths: (args) => [args.path],
-  run: async (args, ctx) => {
-    const onProgress = ctx.onProgress
-      ? ({ current, total }: { total?: number; current: number }): void => {
-          ctx.onProgress?.({ current, ...(total !== undefined ? { total } : {}) });
-        }
-      : undefined;
-    return handleCalculateHash(
-      args,
-      ctx.fs,
-      ctx.pathGuard,
-      ctx.resourceStore,
-      ctx.signal,
-      onProgress,
-    );
-  },
+  run: (args, ctx) => handleCalculateHash(args, ctx),
 });
 export { HashOutputSchema, HashesSchema };
