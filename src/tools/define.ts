@@ -31,7 +31,6 @@ export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
   readonly _meta?: RequestMeta | undefined;
-  readonly pathGuard: PathGuard;
   readonly fs: GuardedFileSystem;
   readonly resourceStore: ResourceStore | undefined;
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
@@ -117,7 +116,6 @@ function toToolCtx(
     const signal = new AbortController().signal;
     return {
       signal,
-      pathGuard: deps.pathGuard,
       fs: new GuardedFileSystem(deps.pathGuard),
       resourceStore: deps.resourceStore,
       server: deps.server,
@@ -127,7 +125,6 @@ function toToolCtx(
     signal: ctx.mcpReq.signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
-    pathGuard: deps.pathGuard,
     fs: new GuardedFileSystem(deps.pathGuard),
     resourceStore: deps.resourceStore,
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
@@ -146,7 +143,6 @@ function buildExecutionCtx(
     signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx._meta ? { _meta: ctx._meta } : {}),
-    pathGuard: ctx.pathGuard,
     fs: ctx.fs,
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
@@ -285,7 +281,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     if (!extract) return undefined;
     const paths = extract(this.parsedArgs);
     if (paths.length === 0) return undefined;
-    const grantDirs = await this.toolCtx.pathGuard.precheckAccess(paths);
+    const grantDirs = await this.toolCtx.fs.pathGuard.precheckAccess(paths);
     if (grantDirs.length === 0) return undefined;
 
     const round = await pendingRoundTrip({
@@ -301,7 +297,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     for (let i = 0; i < grantDirs.length; i++) {
       const dir = grantDirs[i];
       if (dir && readAcceptedConfirm(this.toolCtx.inputResponses, `confirm_${i}`)) {
-        await this.toolCtx.pathGuard.applyGrant(dir);
+        await this.toolCtx.fs.pathGuard.applyGrant(dir);
       }
     }
     return undefined;

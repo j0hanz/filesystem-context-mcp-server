@@ -292,10 +292,6 @@ export class GuardedFileSystem {
     return createReadStream(validPath, options);
   }
 
-  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
-    await this.pathGuard.setRoots(resolvedRoots);
-  }
-
   // Single resolution + stat: validateExistingPathDetailed resolves the real
   // path (following symlinks, re-checking sensitivity) once, then we stat the
   // resolved target. Replaces the tool-side validateExistingPathDetailed +

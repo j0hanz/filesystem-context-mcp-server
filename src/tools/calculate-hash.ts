@@ -266,7 +266,7 @@ async function handleCalculateHash(
           'Hash individual files to use other algorithms.',
       );
     }
-    const { hash, fileCount: count } = await hashDirectory(validPath, ctx.fs, ctx.pathGuard, {
+    const { hash, fileCount: count } = await hashDirectory(validPath, ctx.fs, ctx.fs.pathGuard, {
       signal: ctx.signal,
       ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
     });

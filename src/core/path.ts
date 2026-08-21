@@ -17,16 +17,24 @@ import {
   SKIPPABLE_FS_CODES,
 } from './errors.js';
 import { Logger } from './observability.js';
-import { parseEnvDirList, parseTrueEnvFlag } from './primitives.js';
+import {
+  IS_WINDOWS,
+  isAlpha,
+  isSlash,
+  parseEnvDirList,
+  parseTrueEnvFlag,
+  toPosixPath,
+} from './primitives.js';
 import type { EntryType } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
+export { IS_WINDOWS, isSlash, toPosixPath };
+
 // Allowed-directory assembly and the PathGuard that enforces it. The
-// sensitive-file denylist that used to live here moved to sensitive.ts — it
-// shared only isAlpha / toPosixPath / IS_WINDOWS with these primitives, not the
-// containment checks, and was consumed independently by path-completer.ts and
-// glob.ts via PathGuard.isSensitive (which delegates to SensitiveMatcher).
+// sensitive-file denylist lives in sensitive.ts, and the character-level
+// primitives (IS_WINDOWS, isAlpha, isSlash, toPosixPath) live in
+// primitives.ts — re-exported here so existing call sites stay unchanged.
 declare const ValidatedPathBrand: unique symbol;
 export type ValidatedPath = string & { readonly [ValidatedPathBrand]: true };
 
@@ -94,32 +102,13 @@ async function filterRootsWithin(
   });
 }
 
-const WINDOWS_PATH_SEPARATOR = '\\';
-const POSIX_PATH_SEPARATOR = '/';
-export const IS_WINDOWS = platform() === 'win32';
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 
-const CHAR_FORWARD_SLASH = 47;
-const CHAR_BACKWARD_SLASH = 92;
 const CHAR_COLON = 58;
 const CHAR_TILDE = 126;
 const CHAR_SPACE = 32;
 const CHAR_DOT = 46;
-
-export function isSlash(code: number): boolean {
-  return code === CHAR_FORWARD_SLASH || code === CHAR_BACKWARD_SLASH;
-}
-
-export function isAlpha(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
-
-export function toPosixPath(value: string): string {
-  return value.includes(WINDOWS_PATH_SEPARATOR)
-    ? value.replaceAll(WINDOWS_PATH_SEPARATOR, POSIX_PATH_SEPARATOR)
-    : value;
-}
 
 /** `path.relative` with forward slashes, so displayed paths match across platforms. */
 export function toPosixRelative(from: string, to: string): string {

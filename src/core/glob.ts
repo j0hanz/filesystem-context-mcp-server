@@ -7,7 +7,7 @@ import ignore from 'ignore';
 import { processInParallel } from './concurrency.js';
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
-import { toPosixPath } from './path.js';
+import { toPosixPath } from './primitives.js';
 import type { EntryType } from './primitives.js';
 
 export type { EntryType };

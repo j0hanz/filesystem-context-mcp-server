@@ -14,7 +14,7 @@ import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
-import { resourcesRegistrar } from './resources.js';
+import { INSTRUCTIONS_URI, resourcesRegistrar } from './resources.js';
 import { toolsRegistrar } from './tools/index.js';
 import { requestStateCodec } from './tools/input-required.js';
 
@@ -122,7 +122,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Filesys
   serverConfig.instructions =
     'filesystem-mcp: Secure local filesystem MCP server. ' +
     'Start with: roots -> ls/find -> stat -> read. Never guess paths. ' +
-    'For full guidance, read internal://instructions or run the get-help prompt.';
+    `For full guidance, read ${INSTRUCTIONS_URI} or run the get-help prompt.`;
 
   const implementation: Implementation = {
     name: 'filesystem-mcp',

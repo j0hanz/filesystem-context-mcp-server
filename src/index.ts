@@ -7,7 +7,7 @@ import process from 'node:process';
 
 import * as z from 'zod/v4';
 
-// bridge.ts has zero intra-package dependencies; statically importing it here
+// cli-env.ts has zero intra-package dependencies; statically importing it here
 // does NOT pull in util.ts or any config-bearing module.
 import { liftFlagsToEnv } from './cli-env.js';
 
@@ -20,7 +20,7 @@ z.config(z.locales.en());
 liftFlagsToEnv();
 
 // Dynamically import all modules that transitively load util.ts so that the
-// bridge flags above are in effect when their module-level constants are set.
+// lifted flags above are in effect when their module-level constants are set.
 const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
 const { logRuntimeFailure } = await import('./core/observability.js');
 const { createServer } = await import('./server.js');

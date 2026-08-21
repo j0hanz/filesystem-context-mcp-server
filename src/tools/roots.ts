@@ -24,7 +24,7 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
     openWorldHint: false,
   },
   run: (_args, ctx) => {
-    const dirs = ctx.pathGuard.getAllowedDirectories();
+    const dirs = ctx.fs.pathGuard.getAllowedDirectories();
     const structured = { ok: true as const, roots: dirs };
     const text =
       dirs.length > 0

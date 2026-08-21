@@ -128,6 +128,8 @@ function buildToolsOverview(readOnly: boolean): string {
   return `\`\`\`\n${rowLines.join('\n')}\n\`\`\``;
 }
 
+export const INSTRUCTIONS_URI = 'internal://instructions';
+
 export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
   return {
@@ -166,7 +168,7 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
   };
 }
 
-function renderSections(sections: Record<string, string>): string {
+export function renderSections(sections: Record<string, string>): string {
   return `\n${Object.values(sections).join('\n\n')}\n`;
 }
 
@@ -177,7 +179,7 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
     title: 'Server Instructions',
     description: 'Navigation guide for filesystem-mcp tools and constraints.',
     mimeType: 'text/markdown',
-    uri: 'internal://instructions',
+    uri: INSTRUCTIONS_URI,
     annotations: { audience: ['assistant'], priority: 0.8 },
     read(uri) {
       return {
@@ -481,6 +483,17 @@ export function getResourceContracts(options: ResourceRegistrationOptions): Reso
 // registrar
 // ═══════════════════════════════════════════════════════════════
 
+function wrapRead(contract: ResourceContract) {
+  return async (uri: URL, variables: Record<string, string | string[]>, ctx: ServerContext) => {
+    try {
+      return await contract.read(uri, variables, ctx);
+    } catch (error) {
+      if (hasErrorShape(error, 'ProtocolError')) throw error;
+      throw new ProtocolError(ProtocolErrorCode.InvalidRequest, formatUnknownErrorMessage(error));
+    }
+  };
+}
+
 function registerResources(
   server: McpServer,
   options: ResourceRegistrationOptions,
@@ -516,33 +529,11 @@ function registerResources(
           : {}),
       });
 
-      server.registerResource(contract.name, template, config, async (uri, variables, ctx) => {
-        try {
-          return await contract.read(uri, variables, ctx);
-        } catch (error) {
-          if (hasErrorShape(error, 'ProtocolError')) {
-            throw error;
-          }
-          throw new ProtocolError(
-            ProtocolErrorCode.InvalidRequest,
-            formatUnknownErrorMessage(error),
-          );
-        }
-      });
+      server.registerResource(contract.name, template, config, wrapRead(contract));
     } else if (contract.uri) {
-      server.registerResource(contract.name, contract.uri, config, async (uri, ctx) => {
-        try {
-          return await contract.read(uri, {}, ctx);
-        } catch (error) {
-          if (hasErrorShape(error, 'ProtocolError')) {
-            throw error;
-          }
-          throw new ProtocolError(
-            ProtocolErrorCode.InvalidRequest,
-            formatUnknownErrorMessage(error),
-          );
-        }
-      });
+      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
+        wrapRead(contract)(uri, {}, ctx),
+      );
     }
   }
 

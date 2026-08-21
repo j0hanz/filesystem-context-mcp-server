@@ -1,13 +1,12 @@
 // Sensitive-file denylist policy: the compiled pattern set, the path
 // normalization that feeds it, and the NTFS alternate-data-stream stripping
 // Windows needs. Split out of path.ts so the denylist has its own home — it
-// shares only isAlpha / toPosixPath / IS_WINDOWS with the path primitives, not
-// the allowed-directory assembly. path-completer.ts and glob.ts reach it
-// through PathGuard.isSensitive, which delegates here.
+// shares only isAlpha / toPosixPath / IS_WINDOWS with the primitives in
+// primitives.ts, not the allowed-directory assembly. path-completer.ts and
+// glob.ts reach it through PathGuard.isSensitive, which delegates here.
 import { normalize, posix, sep } from 'node:path';
 
-import { IS_WINDOWS, isAlpha, toPosixPath } from './path.js';
-import { parseTrueEnvFlag } from './primitives.js';
+import { IS_WINDOWS, isAlpha, parseTrueEnvFlag, toPosixPath } from './primitives.js';
 
 const CHAR_COLON = 58;
 const CHAR_FORWARD_SLASH = 47;
