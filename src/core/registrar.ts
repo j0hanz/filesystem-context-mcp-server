@@ -3,7 +3,7 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { processInParallel, timedSignal, withAbort } from './concurrency.js';
+import { processInParallel, timedSignal } from './concurrency.js';
 import { formatUnknownErrorMessage, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import { isSamePath, normalizePath, resolveRealPath } from './path.js';
@@ -58,12 +58,11 @@ async function resolveRealPathIfExists(
   }
 }
 
-async function resolveRootDirectory(root: Root, signal?: AbortSignal): Promise<string | null> {
+async function resolveRootDirectory(root: Root): Promise<string | null> {
   try {
     const dirPath = fileURLToPath(root.uri);
     const normalizedPath = normalizePath(dirPath);
-    signal?.throwIfAborted();
-    const stats = await withAbort(stat(normalizedPath), signal);
+    const stats = await stat(normalizedPath);
     if (!stats.isDirectory()) return null;
     return normalizedPath;
   } catch (error) {
@@ -79,7 +78,7 @@ async function getValidRootDirectories(roots: Root[], signal?: AbortSignal): Pro
   const { results } = await processInParallel(
     fileRoots,
     async (root) => {
-      const dir = await resolveRootDirectory(root, signal);
+      const dir = await resolveRootDirectory(root);
       if (dir === null) return [];
       const real = await resolveRealPathIfExists(dir, signal);
       return real ? [dir, real] : [dir];

@@ -21,24 +21,6 @@ interface BlobResourceEntry extends ResourceEntryBase {
   data: Buffer;
 }
 
-export interface ResourceStore {
-  putText(params: {
-    name: string;
-    mimeType?: string;
-    text: string;
-  }): TextResourceEntry & { kind: 'text' };
-  getText(uri: string): TextResourceEntry & { kind: 'text' };
-  putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' };
-  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' };
-  getEntry(uri: string): StoredEntry;
-  clear(): void;
-  keys(): string[];
-}
-
 interface ResourceStoreOptions {
   maxEntries: number;
   maxTotalBytes: number;
@@ -80,13 +62,13 @@ function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now(
 // ResourceStore implementation — storage + eviction + TTL in one class
 // -----------------------------------------------------------------------------
 
-class InMemoryResourceStore implements ResourceStore {
+export class ResourceStore {
   private readonly byUri = new Map<string, StoredEntry>();
   private readonly byHashIndex = new Map<string, string>();
   private _totalBytes = 0;
   private readonly options: ResourceStoreOptions;
 
-  constructor(options: ResourceStoreOptions) {
+  constructor(options: ResourceStoreOptions = DEFAULT_RESOURCE_STORE_OPTIONS) {
     this.options = options;
   }
 
@@ -345,5 +327,5 @@ export function createInMemoryResourceStore(
       `Invalid store options: maxEntryBytes (${resolved.maxEntryBytes}) must not exceed maxTotalBytes (${resolved.maxTotalBytes}).`,
     );
   }
-  return new InMemoryResourceStore(resolved);
+  return new ResourceStore(resolved);
 }

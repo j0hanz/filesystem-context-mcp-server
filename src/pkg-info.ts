@@ -1,17 +1,10 @@
-import * as z from 'zod/v4';
-
 import packageJsonRaw from '../package.json' with { type: 'json' };
 
-const PkgInfoSchema = z.looseObject({
-  name: z.string(),
-  version: z.string(),
-  description: z.string().optional(),
-  homepage: z.url().optional(),
-});
-
-const result = PkgInfoSchema.safeParse(packageJsonRaw);
-if (!result.success) {
-  throw new Error(`package.json failed schema validation:\n${z.prettifyError(result.error)}`);
+export interface PkgInfo {
+  readonly name: string;
+  readonly version: string;
+  readonly description?: string;
+  readonly homepage?: string;
 }
 
-export const pkgInfo = result.data;
+export const pkgInfo: PkgInfo = packageJsonRaw;

@@ -177,39 +177,24 @@ export async function processEntriesConcurrently(
 
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
-  signal.throwIfAborted();
+  if (signal.aborted) {
+    const reason: unknown = signal.reason;
+    return Promise.reject(reason instanceof Error ? reason : new Error('Operation aborted'));
+  }
 
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const onAbort = (): void => {
-      if (settled) return;
-      settled = true;
-      const reason: unknown = signal.reason;
-      reject(reason instanceof Error ? reason : new Error('Operation aborted'));
-    };
-
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-
-    signal.addEventListener('abort', onAbort, { once: true });
-
-    promise.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort);
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener('abort', onAbort);
-        if (settled) return;
-        settled = true;
-        reject(normalizeUnknownError(error));
-      },
-    );
-  });
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => {
+          const reason: unknown = signal.reason;
+          reject(reason instanceof Error ? reason : new Error('Operation aborted'));
+        },
+        { once: true },
+      );
+    }),
+  ]);
 }
 
 /**

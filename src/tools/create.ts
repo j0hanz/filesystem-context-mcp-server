@@ -4,7 +4,6 @@ import { basename, dirname } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceUri } from '../core/file-uri.js';
 import { formatBytes } from '../core/fmt.js';
@@ -110,7 +109,7 @@ export const CREATE = defineTool({
       async ({ path, override }) => {
         const content = override?.content ?? '';
 
-        await withAbort(ctx.fs.mkdir(dirname(path), { recursive: true }), ctx.signal);
+        await ctx.fs.mkdir(dirname(path), { recursive: true });
 
         const { validPath } = await ctx.fs.writeFile(path, content, {
           encoding: 'utf-8',

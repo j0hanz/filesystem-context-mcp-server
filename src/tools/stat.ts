@@ -5,7 +5,6 @@ import { parse } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
 import { ErrorCode, rethrowIfAborted } from '../core/errors.js';
 import { formatBytes } from '../core/fmt.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
@@ -130,7 +129,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   let stats = followedStats;
   if (isSymlink) {
     try {
-      stats = await withAbort(fsLstat(requestedPath), signal);
+      stats = await fsLstat(requestedPath);
     } catch (error) {
       // A cancelled request is not a "link metadata unavailable" fallback.
       rethrowIfAborted(error);

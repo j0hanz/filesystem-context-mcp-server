@@ -5,7 +5,6 @@ import { basename, dirname, resolve, sep } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { withAbort } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
@@ -194,7 +193,7 @@ async function executeMove(
     }
   }
 
-  await withAbort(ctx.fs.mkdir(dirname(plan.validDest), { recursive: true }), ctx.signal);
+  await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
 
   // TOCTOU check immediately before the rename: a destination that did not exist
   // when planned but exists now was created during the confirmation gap.

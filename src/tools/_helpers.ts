@@ -1,4 +1,4 @@
-import type { ContentBlock, Role } from '@modelcontextprotocol/server';
+import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
@@ -11,33 +11,19 @@ interface PutResourceResult {
   link: ContentBlock;
 }
 
-function buildLinkBlock(
-  uri: string,
-  name: string,
-  mimeType: string,
-  size: number,
-  audienceParam?: Role[],
-): ContentBlock {
-  const audience = audienceParam ?? ['user'];
-  return {
-    type: 'resource_link',
-    uri,
-    name,
-    mimeType,
-    size,
-    annotations: { audience },
-  };
-}
-
 export function buildFileResourceLink(
   validPath: string,
   mimeType: string,
   size: number,
 ): ContentBlock {
-  return buildLinkBlock(buildFileResourceUri(validPath), basename(validPath), mimeType, size, [
-    'user',
-    'assistant',
-  ]);
+  return {
+    type: 'resource_link',
+    uri: buildFileResourceUri(validPath),
+    name: basename(validPath),
+    mimeType,
+    size,
+    annotations: { audience: ['user', 'assistant'] },
+  };
 }
 
 /**
@@ -60,8 +46,6 @@ export function putJsonResource(
     text: JSON.stringify(value, null, 2),
   });
 
-  const link = buildLinkBlock(entry.uri, entry.name, entry.mimeType, entry.size);
-
   return {
     entry: {
       uri: entry.uri,
@@ -69,7 +53,14 @@ export function putJsonResource(
       mimeType: entry.mimeType,
       expiresAt: entry.expiresAt,
     },
-    link,
+    link: {
+      type: 'resource_link',
+      uri: entry.uri,
+      name: entry.name,
+      mimeType: entry.mimeType,
+      size: entry.size,
+      annotations: { audience: ['user'] },
+    },
   };
 }
 
