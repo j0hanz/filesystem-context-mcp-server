@@ -25,7 +25,7 @@ import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar } from './core/registrar.js';
 import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './core/schema.js';
-import { buildServerInstructions, INSTRUCTION_SECTIONS } from './resources.js';
+import { buildSectionsRecord } from './resources.js';
 
 // --- Types ---
 
@@ -37,6 +37,7 @@ interface PromptContract {
 
 interface PromptRegistrationOptions {
   pathGuard: PathGuard;
+  sections: Record<string, string>;
   instructions: string;
   instructionsUri: string;
   isInitialized: () => boolean;
@@ -159,7 +160,7 @@ const GET_HELP: PromptEntry = {
       'Return filesystem-mcp server usage instructions, optionally filtered to a named section.',
   },
   register(server, options) {
-    const topics = Object.keys(INSTRUCTION_SECTIONS);
+    const topics = Object.keys(options.sections);
     server.registerPrompt(
       GET_HELP.contract.name,
       withDefaultIcons(
@@ -179,8 +180,8 @@ const GET_HELP: PromptEntry = {
         wrapHandler(GET_HELP.contract, options, false, () => {
           const lowerTopic = topic?.toLowerCase();
           const section =
-            lowerTopic && Object.hasOwn(INSTRUCTION_SECTIONS, lowerTopic)
-              ? INSTRUCTION_SECTIONS[lowerTopic]
+            lowerTopic && Object.hasOwn(options.sections, lowerTopic)
+              ? options.sections[lowerTopic]
               : undefined;
           if (topic && !section) {
             Logger.debug('get-help: unknown topic requested', { topic });
@@ -378,9 +379,11 @@ const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, FIND_IN_TREE, SUM
 
 export const promptsRegistrar: Registrar = {
   register(deps): void {
+    const sections = buildSectionsRecord(deps.readOnly ?? false);
     const options = {
       pathGuard: deps.pathGuard,
-      instructions: buildServerInstructions(deps.readOnly),
+      sections,
+      instructions: `\n${Object.values(sections).join('\n\n')}\n`,
       instructionsUri: 'internal://instructions',
       isInitialized: deps.isInitialized,
       ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),

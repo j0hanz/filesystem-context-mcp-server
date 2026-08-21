@@ -16,25 +16,11 @@ import { ALL_TOOLS } from '../src/tools/index.js';
 import { type PendingState, requestStateCodec } from '../src/tools/input-required.js';
 
 /**
- * The tool inventory as a human declares it, independent of what `src/` derives.
- * Deliberately literal: tests use these to check the derivation, so deriving
- * them from the same annotations would make those assertions tautological.
+ * The mutating and read-only subsets as a human declares them, independent of
+ * what `src/` derives. Deliberately literal: contract tests check these against
+ * the annotations on the wire, so deriving them from those same annotations
+ * would make the assertions tautological.
  */
-export const ORACLE_ALL_TOOL_NAMES = [
-  'create',
-  'delete',
-  'edit',
-  'find_files',
-  'hash_file',
-  'list',
-  'list_roots',
-  'move',
-  'read',
-  'replace_text',
-  'search_text',
-  'stat',
-] as const;
-
 export const ORACLE_MUTATING_TOOL_NAMES = [
   'create',
   'delete',
@@ -51,6 +37,16 @@ export const ORACLE_READ_ONLY_TOOL_NAMES = [
   'read',
   'search_text',
   'stat',
+] as const;
+
+/**
+ * The full roster is the union of the two subsets above. Unlike them it is
+ * checked against `ALL_REGISTERED_TOOL_NAMES` (a different source), so deriving
+ * it is not tautological.
+ */
+export const ORACLE_ALL_TOOL_NAMES = [
+  ...ORACLE_MUTATING_TOOL_NAMES,
+  ...ORACLE_READ_ONLY_TOOL_NAMES,
 ] as const;
 
 interface TestContentBlock {

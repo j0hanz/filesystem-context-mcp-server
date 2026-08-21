@@ -1,6 +1,7 @@
 import type { Registrar } from '../core/registrar.js';
 import { CALCULATE_HASH } from './calculate-hash.js';
 import { CREATE } from './create.js';
+import type { DefinedTool } from './define.js';
 import { DELETE_FILE } from './delete-file.js';
 import { EDIT } from './edit.js';
 import { LIST } from './list.js';
@@ -27,13 +28,16 @@ export const ALL_TOOLS = [
   GET_FILE_INFO,
 ] as const;
 
-// A tool is mutating unless it declares itself read-only. Defaulting an
-// unannotated tool to mutating is the safe direction: `--read-only` omits it.
 export const MUTATING_TOOL_NAMES = new Set(
-  ALL_TOOLS.filter((t) => t.annotations.readOnlyHint !== true).map((t) => t.name),
+  ALL_TOOLS.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name),
 );
 
 export const ALL_REGISTERED_TOOL_NAMES: readonly string[] = ALL_TOOLS.map((t) => t.name);
+
+/** The tools a server registers at this setting — the one owner of the `--read-only` gate. */
+export function registeredTools(readOnly: boolean): readonly DefinedTool[] {
+  return readOnly ? ALL_TOOLS.filter((t) => !MUTATING_TOOL_NAMES.has(t.name)) : ALL_TOOLS;
+}
 
 // Re-exported so documentation surfaces quote `.name` off the definition rather
 // than repeating the string. This module is the only owner of the inventory.
@@ -58,8 +62,7 @@ export const toolsRegistrar: Registrar = {
       pathGuard: deps.pathGuard,
       resourceStore: deps.resourceStore,
     };
-    for (const tool of ALL_TOOLS) {
-      if (deps.readOnly && MUTATING_TOOL_NAMES.has(tool.name)) continue;
+    for (const tool of registeredTools(deps.readOnly ?? false)) {
       tool.register(toolDeps);
     }
   },

@@ -73,13 +73,20 @@ interface RunResult<T> {
   readonly resources?: ContentBlock[];
 }
 
+/**
+ * `ToolAnnotations` with `readOnlyHint` required. It is optional in the SDK, but
+ * MUTATING_TOOL_NAMES derives the `--read-only` gate from it, so a tool that
+ * forgets it must be a compile error rather than a silent reclassification.
+ */
+type DeclaredAnnotations = ToolAnnotations & { readonly readOnlyHint: boolean };
+
 export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly name: string;
   readonly title: string;
   readonly description: string;
   readonly input: I;
   readonly output: O;
-  readonly annotations: ToolAnnotations;
+  readonly annotations: DeclaredAnnotations;
   readonly timeoutMs?: number;
   readonly progress?: (args: z.infer<I>) => ProgressCtx;
   readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
@@ -101,7 +108,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 
 export interface DefinedTool {
   readonly name: string;
-  readonly annotations: ToolAnnotations;
+  readonly annotations: DeclaredAnnotations;
   readonly inputSchema: Tool['inputSchema'];
   readonly outputSchema: Record<string, unknown>;
 

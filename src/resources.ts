@@ -37,7 +37,6 @@ import {
   parseEnvInt,
 } from './core/util.js';
 import {
-  ALL_REGISTERED_TOOL_NAMES,
   CALCULATE_HASH,
   GET_FILE_INFO,
   LIST,
@@ -58,7 +57,7 @@ export interface ResourceRegistrationOptions {
   pathGuard?: PathGuard;
   server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
-  readOnly?: boolean;
+  readOnly: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -111,7 +110,7 @@ type ResourceContract = StaticResourceContract | TemplateResourceContract;
 // instructions
 // ═══════════════════════════════════════════════════════════════
 
-function buildToolsOverview(readOnly = false): string {
+function buildToolsOverview(readOnly: boolean): string {
   const rows: [string, string[]][] = [
     ['Navigate', [LIST_ALLOWED_DIRECTORIES.name, LIST.name, SEARCH_FILES.name]],
     ['Inspect', [GET_FILE_INFO.name, SEARCH_CONTENT.name, CALCULATE_HASH.name]],
@@ -122,14 +121,14 @@ function buildToolsOverview(readOnly = false): string {
   // them here would point the model at tools that are not there. Drop the row
   // rather than emit an empty one.
   if (!readOnly) {
-    rows.push(['Write', ALL_REGISTERED_TOOL_NAMES.filter((n) => MUTATING_TOOL_NAMES.has(n))]);
+    rows.push(['Write', [...MUTATING_TOOL_NAMES]]);
   }
 
   const rowLines = rows.map(([cat, names]) => `${cat}: ${names.join(', ')}`);
   return `\`\`\`\n${rowLines.join('\n')}\n\`\`\``;
 }
 
-function buildSectionsRecord(readOnly = false): Record<string, string> {
+export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
   const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
   return {
     guidelines: [
@@ -167,21 +166,12 @@ function buildSectionsRecord(readOnly = false): Record<string, string> {
   };
 }
 
-export const INSTRUCTION_SECTIONS: Record<string, string> = buildSectionsRecord();
-
-export const SERVER_INSTRUCTIONS_CONTENT = `\n${Object.values(INSTRUCTION_SECTIONS).join('\n\n')}\n`;
-
-/**
- * The instructions text for one server, built against that server's `--read-only`
- * setting. `SERVER_INSTRUCTIONS_CONTENT` above is the `readOnly: false` case,
- * frozen at module load for callers that have no server context.
- */
-export function buildServerInstructions(readOnly = false): string {
-  return `\n${Object.values(buildSectionsRecord(readOnly)).join('\n\n')}\n`;
+function renderSections(sections: Record<string, string>): string {
+  return `\n${Object.values(sections).join('\n\n')}\n`;
 }
 
 function createInstructionsResource(options: ResourceRegistrationOptions): ResourceContract {
-  const text = buildServerInstructions(options.readOnly);
+  const text = renderSections(buildSectionsRecord(options.readOnly));
   return {
     name: 'filesystem-mcp-instructions',
     title: 'Server Instructions',
@@ -629,7 +619,7 @@ export const resourcesRegistrar: Registrar = (() => {
         pathGuard: deps.pathGuard,
         server: deps.server,
         ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
-        ...(deps.readOnly ? { readOnly: true } : {}),
+        readOnly: deps.readOnly ?? false,
       });
       serverContracts.set(deps.server, contracts);
     },

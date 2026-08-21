@@ -14,7 +14,7 @@ import {
 import { isRecord, parseTrueEnvFlag } from './core/primitives.js';
 import { MAX_TEXT_FILE_SIZE } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
-import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from './tools/index.js';
+import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
 const { version: SERVER_VERSION } = pkgInfo;
 const IS_WINDOWS = process.platform === 'win32';
@@ -454,15 +454,13 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
   await pathGuard.recomputeAllowedDirectories();
   const allowedRoots = pathGuard.getAllowedDirectories();
 
-  const tools = ALL_REGISTERED_TOOL_NAMES.filter(
-    (name) => !options.readOnly || !MUTATING_TOOL_NAMES.has(name),
-  );
+  const tools = registeredTools(options.readOnly).map((t) => t.name);
 
   const config: EffectiveConfig = {
     transport: 'stdio',
     readOnly: options.readOnly,
     allowedRoots,
-    tools: [...tools],
+    tools,
     apiKey: options.apiKey ? '***' : null,
     limits: { maxFileSizeBytes: MAX_TEXT_FILE_SIZE },
   };

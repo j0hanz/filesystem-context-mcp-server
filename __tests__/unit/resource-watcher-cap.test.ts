@@ -30,6 +30,7 @@ describe('resources/subscribe watcher cap', () => {
     const resourceContracts = getResourceContracts({
       resourceStore,
       pathGuard: mockPathGuard,
+      readOnly: false,
     });
 
     // Patch the filesystem contract's subscribe to simulate cap hit.

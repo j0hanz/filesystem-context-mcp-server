@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { INSTRUCTION_SECTIONS, SERVER_INSTRUCTIONS_CONTENT } from '../../src/resources.js';
+import { buildSectionsRecord } from '../../src/resources.js';
+
+const INSTRUCTION_SECTIONS = buildSectionsRecord(false);
+const SERVER_INSTRUCTIONS_CONTENT = `\n${Object.values(INSTRUCTION_SECTIONS).join('\n\n')}\n`;
 
 describe('SERVER_INSTRUCTIONS_CONTENT', () => {
   it('contains all four required sections', () => {
@@ -64,8 +67,7 @@ describe('INSTRUCTION_SECTIONS', () => {
     }
   });
 
-  it('SERVER_INSTRUCTIONS_CONTENT contains every section body', async () => {
-    const { SERVER_INSTRUCTIONS_CONTENT } = await import('../../src/resources.js');
+  it('SERVER_INSTRUCTIONS_CONTENT contains every section body', () => {
     for (const body of Object.values(INSTRUCTION_SECTIONS)) {
       assert.ok(
         SERVER_INSTRUCTIONS_CONTENT.includes(body.trim()),

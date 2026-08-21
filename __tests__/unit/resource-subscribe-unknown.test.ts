@@ -42,6 +42,7 @@ describe('resources/subscribe with unknown URI', () => {
     const resourceContracts = getResourceContracts({
       resourceStore,
       pathGuard: mockPathGuard,
+      readOnly: false,
     });
 
     server.server.setRequestHandler(

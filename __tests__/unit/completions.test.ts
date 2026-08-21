@@ -12,7 +12,7 @@ import { describe, it } from 'node:test';
 import { normalizePath, PathGuard } from '../../src/core/path.js';
 import { createInMemoryResourceStore } from '../../src/core/store.js';
 import { PROMPT_ENTRIES } from '../../src/prompts.js';
-import { getResourceContracts } from '../../src/resources.js';
+import { buildSectionsRecord, getResourceContracts } from '../../src/resources.js';
 
 const mockPathGuard = {
   getAllowedDirectories: () => [],
@@ -27,13 +27,14 @@ function makeCompletionServer(pathGuard: PathGuard = mockPathGuard): McpServer {
   for (const { register } of PROMPT_ENTRIES) {
     register(server, {
       pathGuard,
+      sections: buildSectionsRecord(false),
       instructions: 'test instructions',
       isInitialized: () => true,
     });
   }
 
   const resourceStore = createInMemoryResourceStore();
-  const resourceContracts = getResourceContracts({ resourceStore });
+  const resourceContracts = getResourceContracts({ resourceStore, readOnly: false });
   for (const contract of resourceContracts) {
     if (contract.uriTemplate) {
       server.registerResource(

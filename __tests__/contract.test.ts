@@ -41,9 +41,9 @@ describe('Tool contract', () => {
     await env.cleanup();
   });
 
-  it('registers exactly 12 tools with correct names', async () => {
+  it(`registers exactly ${String(ORACLE_ALL_TOOL_NAMES.length)} tools with correct names`, async () => {
     const { tools } = await env.client.listTools();
-    assert.equal(tools.length, ALL_TOOLS.size, 'Expected 12 tools');
+    assert.equal(tools.length, ALL_TOOLS.size, `Expected ${String(ALL_TOOLS.size)} tools`);
     for (const tool of tools) {
       assert.ok(ALL_TOOLS.has(tool.name), `Unexpected tool name: ${tool.name}`);
     }
@@ -235,7 +235,7 @@ describe('Completion contract', () => {
     teardown: () => Promise<void>;
   }> {
     const { PROMPT_ENTRIES } = await import('../src/prompts.js');
-    const { getResourceContracts } = await import('../src/resources.js');
+    const { getResourceContracts, buildSectionsRecord } = await import('../src/resources.js');
     const { PathGuard } = await import('../src/core/path.js');
     const { createInMemoryResourceStore } = await import('../src/core/store.js');
     const { InMemoryTransport, ResourceTemplate } = await import('@modelcontextprotocol/server');
@@ -255,12 +255,13 @@ describe('Completion contract', () => {
     for (const { register } of PROMPT_ENTRIES) {
       register(server, {
         pathGuard,
+        sections: buildSectionsRecord(false),
         instructions: 'test instructions',
         isInitialized: () => true,
       });
     }
 
-    const resourceContracts = getResourceContracts({ resourceStore });
+    const resourceContracts = getResourceContracts({ resourceStore, readOnly: false });
     for (const contract of resourceContracts) {
       if (contract.uriTemplate) {
         server.registerResource(
