@@ -315,14 +315,11 @@ export async function readFileBufferWithLimit(
 }
 
 export function countLines(content: string): number {
-  // Matches `content.split('\n').length`: an empty file is one (empty) line,
-  // not zero. create/edit/replace report lineCount and their contract locks 1
-  // for empty content; read's totalLines shares this single source.
   let count = 1;
-  let pos = content.indexOf('\n');
-  while (pos !== -1) {
-    count++;
-    pos = content.indexOf('\n', pos + 1);
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) {
+      count++;
+    }
   }
   return count;
 }

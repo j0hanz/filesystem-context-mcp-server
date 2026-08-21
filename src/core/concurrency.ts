@@ -13,26 +13,30 @@ export const StoppedReasonSchema = z.enum(['maxResults', 'maxFiles', 'timeout'])
  * abort also fired on the same iteration). Call `resolve()` once at the end.
  */
 export class StopReasonTracker {
-  #maxResults = false;
-  #maxFiles = false;
-  #abort = false;
+  #reason?: StoppedReason;
+
   hitMaxResults(): void {
-    this.#maxResults = true;
+    this.#reason = 'maxResults';
   }
+
   hitMaxFiles(): void {
-    this.#maxFiles = true;
+    if (this.#reason !== 'maxResults') {
+      this.#reason = 'maxFiles';
+    }
   }
+
   hitAbort(): void {
-    this.#abort = true;
+    if (!this.#reason) {
+      this.#reason = 'timeout';
+    }
   }
+
   get truncated(): boolean {
-    return this.#maxResults || this.#maxFiles || this.#abort;
+    return this.#reason !== undefined;
   }
+
   resolve(): StoppedReason | undefined {
-    if (this.#maxResults) return 'maxResults';
-    if (this.#maxFiles) return 'maxFiles';
-    if (this.#abort) return 'timeout';
-    return undefined;
+    return this.#reason;
   }
 }
 
@@ -179,25 +183,24 @@ export async function processEntriesConcurrently(
 }
 
 export function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise;
-  if (signal.aborted) {
-    const reason: unknown = signal.reason;
-    return Promise.reject(reason instanceof Error ? reason : new Error('Operation aborted'));
+  if (!signal) {
+    return promise;
   }
-
+  signal.throwIfAborted();
+  let onAbort: (() => void) | undefined;
   return Promise.race([
     promise,
     new Promise<never>((_, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => {
-          const reason: unknown = signal.reason;
-          reject(reason instanceof Error ? reason : new Error('Operation aborted'));
-        },
-        { once: true },
-      );
+      onAbort = () => {
+        reject(signal.reason instanceof Error ? signal.reason : new Error('Operation aborted'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
     }),
-  ]);
+  ]).finally(() => {
+    if (onAbort) {
+      signal.removeEventListener('abort', onAbort);
+    }
+  });
 }
 
 /**

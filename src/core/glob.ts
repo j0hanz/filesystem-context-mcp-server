@@ -52,15 +52,10 @@ async function loadGitignoreFiles(
 }
 
 function parseGitignoreLines(contents: string): string[] {
-  const lines: string[] = [];
-  const parts = contents.split(/\r?\n/u);
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (trimmed.length > 0) {
-      lines.push(trimmed);
-    }
-  }
-  return lines;
+  return contents
+    .split(/\r?\n/u)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 export class GitignoreManager {

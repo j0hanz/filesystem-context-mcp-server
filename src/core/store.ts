@@ -54,13 +54,21 @@ function buildIndexKey(mimeType: string, contentHash: string): string {
 
 function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now()): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
-  if (!Number.isFinite(expiresAt)) return true;
+  if (!Number.isFinite(expiresAt)) {
+    return true;
+  }
   return expiresAt <= now;
 }
 
 // -----------------------------------------------------------------------------
 // ResourceStore implementation — storage + eviction + TTL in one class
 // -----------------------------------------------------------------------------
+
+function invalidStoreOptionsError(maxEntryBytes: number, maxTotalBytes: number): Error {
+  return new Error(
+    `Invalid store options: maxEntryBytes (${maxEntryBytes}) must not exceed maxTotalBytes (${maxTotalBytes}).`,
+  );
+}
 
 export class ResourceStore {
   private readonly byUri = new Map<string, StoredEntry>();
@@ -69,6 +77,9 @@ export class ResourceStore {
   private readonly options: ResourceStoreOptions;
 
   constructor(options: ResourceStoreOptions = DEFAULT_RESOURCE_STORE_OPTIONS) {
+    if (options.maxEntryBytes > options.maxTotalBytes) {
+      throw invalidStoreOptionsError(options.maxEntryBytes, options.maxTotalBytes);
+    }
     this.options = options;
   }
 
@@ -81,14 +92,18 @@ export class ResourceStore {
   }
 
   private bumpLru(uri: string, entry: StoredEntry): void {
-    if (!this.byUri.has(uri)) return;
+    if (!this.byUri.has(uri)) {
+      return;
+    }
     this.byUri.delete(uri);
     this.byUri.set(uri, entry);
   }
 
   private removeEntry(uri: string): StoredEntry | undefined {
     const existing = this.byUri.get(uri);
-    if (!existing) return undefined;
+    if (!existing) {
+      return undefined;
+    }
     this._totalBytes -= existing.size;
     this.byUri.delete(uri);
     const indexKey = buildIndexKey(existing.mimeType, existing.hash);
@@ -134,14 +149,18 @@ export class ResourceStore {
 
   private evictOldest(): void {
     const first = this.byUri.values().next();
-    if (first.done) return;
+    if (first.done) {
+      return;
+    }
     this.removeEntry(first.value.uri);
   }
 
   private pruneExpiredEntries(now = Date.now()): void {
     const toRemove: string[] = [];
     for (const entry of this.byUri.values()) {
-      if (isExpired(entry, now)) toRemove.push(entry.uri);
+      if (isExpired(entry, now)) {
+        toRemove.push(entry.uri);
+      }
     }
     for (const uri of toRemove) {
       this.removeEntry(uri);
@@ -149,7 +168,9 @@ export class ResourceStore {
   }
 
   private enforceLimits(): void {
-    while (this.byUri.size > this.options.maxEntries) this.evictOldest();
+    while (this.byUri.size > this.options.maxEntries) {
+      this.evictOldest();
+    }
     while (this._totalBytes > this.options.maxTotalBytes) {
       if (this.byUri.size === 0) {
         Logger.error(
@@ -261,7 +282,9 @@ export class ResourceStore {
       params.name,
       contentHash,
     );
-    if (hit) return hit;
+    if (hit) {
+      return hit;
+    }
 
     const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType ?? 'text/plain', contentHash, entryBytes },
@@ -284,7 +307,9 @@ export class ResourceStore {
     const entryBytes = estimateBytes(params.data);
     this.checkBeforePut(entryBytes);
     const hit = this.tryReturnHashHit('blob', params.mimeType, params.name, contentHash);
-    if (hit) return hit;
+    if (hit) {
+      return hit;
+    }
 
     const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType, contentHash, entryBytes },
@@ -321,11 +346,5 @@ export class ResourceStore {
 export function createInMemoryResourceStore(
   options: Partial<ResourceStoreOptions> = {},
 ): ResourceStore {
-  const resolved = { ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options };
-  if (resolved.maxEntryBytes > resolved.maxTotalBytes) {
-    throw new Error(
-      `Invalid store options: maxEntryBytes (${resolved.maxEntryBytes}) must not exceed maxTotalBytes (${resolved.maxTotalBytes}).`,
-    );
-  }
-  return new ResourceStore(resolved);
+  return new ResourceStore({ ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options });
 }

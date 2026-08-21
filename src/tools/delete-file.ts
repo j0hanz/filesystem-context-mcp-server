@@ -7,7 +7,8 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
-import type { GuardedFileSystem } from '../core/fs.js';
+import type { FileType, GuardedFileSystem } from '../core/fs.js';
+import { getFileType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -92,17 +93,8 @@ function toPerFileError(error: DeleteFailure['error']): DeleteFailureItem['error
   };
 }
 
-function resolveItemType(
-  itemStats: Awaited<ReturnType<GuardedFileSystem['lstat']>>,
-): 'directory' | 'symlink' | 'file' | 'other' {
-  if (itemStats.stats.isDirectory()) return 'directory';
-  if (itemStats.stats.isSymbolicLink()) return 'symlink';
-  if (itemStats.stats.isFile()) return 'file';
-  return 'other';
-}
-
 type LstatResult = Awaited<ReturnType<GuardedFileSystem['lstat']>>;
-type ItemType = 'directory' | 'symlink' | 'file' | 'other';
+type ItemType = FileType;
 
 /** A path's pre-checked plan: validated, statted, and flagged if it needs confirmation. */
 interface DeletePlan {
@@ -158,7 +150,7 @@ async function planPath(
     return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
 
-  const itemType = resolveItemType(firstStats);
+  const itemType = getFileType(firstStats.stats);
   const pending =
     args.recursive && itemType === 'directory' && (await fs.hasChildrenUnchecked(validPath));
   return { status: 'plan', plan: { inputPath, validPath, itemType, firstStats, pending } };
@@ -200,7 +192,7 @@ async function finalizeDeletion(
     return { failure: toDeleteFailure(plan.inputPath, error) };
   }
 
-  const currentItemType = resolveItemType(currentStats);
+  const currentItemType = getFileType(currentStats.stats);
   // Identity comparison, not just the coarse category: a swap during the
   // confirmation gap (delete original, create a same-named replacement) keeps
   // the type but changes dev/ino/birthtimeMs. birthtimeMs is the primary

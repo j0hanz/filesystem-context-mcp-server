@@ -7,12 +7,10 @@ import { createTwoFilesPatch } from 'diff';
  */
 export function buildPatchDiff(label: string, original: string, modified: string): Promise<string> {
   return new Promise<string>((resolve) => {
-    setImmediate(() => {
-      createTwoFilesPatch(label, label, original, modified, 'Original', 'Modified', {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      });
+    createTwoFilesPatch(label, label, original, modified, 'Original', 'Modified', {
+      callback: (res: string | undefined) => {
+        resolve(res ?? '');
+      },
     });
   });
 }

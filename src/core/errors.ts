@@ -315,10 +315,6 @@ export function classify(error: unknown): Problem {
 }
 
 function isNativeError(error: unknown): error is Error {
-  const candidate = Error;
-  if (typeof candidate.isError === 'function') {
-    return candidate.isError(error);
-  }
   return error instanceof Error;
 }
 

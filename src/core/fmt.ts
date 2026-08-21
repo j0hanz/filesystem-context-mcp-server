@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from 'node:util';
+
 const ESC = '\x1b[';
 const ANSI_RESET = `${ESC}0m`;
 
@@ -42,11 +44,15 @@ export type Phase = 'start' | 'tick' | 'done' | 'fail';
 
 function buildBody(ctx: ProgressCtx, phase: Phase): string {
   const items: string[] = [];
-  if (ctx.subject) items.push(ctx.subject);
+  if (ctx.subject) {
+    items.push(ctx.subject);
+  }
 
   switch (phase) {
     case 'start':
-      if (ctx.scope) items.push(ctx.scope);
+      if (ctx.scope) {
+        items.push(ctx.scope);
+      }
       break;
     case 'tick':
       if (ctx.current !== undefined && ctx.total !== undefined) {
@@ -56,11 +62,17 @@ function buildBody(ctx: ProgressCtx, phase: Phase): string {
       }
       break;
     case 'done':
-      if (ctx.scope) items.push(ctx.scope);
-      if (ctx.detail) items.push(ctx.detail);
+      if (ctx.scope) {
+        items.push(ctx.scope);
+      }
+      if (ctx.detail) {
+        items.push(ctx.detail);
+      }
       break;
     case 'fail':
-      if (ctx.error) items.push(ctx.error);
+      if (ctx.error) {
+        items.push(ctx.error);
+      }
       break;
   }
 
@@ -104,10 +116,18 @@ export function ansiLine(phase: Phase, ctx: ProgressCtx): string {
 }
 
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-  if (bytes < KIB) return `${bytes} B`;
-  if (bytes < MIB) return `${(bytes / KIB).toFixed(1)} KB`;
-  if (bytes < GIB) return `${(bytes / MIB).toFixed(1)} MB`;
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return '0 B';
+  }
+  if (bytes < KIB) {
+    return `${bytes} B`;
+  }
+  if (bytes < MIB) {
+    return `${(bytes / KIB).toFixed(1)} KB`;
+  }
+  if (bytes < GIB) {
+    return `${(bytes / MIB).toFixed(1)} MB`;
+  }
   return `${(bytes / GIB).toFixed(1)} GB`;
 }
 
@@ -116,7 +136,9 @@ export function formatCount(count: number, singular: string, plural = `${singula
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {
-  if (pattern.length <= maxLength) return pattern;
+  if (pattern.length <= maxLength) {
+    return pattern;
+  }
 
   let preview = pattern;
   if (pattern.includes('|')) {
@@ -136,14 +158,8 @@ function isColorEnabled(stream: { isTTY?: boolean } = process.stdout): boolean {
   return stream.isTTY === true && !process.env['NO_COLOR'];
 }
 
-const ANSI_STRIP_RE = new RegExp(String.raw`\x1b\[[0-9;]*m`, 'g');
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_STRIP_RE, '');
-}
-
 export function padEndVisible(s: string, width: number): string {
-  const visible = stripAnsi(s).length;
+  const visible = stripVTControlCharacters(s).length;
   return visible >= width ? s : s + ' '.repeat(width - visible);
 }
 

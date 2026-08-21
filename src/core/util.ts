@@ -7,11 +7,9 @@ export function debounce<Args extends unknown[]>(
   func: (...args: Args) => void,
   waitMs: number,
 ): { (...args: Args): void; cancel: () => void } {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timeoutId: NodeJS.Timeout | undefined;
   const debounced = (...args: Args): void => {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-    }
+    clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       timeoutId = undefined;
       try {
@@ -19,16 +17,11 @@ export function debounce<Args extends unknown[]>(
       } catch (error) {
         Logger.error('Unhandled exception in debounced function:', error);
       }
-    }, waitMs);
-    if (typeof timeoutId.unref === 'function') {
-      timeoutId.unref();
-    }
+    }, waitMs).unref();
   };
   debounced.cancel = () => {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-      timeoutId = undefined;
-    }
+    clearTimeout(timeoutId);
+    timeoutId = undefined;
   };
   return debounced;
 }
@@ -54,7 +47,9 @@ export function parseEnvInt(
   max: number,
 ): number {
   const value = process.env[envVar];
-  if (!value) return defaultValue;
+  if (!value) {
+    return defaultValue;
+  }
 
   const trimmed = value.trim();
   const parsed = Number(trimmed);
@@ -80,16 +75,22 @@ export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
 
 function getAvailableMemory(): number | undefined {
-  if (typeof process.availableMemory !== 'function') return undefined;
+  if (typeof process.availableMemory !== 'function') {
+    return undefined;
+  }
   const available = process.availableMemory();
-  if (!Number.isFinite(available) || available <= 0) return undefined;
+  if (!Number.isFinite(available) || available <= 0) {
+    return undefined;
+  }
   return available;
 }
 
 function getOptimalParallelism(): number {
   const cpuBound = Math.min(Math.max(availableParallelism(), 4), 32);
   const availableMemory = getAvailableMemory();
-  if (availableMemory === undefined) return cpuBound;
+  if (availableMemory === undefined) {
+    return cpuBound;
+  }
   const memoryBound = Math.floor(availableMemory / BYTES_PER_PARALLEL_TASK);
   return Math.min(cpuBound, Math.max(memoryBound, 2));
 }

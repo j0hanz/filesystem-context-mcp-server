@@ -73,12 +73,6 @@ const ALGO_LABELS: Record<string, string> = {
   md5: 'MD5',
 };
 
-function comparePaths(left: { path: string }, right: { path: string }): number {
-  if (left.path < right.path) return -1;
-  if (left.path > right.path) return 1;
-  return 0;
-}
-
 async function calculateMultipleHashes(
   fsOps: GuardedFileSystem,
   filePath: string,
@@ -222,7 +216,7 @@ async function hashDirectory(
   signal?.throwIfAborted();
   const entries = results.map((r) => r.value);
   // Sort by path with byte-wise semantics for deterministic ordering.
-  entries.sort(comparePaths);
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   // Create composite hash using length-delimited paths and binary digests.
   const compositeHasher = createHash('sha256');
