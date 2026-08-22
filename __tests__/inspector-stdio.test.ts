@@ -121,8 +121,12 @@ describe('Inspector CLI: Stdio Integration & Conformance', () => {
       serverArgs: [tmpDir],
       toolName: 'create',
       toolArgs: {
-        path: targetFile,
-        content: testContent,
+        files: [
+          {
+            path: targetFile,
+            content: testContent,
+          },
+        ],
       },
     });
 
@@ -164,11 +168,15 @@ describe('Inspector CLI: Stdio Integration & Conformance', () => {
       serverCommand: serverCmd,
       serverArgs: [tmpDir],
       toolName: 'create',
-      toolArgs: { path: targetFile, content: 'Stat payload' },
+      toolArgs: {
+        files: [{ path: targetFile, content: 'Stat payload' }],
+      },
     });
 
     const statRes = await executeInspectorCli<{
-      structuredContent?: { size?: number; isDirectory?: boolean };
+      structuredContent?: {
+        results?: { value?: { size?: number; type?: string } }[];
+      };
     }>({
       method: 'tools/call',
       serverCommand: serverCmd,
@@ -182,11 +190,9 @@ describe('Inspector CLI: Stdio Integration & Conformance', () => {
       0,
       `tools/call stat should exit 0. stderr: ${statRes.stderr}`,
     );
-    assert.strictEqual(statRes.json?.structuredContent?.isDirectory, false);
-    assert.ok(
-      typeof statRes.json?.structuredContent?.size === 'number' &&
-        statRes.json.structuredContent.size > 0,
-    );
+    const firstResult = statRes.json?.structuredContent?.results?.[0]?.value;
+    assert.strictEqual(firstResult?.type === 'directory', false);
+    assert.ok(typeof firstResult?.size === 'number' && firstResult.size > 0);
   });
 
   it('INSP-STDIO-007: resources/list and resources/read retrieve instructions', async () => {
@@ -205,12 +211,12 @@ describe('Inspector CLI: Stdio Integration & Conformance', () => {
     );
     const uris = listRes.json?.resources?.map((r) => r.uri) ?? [];
     assert.ok(
-      uris.some((u) => u.includes('instructions://')),
+      uris.some((u) => u.includes('instructions')),
       'instructions resource should be in list',
     );
 
     const instructionsUri =
-      uris.find((u) => u.includes('instructions://')) ?? 'instructions://filesystem-mcp';
+      uris.find((u) => u.includes('instructions')) ?? 'internal://instructions';
     const readRes = await executeInspectorCli<{
       contents?: { uri: string; text?: string }[];
     }>({
@@ -243,21 +249,27 @@ describe('Inspector CLI: Stdio Integration & Conformance', () => {
     assert.ok(promptNames.includes('get-help'), 'get-help prompt should be listed');
   });
 
-  it('INSP-STDIO-009: tools/call out-of-boundary path traversal exits with Code 5 (Tool Error)', async () => {
+  it('INSP-STDIO-009: tools/call out-of-boundary path traversal returns ACCESS_DENIED', async () => {
     const badPath = join(tmpDir, '../../../../etc/shadow');
-    const res = await executeInspectorCli({
+    const res = await executeInspectorCli<{
+      structuredContent?: {
+        results?: { error?: { code?: string; message?: string } }[];
+      };
+    }>({
       method: 'tools/call',
       serverCommand: serverCmd,
-      serverArgs: [tmpDir],
+      serverArgs: ['--root-boundary', tmpDir, tmpDir],
       toolName: 'read',
       toolArgs: { path: badPath },
     });
 
     assert.strictEqual(
       res.exitCode,
-      5,
-      `Out-of-root access should exit with code 5. Actual: ${res.exitCode}, stdout: ${res.stdout}`,
+      0,
+      `Out-of-root access should exit with code 0. Actual: ${res.exitCode}, stdout: ${res.stdout}`,
     );
+    const firstResult = res.json?.structuredContent?.results?.[0];
+    assert.strictEqual(firstResult?.error?.code, 'ACCESS_DENIED');
   });
 
   it('INSP-STDIO-010: tools/call non-existent tool exits with Code 5', async () => {

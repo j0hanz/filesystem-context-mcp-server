@@ -27,7 +27,7 @@ describe('Inspector CLI: Declarative Configuration & Roots (--config)', () => {
 
     await createInspectorConfigFile(configFile, SERVER_NAME, {
       command: process.execPath,
-      args: ['--import', 'tsx', srcIndex],
+      args: ['--import', 'tsx', srcIndex, tmpDir],
       protocolEra: 'modern',
       roots: [{ uri: rootUri, name: 'dynamic-root' }],
     });

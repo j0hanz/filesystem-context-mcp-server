@@ -1,5 +1,10 @@
 import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { unlink, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, resolve as pathResolve } from 'node:path';
 import process from 'node:process';
 
 import { normalizePath } from '../src/core/path.js';
@@ -54,13 +59,54 @@ export interface InspectorCliResult<T = unknown> {
   errorEnvelope?: InspectorErrorEnvelope;
 }
 
+const req = createRequire(import.meta.url);
+const pkgPath = req.resolve('@modelcontextprotocol/inspector/package.json');
+const pkg = req(pkgPath) as { bin: Record<string, string> };
+const INSPECTOR_BIN = pathResolve(
+  dirname(pkgPath),
+  pkg.bin['mcp-inspector'] ?? './clients/launcher/build/index.js',
+);
+
 /**
  * Execute @modelcontextprotocol/inspector in CLI mode (--cli).
  */
 export async function executeInspectorCli<T = unknown>(
   options: InspectorCliOptions,
 ): Promise<InspectorCliResult<T>> {
-  const args: string[] = ['--cli'];
+  let tempConfigPath: string | undefined;
+  let configToUse = options.configPath ? normalizePath(options.configPath) : undefined;
+  let serverNameToUse = options.serverName;
+
+  if (!configToUse) {
+    tempConfigPath = pathResolve(tmpdir(), `insp-ephemeral-${randomUUID()}.json`);
+    configToUse = tempConfigPath;
+    serverNameToUse = 'test_server';
+
+    const serverEntry: Record<string, unknown> = {
+      protocolEra: 'modern',
+      ...(options.serverUrl
+        ? {
+            type: options.transport ?? 'http',
+            url: options.serverUrl,
+            ...(options.headers ? { headers: options.headers } : {}),
+          }
+        : options.serverCommand && options.serverCommand.length > 0
+          ? {
+              command: options.serverCommand[0],
+              args: [...options.serverCommand.slice(1), ...(options.serverArgs ?? [])],
+            }
+          : {}),
+      ...(options.env ? { env: options.env } : {}),
+    };
+
+    await writeFile(
+      tempConfigPath,
+      JSON.stringify({ mcpServers: { [serverNameToUse]: serverEntry } }, null, 2),
+      'utf-8',
+    );
+  }
+
+  const args: string[] = [INSPECTOR_BIN, '--cli'];
 
   args.push('--method', options.method);
   args.push('--format', 'json');
@@ -85,45 +131,38 @@ export async function executeInspectorCli<T = unknown>(
     args.push('--prompt-args', JSON.stringify(options.promptArgs));
   }
 
-  if (options.headers) {
+  if (options.headers && options.configPath) {
     for (const [k, v] of Object.entries(options.headers)) {
       args.push('--header', `${k}: ${v}`);
     }
   }
 
-  if (options.configPath) {
-    args.push('--config', normalizePath(options.configPath));
-    if (options.serverName) {
-      args.push('--server', options.serverName);
-    }
-  } else if (options.serverUrl) {
-    args.push(options.serverUrl, '--transport', options.transport ?? 'http');
-  } else if (options.serverCommand && options.serverCommand.length > 0) {
-    args.push(...options.serverCommand);
+  args.push('--config', configToUse);
+  if (serverNameToUse) {
+    args.push('--server', serverNameToUse);
   }
 
-  // The bare '--' separator forwards all following flags directly to the child server process.
-  if (options.serverArgs && options.serverArgs.length > 0) {
-    args.push('--', ...options.serverArgs);
-  }
-
-  const isWindows = process.platform === 'win32';
   const timeoutMs = options.timeoutMs ?? 25_000;
 
   return new Promise((resolve) => {
     let settled = false;
-    const settle = (result: InspectorCliResult<T>) => {
-      if (settled) {
-        return;
-      }
+    const settle = async (result: InspectorCliResult<T>) => {
+      if (settled) return;
       settled = true;
+      if (tempConfigPath) {
+        try {
+          await unlink(tempConfigPath);
+        } catch {
+          /* ignore */
+        }
+      }
       resolve(result);
     };
 
     let child: ChildProcess;
     try {
-      child = spawn('npx', ['-y', '@modelcontextprotocol/inspector', ...args], {
-        shell: isWindows,
+      child = spawn(process.execPath, args, {
+        shell: false,
         windowsHide: true,
         env: {
           ...process.env,
@@ -132,10 +171,10 @@ export async function executeInspectorCli<T = unknown>(
         timeout: timeoutMs,
       });
     } catch (err) {
-      settle({
+      void settle({
         exitCode: 1,
         stdout: '',
-        stderr: `Failed to spawn npx @modelcontextprotocol/inspector process: ${err instanceof Error ? err.message : String(err)}`,
+        stderr: `Failed to spawn inspector process: ${err instanceof Error ? err.message : String(err)}`,
       });
       return;
     }
@@ -157,7 +196,8 @@ export async function executeInspectorCli<T = unknown>(
       const trimmedOut = stdout.trim();
       if (trimmedOut.length > 0) {
         try {
-          json = JSON.parse(trimmedOut) as T;
+          const parsed = JSON.parse(trimmedOut) as Record<string, unknown>;
+          json = (parsed?.result !== undefined ? parsed.result : parsed) as T;
         } catch {
           // If output is NDJSON (--app-info with tools/list), json parsing the whole block might fail
         }
@@ -176,7 +216,7 @@ export async function executeInspectorCli<T = unknown>(
         }
       }
 
-      settle({
+      void settle({
         exitCode: code ?? 1,
         stdout,
         stderr,
@@ -186,7 +226,7 @@ export async function executeInspectorCli<T = unknown>(
     });
 
     child.on('error', (err) => {
-      settle({
+      void settle({
         exitCode: 1,
         stdout,
         stderr: `${stderr}\n${err.message}`.trim(),

@@ -65,13 +65,13 @@
     "cli"
   ],
   "dependencies": {
+    "@adguard/re2-wasm": "^1.2.1",
     "@modelcontextprotocol/express": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "diff": "^9",
     "express": "^5.2.1",
     "ignore": "^7.0.6",
-    "@adguard/re2-wasm": "^1.2.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
