@@ -6,6 +6,7 @@ import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
+import { escapeRegexLiteral } from '../core/primitives.js';
 import {
   CursorSchema,
   defaultFalseBoolean,
@@ -54,7 +55,6 @@ interface SearchContext {
   pattern: string;
   matcher?: Regex;
   caseSensitive: boolean;
-  foldedPattern?: string;
 }
 
 function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOutput> {
@@ -177,10 +177,7 @@ function findColumnOffset(content: string, context: SearchContext): number | und
     const idx = content.indexOf(context.pattern);
     return idx >= 0 ? idx : undefined;
   }
-  // Case-insensitive literal search
-  if (context.foldedPattern === undefined) return undefined;
-  const idx = content.toLowerCase().indexOf(context.foldedPattern);
-  return idx >= 0 ? idx : undefined;
+  return undefined;
 }
 
 function buildSortedPayloads(
@@ -238,8 +235,13 @@ function buildSearchContentOptions(args: SearchInput, signal?: AbortSignal): Sea
 }
 
 function createSearchMatcher(args: SearchInput): Regex | undefined {
-  if (!args.isRegex) return undefined;
-  return compileRegex(args.searchPattern, { caseSensitive: args.caseSensitive });
+  if (args.isRegex) {
+    return compileRegex(args.searchPattern, { caseSensitive: args.caseSensitive });
+  }
+  if (!args.caseSensitive) {
+    return compileRegex(escapeRegexLiteral(args.searchPattern), { caseSensitive: false });
+  }
+  return undefined;
 }
 
 function createSearchContext(args: SearchInput, matcher: Regex | undefined): SearchContext {
@@ -247,9 +249,6 @@ function createSearchContext(args: SearchInput, matcher: Regex | undefined): Sea
     pattern: args.searchPattern,
     caseSensitive: args.caseSensitive,
     ...(matcher ? { matcher } : {}),
-    ...(!args.isRegex && !args.caseSensitive
-      ? { foldedPattern: args.searchPattern.toLowerCase() }
-      : {}),
   };
 }
 

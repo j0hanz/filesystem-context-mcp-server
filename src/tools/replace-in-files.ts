@@ -196,7 +196,10 @@ function expandDollarTokens(
     if (kind === '&') return match;
     if (kind === '`') return input.slice(0, offset);
     if (kind === "'") return input.slice(offset + match.length);
-    if (name !== undefined) return named?.[name] ?? token;
+    if (name !== undefined) {
+      if (named && Object.hasOwn(named, name)) return named[name] ?? '';
+      return token;
+    }
     // `$12` prefers group 12, then falls back to group 1 followed by a literal
     // `2`, and stays literal when neither exists — RegExp's own precedence.
     const two = Number.parseInt(kind, 10);

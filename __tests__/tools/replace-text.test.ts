@@ -231,6 +231,31 @@ describe('replace_text: $ sequences are literal unless isRegex=true', () => {
     }
   });
 
+  it('handles numbered and named dollar token edge cases correctly in regex mode', async () => {
+    const env = await createTestEnv();
+    try {
+      const file = join(env.tmpDir, 'tokens.txt');
+      await writeFile(file, 'prefix ABC suffix\n');
+
+      assertOk(
+        await env.client.callTool({
+          name: 'replace_text',
+          arguments: {
+            path: file,
+            searchPattern: 'prefix (?<captured>\\w+) suffix',
+            replacement: 'got: $<captured> | $10 | $99 | $<unknown>',
+            isRegex: true,
+          },
+        }),
+      );
+
+      // $<captured> => "ABC", $10 => $1 ("ABC") + "0", $99 => literal "$99", $<unknown> => literal "$<unknown>"
+      assert.equal(await readFile(file, 'utf-8'), 'got: ABC | ABC0 | $99 | $<unknown>\n');
+    } finally {
+      await env.cleanup();
+    }
+  });
+
   it('dryRun does not populate primaryFile or leak stale on-disk content', async () => {
     const env = await createTestEnv();
     try {

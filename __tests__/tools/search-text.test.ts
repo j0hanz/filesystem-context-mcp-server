@@ -47,4 +47,18 @@ describe('search_text — literal vs regex', () => {
     const result = await search({ searchPattern: 'function\\s+\\w+\\(' });
     assert.equal(result.matches.length, 0);
   });
+
+  it('calculates column offset accurately for case-insensitive literal search with Unicode', async () => {
+    const file = join(env.tmpDir, 'unicode.txt');
+    await writeFile(file, '\u0130 target_word\n');
+
+    const raw = await env.client.callTool({
+      name: 'search_text',
+      arguments: { path: env.tmpDir, pattern: 'unicode.txt', searchPattern: 'TARGET_WORD' },
+    });
+    const s = getStructured<{ matches: { column?: number; content: string }[] }>(raw);
+    assert.equal(s.matches.length, 1);
+    // "\u0130 target_word" -> "\u0130" is 1 UTF-16 code unit, space is 1 code unit, target_word starts at index 2
+    assert.equal(s.matches[0]?.column, 2);
+  });
 });
