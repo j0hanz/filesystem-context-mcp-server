@@ -19,6 +19,7 @@ import { formatUnknownErrorMessage } from './core/errors.js';
 import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
+import type { ServerNotifier } from './core/registrar.js';
 import { MIB, parseEnvInt } from './core/util.js';
 import { createWatcherRegistry, type WatcherRegistry } from './core/watcher-registry.js';
 import {
@@ -141,17 +142,33 @@ async function attachListenWatchers(
   }
 }
 
+function createServerNotifier(bus: InMemoryServerEventBus): ServerNotifier {
+  return {
+    toolsChanged: () => {
+      bus.publish({ kind: 'tools_list_changed' });
+    },
+    promptsChanged: () => {
+      bus.publish({ kind: 'prompts_list_changed' });
+    },
+    resourcesChanged: () => {
+      bus.publish({ kind: 'resources_list_changed' });
+    },
+    resourceUpdated: (uri: string) => {
+      bus.publish({ kind: 'resource_updated', uri });
+    },
+  };
+}
+
 function makeHttpModernFactory(
   options: ServerOptions,
   bus: InMemoryServerEventBus,
   sharedRegistry: WatcherRegistry,
 ): McpServerFactory {
+  const notifier = createServerNotifier(bus);
   return async () => {
     const c = await createServer(options, {
       watcherRegistry: sharedRegistry,
-      notifyResourceUpdated: (uri) => {
-        bus.publish({ kind: 'resource_updated', uri });
-      },
+      notifier,
     });
     const previousOnClose = c.mcp.server.onclose;
     c.mcp.server.onclose = () => {

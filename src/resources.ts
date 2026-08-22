@@ -33,7 +33,7 @@ import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
-import type { Registrar, ServerDeps } from './core/registrar.js';
+import type { Registrar, ServerDeps, ServerNotifier } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
@@ -74,12 +74,8 @@ export interface ResourceRegistrationOptions {
    * to the shared ServerEventBus. Omitted (per-server registry) on legacy/stdio.
    */
   watcherRegistry?: WatcherRegistry;
-  /**
-   * Modern-leg notify sink: publishes a resource-updated event to the
-   * ServerEventBus (broadcast to `subscriptions/listen` streams). When set, the
-   * subscribe handler uses it instead of `sendResourceUpdated`.
-   */
-  notifyResourceUpdated?: (uri: string) => void;
+  /** Modern-leg typed notification publisher. */
+  notifier?: ServerNotifier;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -572,8 +568,8 @@ function registerResources(
           const subscribeResult = await contract.subscribe(
             requestedResource.toString(),
             (updatedUri) => {
-              if (options.notifyResourceUpdated) {
-                options.notifyResourceUpdated(updatedUri);
+              if (options.notifier) {
+                options.notifier.resourceUpdated(updatedUri);
                 return;
               }
               const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
@@ -631,9 +627,7 @@ export const resourcesRegistrar: Registrar = (() => {
         server: deps.server,
         ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
         ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
-        ...(deps.notifyResourceUpdated
-          ? { notifyResourceUpdated: deps.notifyResourceUpdated }
-          : {}),
+        ...(deps.notifier ? { notifier: deps.notifier } : {}),
         readOnly: deps.readOnly ?? false,
       });
       serverContracts.set(deps.server, contracts);

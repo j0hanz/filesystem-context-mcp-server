@@ -9,65 +9,69 @@ import {
   startInspectorHttp,
   stopInspectorHttp,
 } from './inspector-fixtures.js';
-import { executeInspectorCli } from './inspector-harness.js';
+import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
 
-describe('Inspector CLI: Streamable HTTP Transport & Authentication', () => {
-  let tmpDir: string;
-  let server: Server;
-  let serverUrl: string;
-  const TEST_API_KEY = 'test-inspector-secret-key-xyz123';
+describe(
+  'Inspector CLI: Streamable HTTP Transport & Authentication',
+  { skip: !isInspectorInstalled() ? 'inspector not installed' : undefined },
+  () => {
+    let tmpDir: string;
+    let server: Server;
+    let serverUrl: string;
+    const TEST_API_KEY = 'test-inspector-secret-key-xyz123';
 
-  before(async () => {
-    tmpDir = await createInspectorTestRoot();
-    server = await startInspectorHttp(0, [tmpDir], {
-      apiKey: TEST_API_KEY,
-    });
-    const port = getInspectorHttpPort(server);
-    serverUrl = `http://127.0.0.1:${port}/mcp`;
-  });
-
-  after(async () => {
-    if (server) {
-      await stopInspectorHttp(server);
-    }
-    await cleanupInspectorTestRoot(tmpDir);
-  });
-
-  it('INSP-HTTP-001: unauthenticated request exits with Code 3 (auth_required)', async () => {
-    const res = await executeInspectorCli({
-      method: 'tools/list',
-      serverUrl,
-      transport: 'http',
+    before(async () => {
+      tmpDir = await createInspectorTestRoot();
+      server = await startInspectorHttp(0, [tmpDir], {
+        apiKey: TEST_API_KEY,
+      });
+      const port = getInspectorHttpPort(server);
+      serverUrl = `http://127.0.0.1:${port}/mcp`;
     });
 
-    assert.strictEqual(
-      res.exitCode,
-      3,
-      `Unauthenticated HTTP request should exit with code 3. Actual: ${res.exitCode}, stderr: ${res.stderr}`,
-    );
-  });
-
-  it('INSP-HTTP-002: request with valid Bearer header exits with Code 0 and returns tools', async () => {
-    const res = await executeInspectorCli<{
-      tools?: { name: string }[];
-    }>({
-      method: 'tools/list',
-      serverUrl,
-      transport: 'http',
-      headers: {
-        Authorization: `Bearer ${TEST_API_KEY}`,
-      },
+    after(async () => {
+      if (server) {
+        await stopInspectorHttp(server);
+      }
+      await cleanupInspectorTestRoot(tmpDir);
     });
 
-    assert.strictEqual(
-      res.exitCode,
-      0,
-      `Authenticated HTTP request should exit with code 0. Actual: ${res.exitCode}, stderr: ${res.stderr}`,
-    );
-    assert.ok(Array.isArray(res.json?.tools), 'Tools should be returned');
-    assert.ok(
-      res.json?.tools?.some((t) => t.name === 'read'),
-      'read tool should be in listing',
-    );
-  });
-});
+    it('INSP-HTTP-001: unauthenticated request exits with Code 3 (auth_required)', async () => {
+      const res = await executeInspectorCli({
+        method: 'tools/list',
+        serverUrl,
+        transport: 'http',
+      });
+
+      assert.strictEqual(
+        res.exitCode,
+        3,
+        `Unauthenticated HTTP request should exit with code 3. Actual: ${res.exitCode}, stderr: ${res.stderr}`,
+      );
+    });
+
+    it('INSP-HTTP-002: request with valid Bearer header exits with Code 0 and returns tools', async () => {
+      const res = await executeInspectorCli<{
+        tools?: { name: string }[];
+      }>({
+        method: 'tools/list',
+        serverUrl,
+        transport: 'http',
+        headers: {
+          Authorization: `Bearer ${TEST_API_KEY}`,
+        },
+      });
+
+      assert.strictEqual(
+        res.exitCode,
+        0,
+        `Authenticated HTTP request should exit with code 0. Actual: ${res.exitCode}, stderr: ${res.stderr}`,
+      );
+      assert.ok(Array.isArray(res.json?.tools), 'Tools should be returned');
+      assert.ok(
+        res.json?.tools?.some((t) => t.name === 'read'),
+        'read tool should be in listing',
+      );
+    });
+  },
+);

@@ -8,6 +8,7 @@ import { after, before, describe, it } from 'node:test';
 
 import {
   ALL_REGISTERED_TOOL_NAMES,
+  ALL_TOOLS,
   MUTATING_TOOL_NAMES,
   registeredTools,
 } from '../src/tools/index.js';
@@ -270,5 +271,20 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     } finally {
       await rm(outsideFile, { force: true });
     }
+  });
+
+  it('TC-FUNC-057: search tools declare execution taskSupport metadata', () => {
+    const searchContent = ALL_TOOLS.find((t) => t.name === 'search_text');
+    const searchFiles = ALL_TOOLS.find((t) => t.name === 'find_files');
+    const replaceText = ALL_TOOLS.find((t) => t.name === 'replace_text');
+
+    assert.ok(searchContent, 'search_text tool should be defined');
+    assert.deepStrictEqual(searchContent.execution, { taskSupport: 'optional' });
+
+    assert.ok(searchFiles, 'find_files tool should be defined');
+    assert.deepStrictEqual(searchFiles.execution, { taskSupport: 'optional' });
+
+    assert.ok(replaceText, 'replace_text tool should be defined');
+    assert.deepStrictEqual(replaceText.execution, { taskSupport: 'optional' });
   });
 });

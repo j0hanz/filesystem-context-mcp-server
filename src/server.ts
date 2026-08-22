@@ -8,7 +8,7 @@ import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
-import type { Registrar, ServerDeps } from './core/registrar.js';
+import type { Registrar, ServerDeps, ServerNotifier } from './core/registrar.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
 import { pkgInfo } from './pkg-info.js';
@@ -91,8 +91,8 @@ export async function createServer(
   extraDeps?: {
     /** Shared file-watcher registry for the modern (per-request) HTTP leg. */
     watcherRegistry?: WatcherRegistry;
-    /** Modern-leg resource-updated notify sink (publishes to the ServerEventBus). */
-    notifyResourceUpdated?: (uri: string) => void;
+    /** Modern-leg typed notification publisher. */
+    notifier?: ServerNotifier;
   },
 ): Promise<FilesystemServerContext> {
   const resourceStore = new ResourceStore();
@@ -148,9 +148,7 @@ export async function createServer(
     ...(localIcon ? { iconInfo: localIcon } : {}),
     ...(options.readOnly ? { readOnly: true } : {}),
     ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
-    ...(extraDeps?.notifyResourceUpdated
-      ? { notifyResourceUpdated: extraDeps.notifyResourceUpdated }
-      : {}),
+    ...(extraDeps?.notifier ? { notifier: extraDeps.notifier } : {}),
   };
 
   const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];

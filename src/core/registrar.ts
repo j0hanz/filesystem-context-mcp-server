@@ -5,6 +5,13 @@ import type { IconInfo } from './primitives.js';
 import type { ResourceStore } from './store.js';
 import type { WatcherRegistry } from './watcher-registry.js';
 
+export interface ServerNotifier {
+  readonly toolsChanged?: () => void;
+  readonly promptsChanged?: () => void;
+  readonly resourcesChanged?: () => void;
+  readonly resourceUpdated: (uri: string) => void;
+}
+
 export interface ServerDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
@@ -13,8 +20,8 @@ export interface ServerDeps {
   readonly readOnly?: boolean;
   /** Shared file-watcher registry for the modern HTTP leg; omitted on stdio. */
   readonly watcherRegistry?: WatcherRegistry;
-  /** Modern-leg resource-updated notify sink (publishes to the ServerEventBus). */
-  readonly notifyResourceUpdated?: (uri: string) => void;
+  /** Modern-leg typed notification publisher. */
+  readonly notifier?: ServerNotifier;
 }
 
 export interface Registrar {

@@ -59,13 +59,29 @@ export interface InspectorCliResult<T = unknown> {
   errorEnvelope?: InspectorErrorEnvelope;
 }
 
-const req = createRequire(import.meta.url);
-const pkgPath = req.resolve('@modelcontextprotocol/inspector/package.json');
-const pkg = req(pkgPath) as { bin: Record<string, string> };
-const INSPECTOR_BIN = pathResolve(
-  dirname(pkgPath),
-  pkg.bin['mcp-inspector'] ?? './clients/launcher/build/index.js',
-);
+let resolvedInspectorBin: string | undefined;
+let hasResolvedInspector = false;
+
+export function resolveInspectorBin(): string | undefined {
+  if (hasResolvedInspector) return resolvedInspectorBin;
+  hasResolvedInspector = true;
+  const req = createRequire(import.meta.url);
+  try {
+    const pkgPath = req.resolve('@modelcontextprotocol/inspector/package.json');
+    const pkg = req(pkgPath) as { bin: Record<string, string> };
+    resolvedInspectorBin = pathResolve(
+      dirname(pkgPath),
+      pkg.bin['mcp-inspector'] ?? './clients/launcher/build/index.js',
+    );
+  } catch {
+    resolvedInspectorBin = undefined;
+  }
+  return resolvedInspectorBin;
+}
+
+export function isInspectorInstalled(): boolean {
+  return resolveInspectorBin() !== undefined;
+}
 
 /**
  * Execute @modelcontextprotocol/inspector in CLI mode (--cli).
@@ -73,6 +89,10 @@ const INSPECTOR_BIN = pathResolve(
 export async function executeInspectorCli<T = unknown>(
   options: InspectorCliOptions,
 ): Promise<InspectorCliResult<T>> {
+  const inspectorBin = resolveInspectorBin();
+  if (!inspectorBin) {
+    throw new Error('@modelcontextprotocol/inspector is not installed');
+  }
   let tempConfigPath: string | undefined;
   let configToUse = options.configPath ? normalizePath(options.configPath) : undefined;
   let serverNameToUse = options.serverName;
@@ -106,7 +126,7 @@ export async function executeInspectorCli<T = unknown>(
     );
   }
 
-  const args: string[] = [INSPECTOR_BIN, '--cli'];
+  const args: string[] = [inspectorBin, '--cli'];
 
   args.push('--method', options.method);
   args.push('--format', 'json');

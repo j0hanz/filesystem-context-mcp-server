@@ -81,6 +81,11 @@ export async function createTestHttpHarness(
   const bus = new InMemoryServerEventBus();
   const sharedRegistry = createWatcherRegistry();
 
+  const notifier = {
+    resourceUpdated: (uri: string) => {
+      bus.publish({ kind: 'resource_updated', uri });
+    },
+  };
   const handler = createMcpHandler(
     async () => {
       const serverCtx = await createServer(
@@ -90,7 +95,7 @@ export async function createTestHttpHarness(
         },
         {
           watcherRegistry: sharedRegistry,
-          notifyResourceUpdated: (uri) => bus.publish({ kind: 'resource_updated', uri }),
+          notifier,
         },
       );
       return serverCtx.mcp;

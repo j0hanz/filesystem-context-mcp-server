@@ -10,6 +10,7 @@ import type {
   StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
+  ToolExecution,
 } from '@modelcontextprotocol/server';
 import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
@@ -80,6 +81,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly buildInput?: (guard: PathGuard) => I;
   readonly output: O;
   readonly annotations: DeclaredAnnotations;
+  readonly execution?: ToolExecution;
   readonly timeoutMs?: number;
   readonly progress?: (args: z.infer<I>) => ProgressCtx;
   readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
@@ -102,6 +104,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 export interface DefinedTool {
   readonly name: string;
   readonly annotations: DeclaredAnnotations;
+  readonly execution?: ToolExecution;
   readonly inputSchema: Tool['inputSchema'];
   readonly outputSchema: Record<string, unknown>;
 
@@ -397,6 +400,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   const tool: DefinedTool = {
     name: def.name,
     annotations: def.annotations,
+    ...(def.execution !== undefined ? { execution: def.execution } : {}),
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
 
@@ -408,6 +412,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
         outputSchema: outputSchemaWithJson,
         annotations: def.annotations,
+        ...(def.execution !== undefined ? { execution: def.execution } : {}),
       };
 
       const serverCtxHandler = createServerToolHandler(def, deps);
