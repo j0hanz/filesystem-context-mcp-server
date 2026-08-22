@@ -32,8 +32,7 @@ import { readFileSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { createInterface as createLineReader } from 'node:readline';
-import { createInterface as createPromptInterface } from 'node:readline/promises';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, stripVTControlCharacters } from 'node:util';
 
@@ -874,7 +873,7 @@ class TestRunner {
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk) => state.appendStderr(chunk));
 
-    const lines = createLineReader({
+    const lines = createInterface({
       input: child.stdout,
       crlfDelay: Infinity,
     });
@@ -1780,7 +1779,7 @@ async function promptForDetailIndex(maxFailures) {
     return null;
   }
 
-  const rl = createPromptInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const raw = await rl.question(`Select failure index [1-${maxFailures}] (press Enter for 1): `);
     const answer = raw.trim();

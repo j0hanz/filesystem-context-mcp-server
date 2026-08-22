@@ -19,7 +19,7 @@ import { formatUnknownErrorMessage } from './core/errors.js';
 import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
-import { parseEnvInt } from './core/util.js';
+import { MIB, parseEnvInt } from './core/util.js';
 import { createWatcherRegistry, type WatcherRegistry } from './core/watcher-registry.js';
 import {
   assertHttpBindingPolicy,
@@ -77,9 +77,9 @@ export function startServer(options: ServerOptions): StdioServerHandle {
 
 const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   'FS_CONTEXT_MAX_REQUEST_BYTES',
-  4 * 1024 * 1024,
+  4 * MIB,
   1024,
-  256 * 1024 * 1024,
+  256 * MIB,
 );
 
 function sendJsonRpcError(res: Response, status: number, code: number, message: string): void {

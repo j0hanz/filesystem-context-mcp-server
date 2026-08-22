@@ -2,6 +2,7 @@ import { hash, randomUUID } from 'node:crypto';
 
 import { ErrorCode, FsError } from './errors.js';
 import { Logger } from './observability.js';
+import { MIB } from './util.js';
 
 interface ResourceEntryBase {
   uri: string;
@@ -30,8 +31,8 @@ export interface ResourceStoreOptions {
 
 const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
   maxEntries: 64,
-  maxTotalBytes: 25 * 1024 * 1024,
-  maxEntryBytes: 10 * 1024 * 1024,
+  maxTotalBytes: 25 * MIB,
+  maxEntryBytes: 10 * MIB,
   entryTtlMs: 60 * 1000, // 60 seconds — anti-leak window
 };
 

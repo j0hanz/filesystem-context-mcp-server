@@ -1,8 +1,6 @@
 import { stripVTControlCharacters, styleText } from 'node:util';
 
-const KIB = 1024;
-const MIB = 1024 * 1024;
-const GIB = 1024 * 1024 * 1024;
+import { GIB, KIB, MIB } from './util.js';
 
 const PLUS_PATTERN = /\+(\d+)/g;
 const MINUS_PATTERN = /-(\d+)/g;

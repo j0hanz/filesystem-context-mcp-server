@@ -234,17 +234,14 @@ export class McpProgressSink implements ProgressSink {
     const promise = this.notify({
       method: 'notifications/progress',
       params: notificationParams,
-    }).catch((error: unknown) => {
-      reportDetachedError(this.toolName, 'progressNotification', error);
-    });
-    this.#pending.add(promise);
-    void promise
-      .finally(() => {
-        this.#pending.delete(promise);
-      })
+    })
       .catch((error: unknown) => {
         reportDetachedError(this.toolName, 'progressNotification', error);
+      })
+      .finally(() => {
+        this.#pending.delete(promise);
       });
+    this.#pending.add(promise);
   }
 
   async flush(): Promise<void> {
