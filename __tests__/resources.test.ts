@@ -10,7 +10,7 @@ import { after, before, describe, it } from 'node:test';
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { PathGuard } from '../src/core/path.js';
-import { createInMemoryResourceStore } from '../src/core/store.js';
+import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import {
   buildSectionsRecord,
@@ -93,7 +93,7 @@ describe('MCP Resources', () => {
       assert.ok(rendered.endsWith('\n'));
 
       // Test reading via resource contract
-      const store = createInMemoryResourceStore();
+      const store = new ResourceStore();
       const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
       const instructionsContract = contracts.find((c) => c.name === 'filesystem-mcp-instructions');
 
@@ -116,7 +116,7 @@ describe('MCP Resources', () => {
 
   describe('filesystem-mcp://result/{id} (TC-FUNC-058–060)', () => {
     it('TC-FUNC-058: Store a text entry in ResourceStore and verify text, hash, mimeType', () => {
-      const store = createInMemoryResourceStore();
+      const store = new ResourceStore();
       const content = 'Sample calculation result content\nLine 2';
       const expectedHash = createHash('sha256').update(content).digest('hex');
 
@@ -147,7 +147,7 @@ describe('MCP Resources', () => {
     });
 
     it('TC-FUNC-059: Read cached result via resource contract', async () => {
-      const store = createInMemoryResourceStore();
+      const store = new ResourceStore();
       const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
       const resultContract = contracts.find((c) => c.name === 'filesystem-mcp-result');
 
@@ -187,7 +187,7 @@ describe('MCP Resources', () => {
     });
 
     it('TC-FUNC-060: Missing entry throws NOT_FOUND / ResourceNotFoundError', async () => {
-      const store = createInMemoryResourceStore();
+      const store = new ResourceStore();
       const nonExistentUri = 'filesystem-mcp://result/00000000-0000-0000-0000-000000000000';
 
       // Direct store access throws FsError with NOT_FOUND
@@ -238,12 +238,12 @@ describe('MCP Resources', () => {
   describe('filesystem-mcp://file/{+path} (TC-FUNC-061–066)', () => {
     let tmpDir: string;
     let pathGuard: PathGuard;
-    let store: ReturnType<typeof createInMemoryResourceStore>;
+    let store: ResourceStore;
 
     before(async () => {
       tmpDir = await createTestRoot();
       pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
-      store = createInMemoryResourceStore();
+      store = new ResourceStore();
     });
 
     after(async () => {
@@ -432,7 +432,7 @@ describe('MCP Resources', () => {
     });
 
     it('resource contracts specify cacheHint for client caching optimization', () => {
-      const store = createInMemoryResourceStore();
+      const store = new ResourceStore();
       const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
       const instructions = contracts.find((c) => c.name === 'filesystem-mcp-instructions');
       assert.deepStrictEqual(instructions?.cacheHint, { cacheScope: 'public', ttlMs: 300_000 });

@@ -9,8 +9,7 @@ import { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
-import type { ResourceStore } from './core/store.js';
-import { createInMemoryResourceStore } from './core/store.js';
+import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
@@ -96,7 +95,7 @@ export async function createServer(
     notifyResourceUpdated?: (uri: string) => void;
   },
 ): Promise<FilesystemServerContext> {
-  const resourceStore = createInMemoryResourceStore();
+  const resourceStore = new ResourceStore();
   const localIcon = await getLocalIconInfo();
 
   // No `logging` capability: SEP-2577 deprecates the subsystem, and this server

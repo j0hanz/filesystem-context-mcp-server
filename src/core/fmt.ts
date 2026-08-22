@@ -1,25 +1,4 @@
-import { stripVTControlCharacters } from 'node:util';
-
-const ESC = '\x1b[';
-const ANSI_RESET = `${ESC}0m`;
-
-const ANSI_CODES = {
-  bold: '1',
-  dim: '2',
-  red: '31',
-  green: '32',
-  yellow: '33',
-  cyan: '36',
-  gray: '90',
-  dimCyan: '36;2',
-  boldCyan: '1;36',
-} as const;
-
-type AnsiCode = keyof typeof ANSI_CODES;
-
-function ansi(code: AnsiCode, text: string): string {
-  return `${ESC}${ANSI_CODES[code]}m${text}${ANSI_RESET}`;
-}
+import { stripVTControlCharacters, styleText } from 'node:util';
 
 const KIB = 1024;
 const MIB = 1024 * 1024;
@@ -85,16 +64,16 @@ export function plainMessage(phase: Phase, ctx: ProgressCtx): string {
 }
 
 const SYMBOL_ANSI = {
-  start: ansi('dimCyan', '→'),
-  tick: ansi('gray', '·'),
-  done: ansi('green', '✓'),
-  fail: ansi('red', '✗'),
+  start: styleText(['cyan', 'dim'], '→'),
+  tick: styleText('gray', '·'),
+  done: styleText('green', '✓'),
+  fail: styleText('red', '✗'),
 } satisfies Record<Phase, string>;
 
 function colorizeStats(text: string): string {
   return text
-    .replace(PLUS_PATTERN, ansi('green', '+$1'))
-    .replace(MINUS_PATTERN, ansi('red', '-$1'));
+    .replace(PLUS_PATTERN, styleText('green', '+$1'))
+    .replace(MINUS_PATTERN, styleText('red', '-$1'));
 }
 
 function formatDuration(ms: number): string {
@@ -103,7 +82,7 @@ function formatDuration(ms: number): string {
 
 export function ansiLine(phase: Phase, ctx: ProgressCtx): string {
   const body = buildBody(ctx, phase);
-  const label = ansi('bold', `${ctx.label}:`);
+  const label = styleText('bold', `${ctx.label}:`);
   const content = body ? `${label} ${colorizeStats(body)}` : label;
 
   if (phase === 'done' || phase === 'fail') {
@@ -111,7 +90,7 @@ export function ansiLine(phase: Phase, ctx: ProgressCtx): string {
   }
 
   const timing =
-    ctx.durationMs !== undefined ? `  ${ansi('dim', formatDuration(ctx.durationMs))}` : '';
+    ctx.durationMs !== undefined ? `  ${styleText('dim', formatDuration(ctx.durationMs))}` : '';
   return `${SYMBOL_ANSI[phase]}  ${content}${timing}`;
 }
 
@@ -163,9 +142,11 @@ export function padEndVisible(s: string, width: number): string {
   return visible >= width ? s : s + ' '.repeat(width - visible);
 }
 
+type Style = Parameters<typeof styleText>[0];
+
 /** Same palette as above, but only when the target stream wants color. */
-function tint(code: AnsiCode, text: string, stream?: { isTTY?: boolean }): string {
-  return isColorEnabled(stream) ? ansi(code, text) : text;
+function tint(format: Style, text: string, stream?: { isTTY?: boolean }): string {
+  return isColorEnabled(stream) ? styleText(format, text) : text;
 }
 
 export const cliFmt = {
@@ -175,6 +156,6 @@ export const cliFmt = {
   yellow: (t: string) => tint('yellow', t),
   flag: (t: string) => tint('green', t),
   placeholder: (t: string) => tint('yellow', t),
-  section: (t: string) => tint('boldCyan', t),
+  section: (t: string) => tint(['cyan', 'bold'], t),
   bool: (v: boolean) => (v ? tint('green', 'true') : tint('red', 'false')),
 };

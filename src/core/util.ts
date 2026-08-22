@@ -3,29 +3,6 @@ import { availableParallelism } from 'node:os';
 import { Logger } from './observability.js';
 import { parseTrueEnvFlag } from './primitives.js';
 
-export function debounce<Args extends unknown[]>(
-  func: (...args: Args) => void,
-  waitMs: number,
-): { (...args: Args): void; cancel: () => void } {
-  let timeoutId: NodeJS.Timeout | undefined;
-  const debounced = (...args: Args): void => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-      timeoutId = undefined;
-      try {
-        func(...args);
-      } catch (error) {
-        Logger.error('Unhandled exception in debounced function:', error);
-      }
-    }, waitMs).unref();
-  };
-  debounced.cancel = () => {
-    clearTimeout(timeoutId);
-    timeoutId = undefined;
-  };
-  return debounced;
-}
-
 const KIB = 1024;
 const MIB = 1024 * KIB;
 
@@ -64,10 +41,6 @@ export function parseEnvInt(
     return defaultValue;
   }
   return parsed;
-}
-
-export function getInitHandshakeTimeoutMs(): number {
-  return parseEnvInt('FS_INIT_HANDSHAKE_TIMEOUT_MS', 30_000, 1_000, 300_000);
 }
 
 export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);

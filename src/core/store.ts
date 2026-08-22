@@ -21,7 +21,7 @@ interface BlobResourceEntry extends ResourceEntryBase {
   data: Buffer;
 }
 
-interface ResourceStoreOptions {
+export interface ResourceStoreOptions {
   maxEntries: number;
   maxTotalBytes: number;
   maxEntryBytes: number;
@@ -343,7 +343,3 @@ export class ResourceStore {
     return Array.from(this.byUri.keys());
   }
 }
-
-export const createInMemoryResourceStore = (
-  options?: Partial<ResourceStoreOptions>,
-): ResourceStore => new ResourceStore(options);
