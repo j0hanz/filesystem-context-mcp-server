@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["__tests__/helpers.ts", "__tests__/**/*.test.ts", "filesystem-tests/**/*.ts"],
-  "project": ["src/**/*.ts"]
+  "entry": ["src/**/*.ts"],
+  "project": ["src/**/*.ts"],
+  "ignoreDependencies": ["@cfworker/json-schema", "@modelcontextprotocol/client"]
 }
