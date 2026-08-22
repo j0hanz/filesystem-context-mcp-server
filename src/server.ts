@@ -111,14 +111,20 @@ export async function createServer(
     tools: {},
     prompts: {},
     completions: {},
-    extensions: {},
   } satisfies ServerCapabilities;
+  // 'private' under auth: a shared CDN must not serve the (identical) tool
+  // and prompt rosters to other clients when a bearer is required. 'public'
+  // stays correct for loopback dev. stdio ignores HTTP cache hints either way.
+  // Agrees with bearerAuthMiddleware by construction: assertHttpBindingPolicy
+  // throws at startup for any empty/<16-char API_KEY, so a truthy key here is
+  // exactly the case the bearer guard enforces — the two reads cannot diverge.
+  const cacheScope = process.env['API_KEY'] ? 'private' : 'public';
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,
     cacheHints: {
-      'tools/list': { ttlMs: 60_000, cacheScope: 'public' },
-      'prompts/list': { ttlMs: 60_000, cacheScope: 'public' },
+      'tools/list': { ttlMs: 60_000, cacheScope },
+      'prompts/list': { ttlMs: 60_000, cacheScope },
     },
     // Multi-round-trip `requestState` integrity (protocol revision 2026-07-28):
     // the codec verifies the HMAC on every retried round before the handler

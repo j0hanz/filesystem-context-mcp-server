@@ -921,24 +921,23 @@ function makeHttpModernFactory(
   bus: InMemoryServerEventBus,
   sharedRegistry: WatcherRegistry,
 ): McpServerFactory {
-  return async (ctx) => {
+  return async (_ctx) => {
     const c = await createServer(options, {
       watcherRegistry: sharedRegistry,
       notifyResourceUpdated: (uri) => {
         bus.publish({ kind: 'resource_updated', uri });
       },
     });
-    if (ctx.era === 'modern') {
-      // createMcpHandler only calls `mcp.close()`, never our
-      // `disposeRuntimeState()` — chain it onto the low-level `onclose` so the
-      // per-request registrar/watcher state is torn down. The SDK reads
-      // `server.onclose` as `previousOnClose` and chains it.
-      const previousOnClose = c.mcp.server.onclose;
-      c.mcp.server.onclose = () => {
-        previousOnClose?.();
-        c.disposeRuntimeState();
-      };
-    }
+    // createMcpHandler only calls `mcp.close()`, never our
+    // `disposeRuntimeState()` — chain it onto the low-level `onclose` so the
+    // per-request registrar/watcher state is torn down. The SDK reads
+    // `server.onclose` as `previousOnClose` and chains it. (legacy: 'reject'
+    // guarantees every call here is the modern era, so this always runs.)
+    const previousOnClose = c.mcp.server.onclose;
+    c.mcp.server.onclose = () => {
+      previousOnClose?.();
+      c.disposeRuntimeState();
+    };
     return c.mcp;
   };
 }
