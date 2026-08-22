@@ -21,6 +21,11 @@ export async function cleanupTestRoot(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
 }
 
+/** Spreadable `readOnly` flag — the one owner of the `--read-only` gate in test setup. */
+export function readOnlyOpts(options: { readOnly?: boolean }): { readOnly?: true } {
+  return options.readOnly ? { readOnly: true } : {};
+}
+
 /** Create an MCP server context pointed at the given allowed dirs. */
 export async function createTestServer(
   allowedDirs: string[],
@@ -28,7 +33,7 @@ export async function createTestServer(
 ): Promise<FilesystemServerContext> {
   return createServer({
     cliAllowedDirs: allowedDirs,
-    ...(options.readOnly ? { readOnly: true } : {}),
+    ...readOnlyOpts(options),
   });
 }
 
@@ -83,7 +88,7 @@ export async function createTestHttpHarness(
       const serverCtx = await createServer(
         {
           cliAllowedDirs: allowedDirs,
-          ...(options.readOnly ? { readOnly: true } : {}),
+          ...readOnlyOpts(options),
         },
         {
           watcherRegistry: sharedRegistry,
@@ -138,4 +143,27 @@ export async function writeNLineFile(
 ): Promise<string> {
   const lines = Array.from({ length: lineCount }, (_, i) => `Line ${i + 1}`);
   return writeTestFile(root, name, lines.join('\n') + '\n');
+}
+
+/** First text content block of a tool result (assert its shape at one owner). */
+export function firstTextBlock(result: { content: readonly unknown[] }): {
+  type: string;
+  text?: string;
+} {
+  return result.content[0] as { type: string; text?: string };
+}
+
+/** Structured per-path failure summary from a read/search tool result. */
+export function failedSummary(result: { structuredContent?: unknown }):
+  | {
+      results?: { error?: { code?: string; message?: string } }[];
+      summary?: { failed?: number };
+    }
+  | undefined {
+  return result.structuredContent as
+    | {
+        results?: { error?: { code?: string; message?: string } }[];
+        summary?: { failed?: number };
+      }
+    | undefined;
 }

@@ -324,8 +324,11 @@ describe('MCP Resources', () => {
       // Trigger file modification
       await writeFile(testFile, 'updated content');
 
-      // Wait for debounce timer (50ms debounce)
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Poll for the debounced notification (50ms debounce) — fixed waits flake on loaded CI.
+      const deadline = Date.now() + 1000;
+      while (notifications.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       assert.ok(notifications.length >= 1, 'Watcher callback should have received notification');
       assert.strictEqual(notifications[0], testUri);

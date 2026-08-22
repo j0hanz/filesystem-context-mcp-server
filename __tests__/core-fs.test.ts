@@ -14,7 +14,7 @@ import {
   writeTestFile,
 } from './helpers.js';
 
-describe('Tools P1 Functional Tests', () => {
+describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
   let tmpDir: string;
   let ctx: FilesystemServerContext;
 

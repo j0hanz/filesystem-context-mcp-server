@@ -3,10 +3,13 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { INSTRUCTIONS_URI } from '../src/resources.js';
+import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
   cleanupTestRoot,
   createTestHttpHarness,
   createTestRoot,
+  failedSummary,
+  firstTextBlock,
   type TestHttpContext,
   writeTestFile,
 } from './helpers.js';
@@ -31,7 +34,7 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
 
   it('HTTP-001: Connects client and lists tools over in-process StreamableHTTP', async () => {
     const listResult = await httpHarness.client.listTools();
-    assert.strictEqual(listResult.tools.length, 12);
+    assert.strictEqual(listResult.tools.length, ALL_REGISTERED_TOOL_NAMES.length);
   });
 
   it('HTTP-002: Executes tool calls over in-process HTTP transport', async () => {
@@ -43,7 +46,7 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
     });
 
     assert.notStrictEqual(result.isError, true);
-    const firstBlock = result.content[0] as { type: string; text?: string };
+    const firstBlock = firstTextBlock(result);
     assert.strictEqual(firstBlock.type, 'text');
     assert.ok(firstBlock.text?.includes('HTTP transport content'));
   });
@@ -61,12 +64,7 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
     });
 
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as
-      | {
-          results?: { error?: { code?: string } }[];
-          summary?: { failed?: number };
-        }
-      | undefined;
+    const structured = failedSummary(result);
     assert.strictEqual(structured?.summary?.failed, 1);
     assert.strictEqual(structured?.results?.[0]?.error?.code, 'NOT_FOUND');
   });

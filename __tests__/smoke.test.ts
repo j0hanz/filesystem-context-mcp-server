@@ -4,7 +4,13 @@ import { after, before, describe, it } from 'node:test';
 
 import { normalizePath } from '../src/core/path.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
-import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
+import {
+  cleanupTestRoot,
+  createTestClientPair,
+  createTestRoot,
+  firstTextBlock,
+  writeTestFile,
+} from './helpers.js';
 
 describe('Smoke Tests', () => {
   let tmpDir: string;
@@ -27,7 +33,7 @@ describe('Smoke Tests', () => {
   it('SMOKE-003: tools/list returns 12 tools via MCP client', async () => {
     const harness = await createTestClientPair([tmpDir]);
     const toolsResult = await harness.client.listTools();
-    assert.strictEqual(toolsResult.tools.length, 12);
+    assert.strictEqual(toolsResult.tools.length, ALL_REGISTERED_TOOL_NAMES.length);
     assert.deepStrictEqual(
       toolsResult.tools.map((t) => t.name).sort(),
       [...ALL_REGISTERED_TOOL_NAMES].sort(),
@@ -59,7 +65,7 @@ describe('Smoke Tests', () => {
     });
     assert.notStrictEqual(result.isError, true);
 
-    const firstBlock = result.content[0] as { type: string; text?: string };
+    const firstBlock = firstTextBlock(result);
     assert.strictEqual(firstBlock.type, 'text');
     assert.ok(firstBlock.text?.includes('Hello, MCP!'));
     await harness.close();
@@ -74,7 +80,7 @@ describe('Smoke Tests', () => {
     });
 
     assert.strictEqual(result.isError, true, 'Path traversal should return isError: true');
-    const firstBlock = result.content[0] as { type: string; text?: string };
+    const firstBlock = firstTextBlock(result);
     assert.strictEqual(firstBlock.type, 'text');
     assert.ok(firstBlock.text);
     await harness.close();

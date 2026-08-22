@@ -4,11 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { MUTATING_TOOL_NAMES, registeredTools } from '../src/tools/index.js';
+import {
+  ALL_REGISTERED_TOOL_NAMES,
+  MUTATING_TOOL_NAMES,
+  registeredTools,
+} from '../src/tools/index.js';
 import {
   cleanupTestRoot,
   createTestClientPair,
   createTestRoot,
+  failedSummary,
+  firstTextBlock,
   type TestClientContext,
 } from './helpers.js';
 
@@ -39,7 +45,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: file },
     });
     assert.notStrictEqual(result.isError, true);
-    const firstBlock = result.content[0] as { type: string; text?: string };
+    const firstBlock = firstTextBlock(result);
     assert.strictEqual(firstBlock.type, 'text');
     assert.ok(firstBlock.text?.includes('Hello\nWorld\n'));
   });
@@ -53,7 +59,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { path: outsideFile },
       });
       assert.strictEqual(result.isError, true);
-      const firstBlock = result.content[0] as { type: string; text?: string };
+      const firstBlock = firstTextBlock(result);
       assert.ok(firstBlock.text);
     } finally {
       await rm(outsideFile, { force: true });
@@ -76,7 +82,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const readOnlyHarness = await createTestClientPair([tmpDir], { readOnly: true });
     try {
       const toolsResult = await readOnlyHarness.client.listTools();
-      assert.strictEqual(toolsResult.tools.length, 7);
+      assert.strictEqual(toolsResult.tools.length, registeredTools(true).length);
       for (const tool of toolsResult.tools) {
         assert(!MUTATING_TOOL_NAMES.has(tool.name));
       }
@@ -103,7 +109,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
 
     const allTools = registeredTools(false);
-    assert.strictEqual(allTools.length, 12);
+    assert.strictEqual(allTools.length, ALL_REGISTERED_TOOL_NAMES.length);
   });
 
   it('TC-FUNC-013: Edit via MCP tool call', async () => {
@@ -129,12 +135,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'read',
       arguments: { path: missing },
     });
-    const structured = result.structuredContent as
-      | {
-          results?: { error?: { code?: string; message?: string } }[];
-          summary?: { failed?: number };
-        }
-      | undefined;
+    const structured = failedSummary(result);
     assert.strictEqual(structured?.summary?.failed, 1);
     assert.strictEqual(structured?.results?.[0]?.error?.code, 'NOT_FOUND');
   });
@@ -155,12 +156,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'read',
       arguments: { path: file },
     });
-    const readStructured = readRes.structuredContent as
-      | {
-          summary?: { failed?: number };
-          results?: { error?: { code?: string } }[];
-        }
-      | undefined;
+    const readStructured = failedSummary(readRes);
     assert.strictEqual(readStructured?.summary?.failed, 1);
     assert.strictEqual(readStructured?.results?.[0]?.error?.code, 'NOT_FOUND');
   });
@@ -180,8 +176,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'read',
       arguments: { path: file },
     });
-    const oldStructured = oldRead.structuredContent as
-      { summary?: { failed?: number } } | undefined;
+    const oldStructured = failedSummary(oldRead);
     assert.strictEqual(oldStructured?.summary?.failed, 1);
 
     const newRead = await harness.client.callTool({
@@ -189,7 +184,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: newFile },
     });
     assert.notStrictEqual(newRead.isError, true);
-    const block = newRead.content[0] as { type: string; text?: string };
+    const block = firstTextBlock(newRead);
     assert.ok(block.text?.includes('move me'));
   });
 
