@@ -7,6 +7,7 @@ import { ErrorCode, isFsError } from '../src/core/errors.js';
 import {
   assertHttpBindingPolicy,
   assertHttpHostPolicy,
+  bearerAuthMiddleware,
   computeAllowedOriginHostnames,
   corsPreflightHandler,
   createRateLimiter,
@@ -166,6 +167,66 @@ describe('HTTP Policy & Security', () => {
         false,
         'Token exceeding maximum length (4096 chars) should be rejected',
       );
+    });
+  });
+
+  describe('bearerAuthMiddleware (TC-SEC-038 - TC-SEC-040)', () => {
+    const secureKey = 'secure-key-16-characters-long';
+
+    it('TC-SEC-038: calls next() when no API key is configured', () => {
+      const mw = bearerAuthMiddleware(undefined, false);
+      const req = createMockRequest();
+      const res = createMockResponse();
+      let nextCalled = false;
+      mw(req, res, () => {
+        nextCalled = true;
+      });
+      assert.strictEqual(nextCalled, true);
+      assert.strictEqual(res.statusCode, undefined);
+    });
+
+    it('TC-SEC-039: calls next() for a matching Bearer token, 401 otherwise', () => {
+      const mw = bearerAuthMiddleware(secureKey, false);
+
+      // Matching bearer -> next()
+      const okReq = createMockRequest({ headers: { authorization: `Bearer ${secureKey}` } });
+      const okRes = createMockResponse();
+      let okNext = false;
+      mw(okReq, okRes, () => {
+        okNext = true;
+      });
+      assert.strictEqual(okNext, true);
+      assert.strictEqual(okRes.statusCode, undefined);
+
+      // Wrong bearer -> 401 JSON-RPC error
+      const badReq = createMockRequest({
+        headers: { authorization: 'Bearer wrong-key-here-123456' },
+      });
+      const badRes = createMockResponse();
+      let badNext = false;
+      mw(badReq, badRes, () => {
+        badNext = true;
+      });
+      assert.strictEqual(badNext, false);
+      assert.strictEqual(badRes.statusCode, 401);
+      assert.strictEqual(badRes.headers['content-type'], 'application/json');
+      assert.ok(badRes.headers['www-authenticate'], 'WWW-Authenticate header should be present');
+      const body = JSON.parse(badRes.body ?? '{}');
+      assert.strictEqual(body.jsonrpc, '2.0');
+      assert.strictEqual(body.error.code, -32000);
+    });
+
+    it('TC-SEC-040: returns 401 when the Authorization header is missing', () => {
+      const mw = bearerAuthMiddleware(secureKey, false);
+      const req = createMockRequest({ headers: {} });
+      const res = createMockResponse();
+      let nextCalled = false;
+      mw(req, res, () => {
+        nextCalled = true;
+      });
+      assert.strictEqual(nextCalled, false);
+      assert.strictEqual(res.statusCode, 401);
+      assert.ok(res.headers['www-authenticate']);
     });
   });
 

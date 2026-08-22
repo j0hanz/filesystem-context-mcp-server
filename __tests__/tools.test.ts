@@ -1,3 +1,5 @@
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
+
 import assert from 'node:assert/strict';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -100,7 +102,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
             typeof err === 'object' &&
             err !== null &&
             'code' in err &&
-            (err as { code: number }).code === -32602
+            (err as { code: ProtocolErrorCode }).code === ProtocolErrorCode.InvalidParams
           );
         },
       );

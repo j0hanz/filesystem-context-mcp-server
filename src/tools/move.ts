@@ -159,7 +159,10 @@ async function planMove(
       await fs.stat(validDest);
       destExistedOriginally = true;
     } catch (err) {
-      if (isNodeError(err) && err.code !== 'ENOENT') {
+      const missing =
+        (isNodeError(err) && err.code === 'ENOENT') ||
+        (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
+      if (!missing) {
         Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
       }
     }
@@ -205,7 +208,10 @@ async function executeMove(
       await ctx.fs.stat(plan.validDest);
       existsNow = true;
     } catch (err) {
-      if (isNodeError(err) && err.code !== 'ENOENT') {
+      const missing =
+        (isNodeError(err) && err.code === 'ENOENT') ||
+        (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
+      if (!missing) {
         Logger.warn(`move: dest stat failed unexpectedly for "${plan.validDest}": ${String(err)}`);
       }
     }

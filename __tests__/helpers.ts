@@ -1,11 +1,13 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/client';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createWatcherRegistry } from '../src/resources.js';
 import { createServer } from '../src/server.js';
@@ -49,6 +51,7 @@ export async function createTestClientPair(
   options: { readOnly?: boolean } = {},
 ): Promise<TestClientContext> {
   const serverCtx = await createTestServer(allowedDirs, options);
+  // Mirrors the legacy stdio era: push-style roots via registerHandlers.
   serverCtx.synchronizer.registerHandlers(serverCtx.mcp);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
@@ -95,6 +98,7 @@ export async function createTestHttpHarness(
           notifyResourceUpdated: (uri) => bus.publish({ kind: 'resource_updated', uri }),
         },
       );
+      // Mirrors the modern per-request era: roots from config, no push handlers.
       serverCtx.synchronizer.markInitialized();
       return serverCtx.mcp;
     },
@@ -119,6 +123,37 @@ export async function createTestHttpHarness(
       await client.close();
       await handler.close();
       sharedRegistry.destroy();
+    },
+  };
+}
+
+export interface TestStdioContext {
+  client: Client;
+  close: () => Promise<void>;
+}
+
+/**
+ * Spawn the real stdio server (via tsx, no build step) and connect a client.
+ * stdio has no in-process shortcut — the only honest coverage spawns a real
+ * process, mirroring `node --import tsx src/index.ts <allowedDir>`.
+ */
+export async function createStdioClient(allowedDir: string): Promise<TestStdioContext> {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ['--import', 'tsx', 'src/index.ts', allowedDir],
+    cwd: repoRoot,
+  });
+  const client = new Client(
+    { name: 'stdio-test-harness', version: '1.0.0' },
+    { versionNegotiation: { mode: 'auto' } },
+  );
+  await client.connect(transport);
+  return {
+    client,
+    close: async () => {
+      await client.close();
+      await transport.close();
     },
   };
 }

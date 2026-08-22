@@ -12,11 +12,16 @@ export const IsoDateTime = z.iso.datetime().meta({
   description: 'ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)',
 });
 
-export const Sha256Hex = z.hash('sha256').meta({
-  id: 'Sha256Hex',
-  title: 'SHA-256 Hash',
-  description: 'SHA-256 digest as a 64-character lowercase hex string',
-});
+// pattern (not z.hash('sha256')) so no `format: "sha256_hex"` keyword is emitted;
+// the SDK's AJV validator warns on that unknown format at every server start.
+export const Sha256Hex = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/)
+  .meta({
+    id: 'Sha256Hex',
+    title: 'SHA-256 Hash',
+    description: 'SHA-256 digest as a 64-character lowercase hex string',
+  });
 
 export const NonNegInt = z
   .int({ message: 'Must be integer' })
@@ -443,8 +448,12 @@ export const ContinuationSchema = z
   })
   .meta({ id: 'Continuation', title: 'Continuation' });
 
-export const CursorSchema = z
-  .base64url()
+// ponytail: charset regex, not z.base64url() — the SDK's AJV warns on the
+// unknown `base64url` format; the server's own decode (cursor.ts) is the real
+// validation, so loosening the client-facing schema to the alphabet is safe.
+const base64urlCursor = z.string().regex(/^[A-Za-z0-9_-]+$/);
+
+export const CursorSchema = base64urlCursor
   .optional()
   .describe(
     'Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. ' +
@@ -452,7 +461,6 @@ export const CursorSchema = z
       'so matches may shift (duplicate or skip) if files change between page requests.',
   );
 
-export const NextCursorSchema = z
-  .base64url()
+export const NextCursorSchema = base64urlCursor
   .optional()
   .describe('Cursor for the next page; omitted when this is the final page.');
