@@ -247,10 +247,12 @@ async function handleMove(
   // move silently clobber the first's freshly-written content. Fail closed:
   // only the first plan per destination proceeds; later ones targeting the
   // same destination are reported as a per-move failure.
+  const isCaseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
   const seenDest = new Set<string>();
   const plans: MovePlan[] = [];
   for (const plan of allPlans) {
-    if (seenDest.has(plan.validDest)) {
+    const destKey = isCaseInsensitive ? plan.validDest.toLowerCase() : plan.validDest;
+    if (seenDest.has(destKey)) {
       earlyFailures.push(
         moveFailure(
           plan.move,
@@ -263,7 +265,7 @@ async function handleMove(
       );
       continue;
     }
-    seenDest.add(plan.validDest);
+    seenDest.add(destKey);
     plans.push(plan);
   }
 
@@ -375,15 +377,7 @@ async function performRenameWithFallback(
     rethrowIfAborted(error);
 
     if (!isNodeError(error) || error.code !== 'EXDEV') {
-      // Preserve the original error code/message via cause so EPERM/EACCES/ENOSPC
-      // surface instead of a generic UNKNOWN.
-      throw new FsError(
-        ErrorCode.UNKNOWN,
-        `Move failed for ${originalSource}`,
-        originalSource,
-        undefined,
-        error,
-      );
+      throw error;
     }
 
     // EXDEV: cross-device rename. Copy then remove, preserving symlinks and
@@ -404,21 +398,20 @@ async function performRenameWithFallback(
         // copy and the source remains. Surface the rm error as the cause so the
         // caller can recover (clean up the duplicate) instead of a silent generic
         // failure that hides the partial completion.
-        throw new FsError(
+        const baseProblem = Problem.fromUnknown(
+          copyOrRemoveError,
           ErrorCode.UNKNOWN,
-          `Cross-device move of ${originalSource}: copy succeeded but source removal failed (destination holds a copy)`,
+          originalSource,
+        );
+        throw new FsError(
+          baseProblem.code,
+          `Cross-device move of ${originalSource}: copy succeeded but source removal failed (destination holds a copy): ${baseProblem.message}`,
           originalSource,
           undefined,
           copyOrRemoveError,
         );
       }
-      throw new FsError(
-        ErrorCode.UNKNOWN,
-        `Cross-device move failed for ${originalSource}`,
-        originalSource,
-        undefined,
-        copyOrRemoveError,
-      );
+      throw copyOrRemoveError;
     }
   }
 }

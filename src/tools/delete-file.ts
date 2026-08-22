@@ -6,7 +6,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
+import { ErrorCode, isFsError, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
 import { getFileType } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
@@ -125,6 +125,12 @@ async function planPath(
   try {
     validPath = await fs.pathGuard.validatePathForDelete(inputPath);
   } catch (error) {
+    if (
+      args.ignoreIfNotExists &&
+      ((isFsError(error) && error.code === ErrorCode.NOT_FOUND) || isNotFoundErrno(error))
+    ) {
+      return { status: 'noop', item: { path: inputPath } };
+    }
     return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
 
@@ -151,8 +157,15 @@ async function planPath(
   }
 
   const itemType = getFileType(firstStats.stats);
-  const pending =
-    args.recursive && itemType === 'directory' && (await fs.hasChildrenUnchecked(validPath));
+  let hasChildren = false;
+  if (args.recursive && itemType === 'directory') {
+    try {
+      hasChildren = await fs.hasChildrenUnchecked(validPath);
+    } catch (error) {
+      return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
+    }
+  }
+  const pending = hasChildren;
   return { status: 'plan', plan: { inputPath, validPath, itemType, firstStats, pending } };
 }
 
@@ -360,7 +373,10 @@ export const DELETE_FILE = defineTool({
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Delete',
-    subject: args.paths.map((p) => basename(p)).join(' · '),
+    subject:
+      args.paths.length === 1
+        ? basename(args.paths[0] ?? '')
+        : `${String(args.paths.length)} paths`,
   }),
   accessPaths: (args) => [...args.paths],
   run: async (args, ctx) => {

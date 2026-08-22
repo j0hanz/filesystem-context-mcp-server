@@ -59,4 +59,12 @@ describe('progress message contract (tool shaping)', () => {
     assert.match(src, /formatCount\(totalMatches, 'match', 'matches'\)/u);
     assert.match(src, /formatCount\(filesMatched, 'file', 'files'\)/u);
   });
+
+  it('delete progress formats single vs batch paths correctly', async () => {
+    const src = await readFile('src/tools/delete-file.ts', 'utf8');
+    assert.match(
+      src,
+      /subject:\s*args\.paths\.length === 1\s*\?\s*basename\(args\.paths\[0\] \?\? ''\)\s*:\s*`\$\{String\(args\.paths\.length\)\} paths`/u,
+    );
+  });
 });

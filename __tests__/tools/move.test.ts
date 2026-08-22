@@ -333,6 +333,42 @@ describe('move input_required round-trip', () => {
     }
   });
 
+  it('rejects a second source targeting a case-variant destination in the same batch on case-insensitive platforms', async () => {
+    const isCaseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
+    if (!isCaseInsensitive) return;
+
+    const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-move-casedupdest-'));
+    try {
+      const sourceA = join(tmp, 'source-a.txt');
+      const sourceB = join(tmp, 'source-b.txt');
+      const destLower = join(tmp, 'target.txt');
+      const destUpper = join(tmp, 'TARGET.TXT');
+      await writeFile(sourceA, 'content-a', 'utf8');
+      await writeFile(sourceB, 'content-b', 'utf8');
+      await writeFile(destLower, 'original', 'utf8');
+
+      const handler = await registerAgainstStub(MOVE, tmp);
+      const moves = [
+        { source: sourceA, destination: destLower },
+        { source: sourceB, destination: destUpper },
+      ];
+      const r1 = await handler({ moves }, retryCtx());
+      assert.ok(isInputRequiredResult(r1));
+      const state = await retryState(r1);
+
+      const r2 = await handler({ moves }, retryCtx({ responses: accept(), state }));
+      assert.notEqual((r2 as { isError?: boolean }).isError, true);
+      const sc = structuredOf(r2);
+
+      assert.equal(sc.moves?.length, 1);
+      assert.equal(sc.failures?.length, 1);
+      assert.equal(sc.failures?.[0]?.source, sourceB);
+      assert.equal(sc.failures?.[0]?.error?.code, 'INVALID_INPUT');
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('a chained grant + overwrite confirmation completes across three rounds', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fsmcp-move-chain-root-'));
     const outside = await mkdtemp(join(tmpdir(), 'fsmcp-move-chain-out-'));

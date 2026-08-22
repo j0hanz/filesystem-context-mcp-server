@@ -15,7 +15,7 @@ import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
-import { ErrorCode, formatUnknownErrorMessage, Problem } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -305,15 +305,11 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   }
 
   async execute(deps: ToolDeps): Promise<CallToolResult | InputRequiredResult> {
-    if (!deps.isInitialized()) {
-      return {
-        isError: true as const,
-        content: [{ type: 'text' as const, text: 'Server not initialized. Roots unavailable.' }],
-      };
-    }
-
     const runTool = async (): Promise<CallToolResult | InputRequiredResult> => {
       try {
+        if (!deps.isInitialized()) {
+          throw new FsError(ErrorCode.UNKNOWN, 'Server not initialized. Roots unavailable.');
+        }
         // Access-grant pre-check before any filesystem touch (R7/R8/R9). A
         // grant input_required short-circuits here (progress paused, not
         // finished); an R9 mismatch throws, which this catch surfaces as an

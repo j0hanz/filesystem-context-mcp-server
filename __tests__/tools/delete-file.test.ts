@@ -320,4 +320,20 @@ describe('delete: sensitive-file denial survives the ENOENT fallback', () => {
       await env.cleanup();
     }
   });
+
+  it('ignoreIfNotExists: silently succeeds when parent directory does not exist', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'fsmcp-del-missing-parent-'));
+    try {
+      const missingParentPath = join(tmp, 'nonexistent_parent', 'file.txt');
+      const handler = await registerAgainstStub(DELETE_FILE, tmp);
+      const res = await handler(
+        { paths: [missingParentPath], ignoreIfNotExists: true },
+        retryCtx(),
+      );
+      assert.notEqual((res as { isError?: boolean }).isError, true);
+      assert.equal(structuredOf(res).ok, true);
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
 });
