@@ -17,9 +17,6 @@ import {
   UriTemplate,
 } from '@modelcontextprotocol/server';
 
-import type { FSWatcher } from 'node:fs';
-import { watch } from 'node:fs';
-
 import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, isFsError } from './core/errors.js';
 import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
@@ -34,8 +31,12 @@ import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   MAX_SEARCH_RESULTS,
   MAX_TEXT_FILE_SIZE,
-  parseEnvInt,
 } from './core/util.js';
+import {
+  createWatcherRegistry,
+  MAX_WATCHERS,
+  type WatcherRegistry,
+} from './core/watcher-registry.js';
 import {
   CALCULATE_HASH,
   GET_FILE_INFO,
@@ -212,130 +213,9 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
 // filesystem
 // ═══════════════════════════════════════════════════════════════
 
-// Cap concurrent file watchers to avoid exhausting OS-level watch handles
-// (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
-const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
-
 function warnWatcherCap(uri: string): void {
   Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
 }
-
-/**
- * Owns the uri → FSWatcher map and the subscription bookkeeping around it:
- * notify callbacks, desired subscribe/unsubscribe state, and the watcher cap.
- * `subscribe` awaits path validation midway, so callers re-check `isStale` and
- * `hasWatcher` after the await before attaching.
- */
-export function createWatcherRegistry() {
-  const watchers = new Map<string, FSWatcher>();
-  const activeCallbacks = new Map<string, (uri: string) => void>();
-  const desiredState = new Map<string, 'subscribed' | 'unsubscribed' | 'subscribing'>();
-  const debounceTimers = new Map<string, NodeJS.Timeout>();
-  let destroyed = false;
-
-  const dropWatcher = (uri: string, watcher: FSWatcher): void => {
-    const current = watchers.get(uri);
-    if (current !== watcher) return;
-    const timer = debounceTimers.get(uri);
-    if (timer) {
-      clearTimeout(timer);
-      debounceTimers.delete(uri);
-    }
-    watcher.close();
-    watchers.delete(uri);
-    activeCallbacks.delete(uri);
-    desiredState.set(uri, 'unsubscribed');
-  };
-
-  const notifyAll = (uri: string): void => {
-    if (!activeCallbacks.has(uri)) return;
-    const existing = debounceTimers.get(uri);
-    if (existing) {
-      clearTimeout(existing);
-    }
-    const timer = setTimeout(() => {
-      debounceTimers.delete(uri);
-      const cb = activeCallbacks.get(uri);
-      if (!cb) return;
-      try {
-        cb(uri);
-      } catch (err) {
-        Logger.warn(`Notify callback error for ${uri}: ${formatUnknownErrorMessage(err)}`);
-      }
-    }, 50);
-    timer.unref();
-    debounceTimers.set(uri, timer);
-  };
-
-  return {
-    hasWatcher: (uri: string): boolean => watchers.has(uri),
-
-    isAtCap: (): boolean => watchers.size >= MAX_WATCHERS,
-
-    /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
-    isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
-
-    startSubscribe(uri: string): void {
-      desiredState.set(uri, 'subscribing');
-    },
-
-    addCallback(uri: string, notify: (uri: string) => void): void {
-      activeCallbacks.set(uri, notify);
-      desiredState.set(uri, 'subscribed');
-    },
-
-    attach(uri: string, resolvedPath: string): boolean {
-      try {
-        const watcher = watch(resolvedPath, () => {
-          notifyAll(uri);
-        });
-        watcher.on('error', (err: Error) => {
-          Logger.warn(`Watcher error for ${uri}: ${err.message}`);
-          dropWatcher(uri, watcher);
-        });
-        watchers.set(uri, watcher);
-        return true;
-      } catch (err) {
-        Logger.error(`Failed to create watcher for ${uri}: ${formatUnknownErrorMessage(err)}`);
-        return false;
-      }
-    },
-
-    remove(uri: string): void {
-      desiredState.set(uri, 'unsubscribed');
-      activeCallbacks.delete(uri);
-      const timer = debounceTimers.get(uri);
-      if (timer) {
-        clearTimeout(timer);
-        debounceTimers.delete(uri);
-      }
-      const watcher = watchers.get(uri);
-      if (watcher) {
-        dropWatcher(uri, watcher);
-      }
-    },
-
-    destroy(): void {
-      destroyed = true;
-      for (const timer of debounceTimers.values()) {
-        clearTimeout(timer);
-      }
-      debounceTimers.clear();
-      for (const watcher of watchers.values()) {
-        try {
-          watcher.close();
-        } catch {
-          /* ignore close errors so all watchers are attempted */
-        }
-      }
-      watchers.clear();
-      activeCallbacks.clear();
-      desiredState.clear();
-    },
-  };
-}
-
-export type WatcherRegistry = ReturnType<typeof createWatcherRegistry>;
 
 /**
  * Best-effort filesystem-watcher attachment for the modern (per-request) HTTP

@@ -11,9 +11,9 @@ import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { PathGuard } from '../src/core/path.js';
 import { createInMemoryResourceStore } from '../src/core/store.js';
+import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import {
   buildSectionsRecord,
-  createWatcherRegistry,
   getResourceContracts,
   INSTRUCTIONS_URI,
   renderSections,

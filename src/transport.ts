@@ -42,6 +42,7 @@ import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
 import type { McpRootsSynchronizer } from './core/registrar.js';
 import { getInitHandshakeTimeoutMs, INIT_TIMEOUT_CLOSE, parseEnvInt } from './core/util.js';
+import { createWatcherRegistry, type WatcherRegistry } from './core/watcher-registry.js';
 import {
   assertHttpBindingPolicy,
   assertHttpHostPolicy,
@@ -53,11 +54,7 @@ import {
   resolveAllowedHosts,
   resolveTrustProxySetting,
 } from './http-policy.js';
-import {
-  attachFileWatcherForUri,
-  createWatcherRegistry,
-  type WatcherRegistry,
-} from './resources.js';
+import { attachFileWatcherForUri } from './resources.js';
 import type { FilesystemServerContext } from './server.js';
 import { createServer } from './server.js';
 

@@ -3,7 +3,6 @@ import type { McpServer, Root } from '@modelcontextprotocol/server';
 import { stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import type { WatcherRegistry } from '../resources.js';
 import { processInParallel, timedSignal } from './concurrency.js';
 import { formatUnknownErrorMessage, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
@@ -17,6 +16,7 @@ import {
   PARALLEL_CONCURRENCY,
   ROOTS_TIMEOUT_MS,
 } from './util.js';
+import type { WatcherRegistry } from './watcher-registry.js';
 
 export interface ServerDeps {
   server: McpServer;

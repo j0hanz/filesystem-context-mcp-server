@@ -12,9 +12,10 @@ import type { Registrar, ServerDeps } from './core/registrar.js';
 import { McpRootsSynchronizer } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
+import type { WatcherRegistry } from './core/watcher-registry.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
-import { INSTRUCTIONS_URI, resourcesRegistrar, type WatcherRegistry } from './resources.js';
+import { INSTRUCTIONS_URI, resourcesRegistrar } from './resources.js';
 import { toolsRegistrar } from './tools/index.js';
 import { requestStateCodec } from './tools/input-required.js';
 

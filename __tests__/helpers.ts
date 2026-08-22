@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createWatcherRegistry } from '../src/resources.js';
+import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
 
