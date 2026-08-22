@@ -6,7 +6,7 @@ import { RE2 } from '@adguard/re2-wasm';
 import { StopReasonTracker } from './concurrency.js';
 import type { StoppedReason } from './concurrency.js';
 import { globEntries, type GlobEntry } from './glob.js';
-import type { PathValidator } from './path.js';
+import type { PathGuard } from './path.js';
 import { escapeRegexLiteral } from './primitives.js';
 import { MAX_TEXT_FILE_SIZE } from './util.js';
 
@@ -131,7 +131,7 @@ export async function searchContent(
   directory: string,
   pattern: string,
   options: SearchContentOptions,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
 ): Promise<SearchContentOutcome> {
   const regexPattern = options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || '');
   const regex = compileRegex(regexPattern, { caseSensitive: Boolean(options.caseSensitive) });
@@ -144,7 +144,7 @@ export async function searchContent(
 
 async function* guardedEntries(
   entries: AsyncIterable<GlobEntry>,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
   signal: AbortSignal | undefined,
   counters: { skippedInaccessible: number; stoppedByAbort: boolean },
 ): AsyncGenerator<GlobEntry> {
@@ -169,7 +169,7 @@ async function* guardedEntries(
 async function scanContent(
   directory: string,
   options: SearchContentOptions,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
   regex: Regex,
 ): Promise<SearchContentOutcome> {
   const matches: SearchResult[] = [];
@@ -277,7 +277,7 @@ export async function searchFiles(
     maxDepth?: number;
     signal?: AbortSignal;
   },
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
 ): Promise<{
   basePath: string;
   results: { path: string }[];

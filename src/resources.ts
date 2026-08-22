@@ -25,7 +25,7 @@ import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
-import type { PathValidator } from './core/path.js';
+import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
@@ -54,7 +54,7 @@ import {
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   iconInfo?: IconInfo;
-  pathGuard?: PathValidator;
+  pathGuard?: PathGuard;
   server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
   readOnly: boolean;
@@ -349,7 +349,7 @@ export type WatcherRegistry = ReturnType<typeof createWatcherRegistry>;
  */
 export async function attachFileWatcherForUri(
   registry: WatcherRegistry,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
   uri: string,
   notify: (uri: string) => void,
 ): Promise<boolean> {

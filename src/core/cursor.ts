@@ -1,10 +1,4 @@
-import * as z from 'zod/v4';
-
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './errors.js';
-
-const OffsetCursorSchema = z.strictObject({
-  offset: z.int().nonnegative(),
-});
 
 export function encodeOffsetCursor(offset: number): string {
   return Buffer.from(JSON.stringify({ offset })).toString('base64url');
@@ -59,11 +53,17 @@ export function closePage(params: {
 }
 
 export function decodeOffsetCursor(cursor: string): number {
-  // Every failure mode — bad base64url, invalid UTF-8, malformed JSON, wrong
-  // shape — is the same thing to a caller: this cursor is not one we issued.
   try {
     const text = Buffer.from(cursor, 'base64url').toString('utf-8');
-    return OffsetCursorSchema.parse(JSON.parse(text)).offset;
+    const parsed = JSON.parse(text) as { offset?: unknown };
+    if (
+      typeof parsed.offset === 'number' &&
+      Number.isInteger(parsed.offset) &&
+      parsed.offset >= 0
+    ) {
+      return parsed.offset;
+    }
+    throw new Error('Invalid offset');
   } catch (error) {
     throw new FsError(
       ErrorCode.INVALID_INPUT,

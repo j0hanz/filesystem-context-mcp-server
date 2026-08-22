@@ -53,23 +53,11 @@ export function withDefaultIcons<T extends object>(
 
 // ─── Path primitives (moved from path.ts to break the path↔sensitive cycle) ──
 
-const WINDOWS_PATH_SEPARATOR = '\\';
-const POSIX_PATH_SEPARATOR = '/';
 export const IS_WINDOWS = platform() === 'win32';
 
-const CHAR_FORWARD_SLASH = 47;
-const CHAR_BACKWARD_SLASH = 92;
+export const isSlash = (code: number): boolean => code === 47 || code === 92;
 
-export function isSlash(code: number): boolean {
-  return code === CHAR_FORWARD_SLASH || code === CHAR_BACKWARD_SLASH;
-}
+export const isAlpha = (code: number): boolean =>
+  (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 
-export function isAlpha(code: number): boolean {
-  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-}
-
-export function toPosixPath(value: string): string {
-  return value.includes(WINDOWS_PATH_SEPARATOR)
-    ? value.replaceAll(WINDOWS_PATH_SEPARATOR, POSIX_PATH_SEPARATOR)
-    : value;
-}
+export const toPosixPath = (value: string): string => value.replaceAll('\\', '/');

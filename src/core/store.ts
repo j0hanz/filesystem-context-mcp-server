@@ -76,11 +76,12 @@ export class ResourceStore {
   private _totalBytes = 0;
   private readonly options: ResourceStoreOptions;
 
-  constructor(options: ResourceStoreOptions = DEFAULT_RESOURCE_STORE_OPTIONS) {
-    if (options.maxEntryBytes > options.maxTotalBytes) {
-      throw invalidStoreOptionsError(options.maxEntryBytes, options.maxTotalBytes);
+  constructor(options: Partial<ResourceStoreOptions> = {}) {
+    const resolved = { ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options };
+    if (resolved.maxEntryBytes > resolved.maxTotalBytes) {
+      throw invalidStoreOptionsError(resolved.maxEntryBytes, resolved.maxTotalBytes);
     }
-    this.options = options;
+    this.options = resolved;
   }
 
   // ── low-level storage ────────────────────────────────────────────────────
@@ -343,8 +344,6 @@ export class ResourceStore {
   }
 }
 
-export function createInMemoryResourceStore(
-  options: Partial<ResourceStoreOptions> = {},
-): ResourceStore {
-  return new ResourceStore({ ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options });
-}
+export const createInMemoryResourceStore = (
+  options?: Partial<ResourceStoreOptions>,
+): ResourceStore => new ResourceStore(options);

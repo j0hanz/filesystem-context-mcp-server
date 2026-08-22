@@ -20,7 +20,7 @@ import { formatUnknownErrorMessage, hasErrorShape } from './core/errors.js';
 import { buildFileResourceUri } from './core/file-uri.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
-import type { PathValidator } from './core/path.js';
+import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar } from './core/registrar.js';
@@ -36,7 +36,7 @@ interface PromptContract {
 }
 
 interface PromptRegistrationOptions {
-  pathGuard: PathValidator;
+  pathGuard: PathGuard;
   sections: Record<string, string>;
   instructions: string;
   instructionsUri: string;
@@ -52,7 +52,7 @@ interface PromptEntry {
 // --- Helpers ---
 
 function pathArg(
-  guard: PathValidator,
+  guard: PathGuard,
   argumentName: string,
   description: string,
 ): ReturnType<typeof completable<z.ZodString>> {

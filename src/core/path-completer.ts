@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:p
 
 import { isNodeError, isNotFoundErrno, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
-import type { PathValidator } from './path.js';
+import type { PathGuard } from './path.js';
 import {
   isPathWithinDirectories,
   isSamePath,
@@ -303,9 +303,9 @@ function getSearchContext(
 
 export class PathCompleter {
   private cache = new Map<string, CacheEntry>();
-  private readonly pathGuard: PathValidator;
+  private readonly pathGuard: PathGuard;
 
-  constructor(pathGuard: PathValidator) {
+  constructor(pathGuard: PathGuard) {
     this.pathGuard = pathGuard;
   }
 

@@ -10,8 +10,6 @@ import { IS_WINDOWS, isAlpha, parseTrueEnvFlag, toPosixPath } from './primitives
 
 const CHAR_COLON = 58;
 const CHAR_FORWARD_SLASH = 47;
-const CHAR_DOT = 46;
-const CHAR_SPACE = 32;
 
 function normalizeForMatch(input: string): string {
   // Always lowercase for case-insensitive denylist matching on all platforms.
@@ -119,15 +117,7 @@ function stripAlternateDataStreams(filePath: string): string {
   return stripped.join(sep);
 }
 
-function trimTrailingDotsAndSpaces(segment: string): string {
-  let end = segment.length;
-  while (end > 0) {
-    const c = segment.charCodeAt(end - 1);
-    if (c === CHAR_SPACE || c === CHAR_DOT) end--;
-    else break;
-  }
-  return end === segment.length ? segment : segment.slice(0, end);
-}
+const trimTrailingDotsAndSpaces = (segment: string): string => segment.replace(/[. ]+$/, '');
 
 const DEFAULT_SENSITIVE_PATTERNS = [
   '.env',

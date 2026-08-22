@@ -20,15 +20,11 @@ export class StopReasonTracker {
   }
 
   hitMaxFiles(): void {
-    if (this.#reason !== 'maxResults') {
-      this.#reason = 'maxFiles';
-    }
+    if (this.#reason !== 'maxResults') this.#reason = 'maxFiles';
   }
 
   hitAbort(): void {
-    if (!this.#reason) {
-      this.#reason = 'timeout';
-    }
+    this.#reason ??= 'timeout';
   }
 
   get truncated(): boolean {

@@ -44,26 +44,6 @@ export interface ValidatedPathDetails {
   isSymlink: boolean;
 }
 
-export interface PathValidator {
-  getAllowedDirectories(): readonly string[];
-  getRootBoundaries(): readonly string[];
-  isSensitive(filePath: string): boolean;
-  isEntryAccessible(
-    entryPath: string,
-    entryType: EntryType,
-    bounds: readonly string[],
-  ): Promise<boolean>;
-  validateExistingPath(requestedPath: string): Promise<ValidatedPath>;
-  validateExistingPathDetailed(requestedPath: string): Promise<ValidatedPathDetails>;
-  validateExistingDirectory(requestedPath: string): Promise<string>;
-  validatePathForWrite(requestedPath: string): Promise<ValidatedPath>;
-  validatePathForDelete(requestedPath: string): Promise<ValidatedPath>;
-  precheckAccess(paths: readonly string[]): Promise<string[]>;
-  applyGrant(targetDir: string): Promise<boolean>;
-  resolvePathOrRoot(pathValue: string | undefined): string;
-  isAllowedRoot(normalizedPath: string): boolean;
-}
-
 export interface ServerOptions {
   allowCwd?: boolean;
   cliAllowedDirs?: string[];
@@ -136,23 +116,16 @@ const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
 
 const CHAR_COLON = 58;
-const CHAR_SPACE = 32;
-const CHAR_DOT = 46;
 
 /** `path.relative` with forward slashes, so displayed paths match across platforms. */
 export function toPosixRelative(from: string, to: string): string {
   return toPosixPath(relative(from, to));
 }
 
-const LEADING_SLASHES_PATTERN = /^[/\\]+/;
-
 function expandHome(filepath: string): string {
-  if (filepath === '~') {
-    return HOMEDIR;
-  }
-  if (filepath.startsWith('~/') || filepath.startsWith('~\\')) {
-    const rest = filepath.slice(1).replace(LEADING_SLASHES_PATTERN, '');
-    return rest.length === 0 ? HOMEDIR : join(HOMEDIR, rest);
+  if (filepath === '~' || filepath.startsWith('~/') || filepath.startsWith('~\\')) {
+    const rest = filepath.slice(1).replace(/^[/\\]+/, '');
+    return rest ? join(HOMEDIR, rest) : HOMEDIR;
   }
   return filepath;
 }
@@ -371,21 +344,9 @@ const RESERVED_DEVICE_NAMES = new Set([
 ]);
 
 function getReservedDeviceName(segment: string): string | undefined {
-  let end = segment.length;
-  while (end > 0) {
-    const c = segment.charCodeAt(end - 1);
-    if (c === CHAR_SPACE || c === CHAR_DOT) {
-      end--;
-    } else {
-      break;
-    }
-  }
-  const trimmed = segment.slice(0, end);
-  const streamIdx = trimmed.indexOf(':');
-  const withoutStream = streamIdx !== -1 ? trimmed.slice(0, streamIdx) : trimmed;
-  const dotIdx = withoutStream.indexOf('.');
-  const baseName = (dotIdx !== -1 ? withoutStream.slice(0, dotIdx) : withoutStream).toUpperCase();
-
+  const trimmed = segment.replace(/[. ]+$/, '');
+  const withoutStream = trimmed.split(':')[0] ?? '';
+  const baseName = (withoutStream.split('.')[0] ?? '').toUpperCase();
   return RESERVED_DEVICE_NAMES.has(baseName) ? baseName : undefined;
 }
 
@@ -463,7 +424,7 @@ export function isSafeGlobSyntax(pattern: string): boolean {
  * O_NOFOLLOW / operate on the resolved fd) throughout core/fs.ts. Acceptable
  * tradeoff for a local, single-user filesystem server today.
  */
-export class PathGuard implements PathValidator {
+export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private readonly sensitive = new SensitiveMatcher();
   private rootDirectories: string[] = [];

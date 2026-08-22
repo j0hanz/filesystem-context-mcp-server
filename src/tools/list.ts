@@ -14,7 +14,7 @@ import {
   loadRootGitignore,
   resolveEntryType,
 } from '../core/glob.js';
-import type { PathValidator } from '../core/path.js';
+import type { PathGuard } from '../core/path.js';
 import { toPosixRelative } from '../core/path.js';
 import {
   FileType as FileTypeEnum,
@@ -44,7 +44,7 @@ interface CollectOptions {
   includeHidden: boolean;
   includeIgnored: boolean;
   signal: AbortSignal;
-  pathGuard: PathValidator;
+  pathGuard: PathGuard;
   onProgress?: (progress: { current: number; total?: number }) => void;
 }
 

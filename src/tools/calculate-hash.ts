@@ -12,7 +12,7 @@ import { ErrorCode, FsError, rethrowIfAborted } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
-import type { PathValidator } from '../core/path.js';
+import type { PathGuard } from '../core/path.js';
 import { NonNegInt, RequiredPath } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
@@ -129,7 +129,7 @@ function updateCompositeHash(
 async function hashDirectory(
   dirPath: string,
   fsOps: GuardedFileSystem,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
   options: {
     signal?: AbortSignal;
     onProgress?: (progress: { total?: number; current: number }) => void;

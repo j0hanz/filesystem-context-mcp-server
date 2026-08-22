@@ -25,7 +25,7 @@ import { withAbort } from './concurrency.js';
 import { formatUnknownErrorMessage, isNodeError } from './errors.js';
 import { detectMimeFromContent } from './mime.js';
 import { Logger } from './observability.js';
-import type { PathValidator } from './path.js';
+import type { PathGuard } from './path.js';
 import type { EntryType as FileType } from './primitives.js';
 import type { ReadFileResult, ReadSpec } from './read.js';
 import {
@@ -71,7 +71,7 @@ async function calculateFileContentHash(filePath: string, signal?: AbortSignal):
 async function atomicWriteFile(
   filePath: string,
   content: string,
-  pathGuard: PathValidator,
+  pathGuard: PathGuard,
   options: { encoding?: BufferEncoding; signal?: AbortSignal | undefined } = {},
 ): Promise<{ validPath: string }> {
   const { encoding = 'utf-8', signal } = options;
@@ -143,9 +143,9 @@ export function isHidden(name: string): boolean {
 }
 
 export class GuardedFileSystem {
-  readonly pathGuard: PathValidator;
+  readonly pathGuard: PathGuard;
 
-  constructor(pathGuard: PathValidator) {
+  constructor(pathGuard: PathGuard) {
     this.pathGuard = pathGuard;
   }
 
