@@ -10,7 +10,6 @@
       "ESNext.Promise"
     ],
     "module": "NodeNext",
-    "moduleResolution": "NodeNext",
     "moduleDetection": "force",
     "verbatimModuleSyntax": true,
     "outDir": "./dist",
@@ -29,8 +28,6 @@
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
-    "isolatedModules": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
