@@ -8,6 +8,7 @@ import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import {
+  completableOptionalPath,
   CursorSchema,
   defaultFalseBoolean,
   includeHiddenField,
@@ -376,6 +377,14 @@ export const SEARCH_CONTENT = defineTool({
     'Scope to specific file types with pattern (e.g. **/*.ts). ' +
     'Set includeHidden=true to include dotfiles. Use find_files to search by filename instead.',
   input: GrepInputSchema,
+  buildInput: (guard) =>
+    GrepInputSchema.extend({
+      path: completableOptionalPath(
+        guard,
+        'path',
+        'Directory to search within (defaults to primary root)',
+      ),
+    }),
   output: GrepOutputSchema,
   annotations: {
     readOnlyHint: true,

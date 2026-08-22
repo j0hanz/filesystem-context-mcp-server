@@ -25,7 +25,7 @@ import { ErrorCode, FsError } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 
 /** The destructive operation a pending confirmation authorizes. */
-export type PendingOp = 'delete' | 'move' | 'grant';
+export type PendingOp = 'delete' | 'move' | 'copy' | 'grant';
 
 /**
  * Integrity-protected state minted into an `input_required` result and echoed

@@ -418,11 +418,27 @@ describe('MCP Resources', () => {
       }
     });
 
-    it('client.listResources() returns static instructions resource', async () => {
+    it('client.listResources() returns static instructions resource and workspace roots', async () => {
       const result = await harness.client.listResources();
       const instructions = result.resources.find((r) => r.uri === INSTRUCTIONS_URI);
       assert.ok(instructions, 'instructions resource should be present');
       assert.strictEqual(instructions.mimeType, 'text/markdown');
+
+      const allowedRoots = harness.serverCtx.pathGuard.getAllowedDirectories();
+      const expectedUri = buildFileResourceUri(allowedRoots[0] ?? clientTmpDir);
+      const rootResource = result.resources.find((r) => r.uri === expectedUri);
+      assert.ok(rootResource, 'workspace root directory should be listed in resources');
+      assert.strictEqual(rootResource.mimeType, 'inode/directory');
+    });
+
+    it('resource contracts specify cacheHint for client caching optimization', () => {
+      const store = createInMemoryResourceStore();
+      const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
+      const instructions = contracts.find((c) => c.name === 'filesystem-mcp-instructions');
+      assert.deepStrictEqual(instructions?.cacheHint, { cacheScope: 'public', ttlMs: 300_000 });
+
+      const resultContract = contracts.find((c) => c.name === 'filesystem-mcp-result');
+      assert.deepStrictEqual(resultContract?.cacheHint, { cacheScope: 'private', ttlMs: 60_000 });
     });
 
     it('client.listResourceTemplates() returns result and file templates', async () => {

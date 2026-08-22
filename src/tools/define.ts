@@ -77,6 +77,7 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly title: string;
   readonly description: string;
   readonly input: I;
+  readonly buildInput?: (guard: PathGuard) => I;
   readonly output: O;
   readonly annotations: DeclaredAnnotations;
   readonly timeoutMs?: number;
@@ -294,10 +295,19 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     if (round !== undefined) return round;
     // Apply accepted grants for the session (R8). Declined/missing dirs are
     // skipped here; their paths fail with ACCESS_DENIED during the operation.
+    let appliedAny = false;
     for (let i = 0; i < grantDirs.length; i++) {
       const dir = grantDirs[i];
       if (dir && readAcceptedConfirm(this.toolCtx.inputResponses, `confirm_${i}`)) {
         await this.toolCtx.fs.pathGuard.applyGrant(dir);
+        appliedAny = true;
+      }
+    }
+    if (appliedAny) {
+      try {
+        await this.toolCtx.server?.server.sendResourceListChanged();
+      } catch (err) {
+        Logger.debug('sendResourceListChanged error on grant', { error: String(err) });
       }
     }
     return undefined;
@@ -382,7 +392,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     io: 'output',
   }) as Record<string, unknown>;
 
-  const inputSchemaWithJson = withJsonSchema(def.input, inputJsonSchema, 'input');
   const outputSchemaWithJson = withJsonSchema(def.output, outputJsonSchema, 'output');
 
   const tool: DefinedTool = {
@@ -392,10 +401,11 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     outputSchema: outputJsonSchema,
 
     register(deps: ToolDeps) {
+      const resolvedInput = def.buildInput ? def.buildInput(deps.pathGuard) : def.input;
       const toolDefShape = {
         title: def.title,
         description: def.description,
-        inputSchema: inputSchemaWithJson,
+        inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
         outputSchema: outputSchemaWithJson,
         annotations: def.annotations,
       };

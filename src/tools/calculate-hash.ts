@@ -13,7 +13,7 @@ import type { GuardedFileSystem } from '../core/fs.js';
 import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
-import { NonNegInt, RequiredPath } from '../core/schema.js';
+import { completablePath, NonNegInt, RequiredPath } from '../core/schema.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
 import { putJsonResource } from './resource-links.js';
@@ -308,6 +308,10 @@ export const CALCULATE_HASH = defineTool({
     'Supported algorithms: sha256 (default), sha1, sha512, md5. ' +
     'Pass multiple algorithms in one call to get all digests at once.',
   input: HashInputSchema,
+  buildInput: (guard) =>
+    HashInputSchema.extend({
+      path: completablePath(guard, 'path', 'Path of the file or directory to hash'),
+    }),
   output: HashOutputSchema,
   annotations: {
     readOnlyHint: true,

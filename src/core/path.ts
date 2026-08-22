@@ -181,7 +181,10 @@ function normalizeAllowedDirectory(dir: string): string {
   return stripTrailingSeparator(normalized);
 }
 
-function isPathInsideDirectory(normalizedDirectory: string, normalizedCandidate: string): boolean {
+export function isPathInsideDirectory(
+  normalizedDirectory: string,
+  normalizedCandidate: string,
+): boolean {
   const root = normalizeCaseForComparison(normalizedDirectory);
   const candidate = normalizeCaseForComparison(normalizedCandidate);
 

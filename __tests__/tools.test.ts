@@ -196,4 +196,79 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const structured = result.structuredContent as { roots?: string[] } | undefined;
     assert.ok((structured?.roots?.length ?? 0) > 0, 'Should have at least one allowed directory');
   });
+
+  it('TC-FUNC-053: Copy with overwrite: true succeeds when destination exists', async () => {
+    const src = join(tmpDir, 'copy_ow_src.txt');
+    const dst = join(tmpDir, 'copy_ow_dst.txt');
+    await writeFile(src, 'new source');
+    await writeFile(dst, 'existing dst');
+
+    const result = await harness.client.callTool({
+      name: 'copy',
+      arguments: {
+        copies: [{ source: src, destination: dst }],
+        overwrite: true,
+      },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const dstContent = await readFile(dst, 'utf-8');
+    assert.strictEqual(dstContent, 'new source');
+  });
+
+  it('TC-FUNC-054: Copy single file via MCP tool call', async () => {
+    const src = join(tmpDir, 'copy_src.txt');
+    const dst = join(tmpDir, 'copy_dst.txt');
+    await writeFile(src, 'copy content');
+
+    const result = await harness.client.callTool({
+      name: 'copy',
+      arguments: {
+        copies: [{ source: src, destination: dst }],
+      },
+    });
+    assert.notStrictEqual(result.isError, true);
+
+    const srcContent = await readFile(src, 'utf-8');
+    const dstContent = await readFile(dst, 'utf-8');
+    assert.strictEqual(srcContent, 'copy content');
+    assert.strictEqual(dstContent, 'copy content');
+  });
+
+  it('TC-FUNC-055: Copy recursive directory via MCP tool call', async () => {
+    const srcDir = join(tmpDir, 'copy_src_dir');
+    const dstDir = join(tmpDir, 'copy_dst_dir');
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(join(srcDir, 'sub'), { recursive: true });
+    await writeFile(join(srcDir, 'file1.txt'), 'file1');
+    await writeFile(join(srcDir, 'sub', 'file2.txt'), 'file2');
+
+    const result = await harness.client.callTool({
+      name: 'copy',
+      arguments: {
+        copies: [{ source: srcDir, destination: dstDir }],
+      },
+    });
+    assert.notStrictEqual(result.isError, true);
+
+    const dst1 = await readFile(join(dstDir, 'file1.txt'), 'utf-8');
+    const dst2 = await readFile(join(dstDir, 'sub', 'file2.txt'), 'utf-8');
+    assert.strictEqual(dst1, 'file1');
+    assert.strictEqual(dst2, 'file2');
+  });
+
+  it('TC-FUNC-056: Copy out-of-root source returns isError: true with ACCESS_DENIED', async () => {
+    const outsideFile = join(tmpdir(), 'outside_copy.txt');
+    await writeFile(outsideFile, 'secret');
+    try {
+      const result = await harness.client.callTool({
+        name: 'copy',
+        arguments: {
+          copies: [{ source: outsideFile, destination: join(tmpDir, 'stolen.txt') }],
+        },
+      });
+      assert.strictEqual(result.isError, true);
+    } finally {
+      await rm(outsideFile, { force: true });
+    }
+  });
 });

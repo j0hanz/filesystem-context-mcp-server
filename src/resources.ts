@@ -1,6 +1,8 @@
 import type {
+  CacheHint,
   McpServer,
   ReadResourceResult,
+  Resource,
   ResourceUpdatedNotificationParams,
   Role,
   ServerContext,
@@ -17,8 +19,14 @@ import {
   UriTemplate,
 } from '@modelcontextprotocol/server';
 
+import { basename } from 'node:path';
+
 import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, isFsError } from './core/errors.js';
-import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
+import {
+  buildFileResourceUri,
+  extractPath,
+  FILESYSTEM_FILE_URI_TEMPLATE,
+} from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -83,6 +91,7 @@ interface BaseResourceContract {
   title?: string;
   description?: string;
   mimeType?: string;
+  cacheHint?: CacheHint;
   annotations?: {
     audience?: Role[];
     priority?: number;
@@ -98,6 +107,9 @@ interface BaseResourceContract {
   ) => Promise<boolean | undefined> | boolean | undefined;
   readonly unsubscribe?: (uri: string) => void;
   readonly destroy?: () => void;
+  readonly list?: (
+    ctx: ServerContext,
+  ) => Promise<{ resources: Resource[] }> | { resources: Resource[] };
 }
 
 /** A resource with a fixed, enumerable URI (e.g. internal://instructions). */
@@ -195,6 +207,7 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
     mimeType: 'text/markdown',
     uri: INSTRUCTIONS_URI,
     annotations: { audience: ['assistant'], priority: 0.8 },
+    cacheHint: { cacheScope: 'public', ttlMs: 300_000 },
     read(uri) {
       return {
         contents: [
@@ -291,6 +304,17 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     description: 'Read a file from the workspace. Subscribe to get updates when the file changes.',
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
+
+    list() {
+      const allowed = options.pathGuard?.getAllowedDirectories() ?? [];
+      const resources: Resource[] = allowed.map((rootDir) => ({
+        uri: buildFileResourceUri(rootDir),
+        name: basename(rootDir) || rootDir,
+        description: `Workspace root directory: ${rootDir}`,
+        mimeType: 'inode/directory',
+      }));
+      return { resources };
+    },
 
     async read(uri, variables, _ctx: ServerContext) {
       if (!options.pathGuard) {
@@ -418,6 +442,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
     mimeType: 'text/plain',
     uriTemplate: 'filesystem-mcp://result/{id}',
     annotations: { audience: ['assistant'], priority: 0.3 },
+    cacheHint: { cacheScope: 'private', ttlMs: 60_000 },
     read(uri, variables) {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {
@@ -493,17 +518,18 @@ function registerResources(
   for (const contract of resourceContracts) {
     const config = withDefaultIcons(
       {
-        title: contract.title,
-        description: contract.description,
-        mimeType: contract.mimeType,
-        annotations: contract.annotations,
+        ...(contract.title !== undefined ? { title: contract.title } : {}),
+        ...(contract.description !== undefined ? { description: contract.description } : {}),
+        ...(contract.mimeType !== undefined ? { mimeType: contract.mimeType } : {}),
+        ...(contract.annotations !== undefined ? { annotations: contract.annotations } : {}),
+        ...(contract.cacheHint !== undefined ? { cacheHint: contract.cacheHint } : {}),
       },
       options.iconInfo,
     );
 
     if (contract.uriTemplate) {
       const template = new ResourceTemplate(contract.uriTemplate, {
-        list: undefined,
+        list: contract.list,
         ...(contract.complete
           ? {
               complete: Object.fromEntries(
@@ -521,7 +547,7 @@ function registerResources(
 
       server.registerResource(contract.name, template, config, wrapRead(contract));
     } else if (contract.uri) {
-      server.registerResource(contract.name, contract.uri, config, (uri, ctx) =>
+      server.registerResource(contract.name, contract.uri, config, (uri: URL, ctx: ServerContext) =>
         wrapRead(contract)(uri, {}, ctx),
       );
     }

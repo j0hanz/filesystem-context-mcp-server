@@ -17,6 +17,7 @@ import {
 import type { PathGuard } from '../core/path.js';
 import { toPosixRelative } from '../core/path.js';
 import {
+  completableOptionalPath,
   FileType as FileTypeEnum,
   includeHiddenField,
   includeIgnoredField,
@@ -292,6 +293,14 @@ export const LIST = defineTool({
     'Default maxDepth=1 lists top-level entries only; increase to recurse deeper. ' +
     'When results exceed maxEntries, the full list is stored at resourceUri.',
   input: ListInputSchema,
+  buildInput: (guard) =>
+    ListInputSchema.extend({
+      path: completableOptionalPath(
+        guard,
+        'path',
+        'Directory path to list (defaults to primary root)',
+      ),
+    }),
   output: ListOutputSchema,
   annotations: {
     readOnlyHint: true,

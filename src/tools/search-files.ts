@@ -7,6 +7,7 @@ import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import {
+  completableOptionalPath,
   CursorSchema,
   includeHiddenField,
   includeIgnoredField,
@@ -175,6 +176,14 @@ export const SEARCH_FILES = defineTool({
     'Pagination: cursors are offset-based and re-run the full query per page. ' +
     'For content search use search_text; for bulk regex replacements use replace_text with the same glob.',
   input: SearchFilesInputSchema,
+  buildInput: (guard) =>
+    SearchFilesInputSchema.extend({
+      path: completableOptionalPath(
+        guard,
+        'path',
+        'Base directory to search under (default: first allowed root)',
+      ),
+    }),
   output: SearchFilesOutputSchema,
   annotations: {
     readOnlyHint: true,

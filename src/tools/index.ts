@@ -1,5 +1,6 @@
 import type { Registrar } from '../core/registrar.js';
 import { CALCULATE_HASH } from './calculate-hash.js';
+import { COPY_FILES } from './copy.js';
 import { CREATE } from './create.js';
 import type { DefinedTool } from './define.js';
 import { DELETE_FILE } from './delete-file.js';
@@ -15,6 +16,7 @@ import { GET_FILE_INFO } from './stat.js';
 
 export const ALL_TOOLS = [
   CALCULATE_HASH,
+  COPY_FILES,
   CREATE,
   DELETE_FILE,
   EDIT,
@@ -41,7 +43,7 @@ export function registeredTools(readOnly: boolean): readonly DefinedTool[] {
 
 // Re-exported so documentation surfaces quote `.name` off the definition rather
 // than repeating the string. This module is the only owner of the inventory.
-// Only the read-only tools are named individually: the mutating five are no
+// Only the read-only tools are named individually: the mutating six are no
 // longer listed by hand anywhere, so their names reach callers through
 // MUTATING_TOOL_NAMES and ALL_TOOLS instead.
 export {
