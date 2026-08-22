@@ -312,7 +312,7 @@ const FIND_IN_TREE: PromptEntry = {
           }
           if (mode === 'content' || mode === 'both') {
             steps.push(
-              `- Call \`search_text\` with pattern "${query}" under "${resolved}". Report relative paths, line numbers, and a 1-line context for each match.`,
+              `- Call \`search_text\` with searchPattern "${query}" under "${resolved}". Report relative paths, line numbers, and a 1-line context for each match.`,
             );
           }
           const text = [`Find "${query}" in ${resolved} (mode=${mode}):`, '', ...steps].join('\n');

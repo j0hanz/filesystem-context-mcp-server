@@ -193,7 +193,7 @@ describe('MCP Prompts Tests (MCP Client)', () => {
       const textMsg = result.messages[0].content as TextContent;
       assert.equal(textMsg.type, 'text');
       assert.ok(textMsg.text.includes('mode=content'));
-      assert.ok(textMsg.text.includes('`search_text` with pattern "TODO"'));
+      assert.ok(textMsg.text.includes('`search_text` with searchPattern "TODO"'));
       assert.ok(!textMsg.text.includes('`find_files`'));
     });
 
@@ -208,7 +208,7 @@ describe('MCP Prompts Tests (MCP Client)', () => {
       assert.equal(textMsg.type, 'text');
       assert.ok(textMsg.text.includes('mode=both'));
       assert.ok(textMsg.text.includes('`find_files` with pattern "export"'));
-      assert.ok(textMsg.text.includes('`search_text` with pattern "export"'));
+      assert.ok(textMsg.text.includes('`search_text` with searchPattern "export"'));
     });
 
     it('TC-FUNC-076: Defaults root to first allowed directory when omitted', async () => {

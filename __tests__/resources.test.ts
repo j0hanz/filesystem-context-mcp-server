@@ -380,6 +380,27 @@ describe('MCP Resources', () => {
       assert.strictEqual(registry.isStale(uriB), true);
       assert.strictEqual(registry.isStale('filesystem-mcp://file/nonexistent'), true);
     });
+
+    it('TC-FUNC-067: WatcherRegistry - re-subscription clears stale state', async () => {
+      const registry = createWatcherRegistry();
+      const file = await writeTestFile(tmpDir, 'resub.txt', 'content');
+      const uri = buildFileResourceUri(file);
+
+      registry.startSubscribe(uri);
+      assert.strictEqual(registry.isStale(uri), false);
+      registry.addCallback(uri, () => {});
+      registry.attach(uri, file);
+
+      registry.remove(uri);
+      assert.strictEqual(registry.isStale(uri), true);
+
+      registry.startSubscribe(uri);
+      assert.strictEqual(registry.isStale(uri), false);
+      registry.addCallback(uri, () => {});
+      assert.strictEqual(registry.isStale(uri), false);
+
+      registry.destroy();
+    });
   });
 
   describe('MCP Client Resource Operations', () => {

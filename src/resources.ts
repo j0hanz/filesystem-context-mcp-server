@@ -229,7 +229,7 @@ function warnWatcherCap(uri: string): void {
 export function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
   const activeCallbacks = new Map<string, (uri: string) => void>();
-  const desiredState = new Map<string, 'subscribed' | 'unsubscribed'>();
+  const desiredState = new Map<string, 'subscribed' | 'unsubscribed' | 'subscribing'>();
   const debounceTimers = new Map<string, NodeJS.Timeout>();
   let destroyed = false;
 
@@ -274,6 +274,10 @@ export function createWatcherRegistry() {
 
     /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
     isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
+
+    startSubscribe(uri: string): void {
+      desiredState.set(uri, 'subscribing');
+    },
 
     addCallback(uri: string, notify: (uri: string) => void): void {
       activeCallbacks.set(uri, notify);
@@ -465,6 +469,8 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         warnWatcherCap(uri);
         return false;
       }
+
+      registry.startSubscribe(uri);
 
       const filePath = extractPath(uri);
       if (!filePath) {

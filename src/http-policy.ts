@@ -19,7 +19,10 @@ const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?
 export function isLoopbackHttpHost(host: string): boolean {
   const normalizedHost = host.trim().toLowerCase();
   return (
-    normalizedHost === '127.0.0.1' || normalizedHost === 'localhost' || normalizedHost === '[::1]'
+    normalizedHost === '127.0.0.1' ||
+    normalizedHost === 'localhost' ||
+    normalizedHost === '[::1]' ||
+    normalizedHost === '::1'
   );
 }
 

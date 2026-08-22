@@ -314,7 +314,11 @@ export async function readFileBufferWithLimit(
   return Buffer.concat(chunks, totalSize);
 }
 
-export const countLines = (content: string): number => content.split('\n').length;
+export const countLines = (content: string): number => {
+  if (content.length === 0) return 0;
+  const trimmed = content.endsWith('\n') ? content.slice(0, -1) : content;
+  return trimmed.split('\n').length;
+};
 
 async function peekHasMore(iterator: AsyncIterator<string>): Promise<boolean> {
   try {

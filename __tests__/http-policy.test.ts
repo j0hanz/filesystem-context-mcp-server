@@ -569,6 +569,7 @@ describe('HTTP Policy & Security', () => {
       assert.strictEqual(isLoopbackHttpHost('127.0.0.1'), true);
       assert.strictEqual(isLoopbackHttpHost('localhost'), true);
       assert.strictEqual(isLoopbackHttpHost('[::1]'), true);
+      assert.strictEqual(isLoopbackHttpHost('::1'), true);
       assert.strictEqual(isLoopbackHttpHost('  LOCALHOST  '), true);
       assert.strictEqual(isLoopbackHttpHost('0.0.0.0'), false);
       assert.strictEqual(isLoopbackHttpHost('::'), false);
