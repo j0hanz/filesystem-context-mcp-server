@@ -52,7 +52,7 @@ export function startServer(options: ServerOptions): StdioServerHandle {
   };
 
   const handle = serveStdio(factory, {
-    legacy: 'reject',
+    legacy: 'serve',
     onerror: (error: unknown) => {
       Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
     },

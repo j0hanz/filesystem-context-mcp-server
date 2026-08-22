@@ -22,9 +22,8 @@ describe('input_required multi-round-trip infrastructure', () => {
 
   it('2. requestStateCodec.verify rejects a tampered token', async () => {
     const wire = await requestStateCodec.mint({ op: 'delete', paths: ['/a'] });
-    assert.ok(wire.length > 0);
-    const i = wire.length - 1;
-    const tampered = wire.slice(0, i) + (wire[i] === 'X' ? 'Y' : 'X') + wire.slice(i + 1);
+    assert.ok(wire.length > 10);
+    const tampered = wire.slice(0, 10) + (wire[10] === 'X' ? 'Y' : 'X') + wire.slice(11);
     await assert.rejects(async () => {
       await requestStateCodec.verify(tampered);
     });
