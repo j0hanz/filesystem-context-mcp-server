@@ -1,4 +1,4 @@
-import { ProtocolError, ResourceNotFoundError } from '@modelcontextprotocol/server';
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -222,10 +222,7 @@ describe('MCP Resources', () => {
             dummyContext,
           );
         },
-        (err: unknown) => {
-          assert(err instanceof ResourceNotFoundError);
-          return true;
-        },
+        { code: ProtocolErrorCode.InvalidParams },
       );
 
       // Contract read with empty or missing id throws ProtocolError
@@ -233,10 +230,7 @@ describe('MCP Resources', () => {
         async () => {
           await resultContract.read(new URL('filesystem-mcp://result/'), { id: '' }, dummyContext);
         },
-        (err: unknown) => {
-          assert(err instanceof ProtocolError);
-          return true;
-        },
+        { code: ProtocolErrorCode.InvalidParams },
       );
     });
   });
