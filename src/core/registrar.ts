@@ -149,6 +149,12 @@ export class McpRootsSynchronizer {
     return this.state === 'idle' || this.state === 'updating';
   }
 
+  markInitialized(): void {
+    if (this.state !== 'shutting_down') {
+      this.state = 'idle';
+    }
+  }
+
   registerHandlers(server: McpServer, onInitTimeout?: () => void): void {
     if (this.state === 'shutting_down') return;
     this.state = 'initializing';

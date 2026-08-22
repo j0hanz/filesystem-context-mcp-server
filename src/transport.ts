@@ -203,6 +203,8 @@ export function startServer(options: ServerOptions): StdioServerHandle {
           : undefined,
       );
       c.synchronizer.logMissingDirectoriesIfNeeded();
+    } else {
+      c.synchronizer.markInitialized();
     }
     activeCtx = c;
     return c.mcp;
@@ -928,6 +930,7 @@ function makeHttpModernFactory(
         bus.publish({ kind: 'resource_updated', uri });
       },
     });
+    c.synchronizer.markInitialized();
     // createMcpHandler only calls `mcp.close()`, never our
     // `disposeRuntimeState()` — chain it onto the low-level `onclose` so the
     // per-request registrar/watcher state is torn down. The SDK reads

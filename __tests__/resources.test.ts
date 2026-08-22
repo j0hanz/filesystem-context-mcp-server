@@ -19,7 +19,7 @@ import {
   renderSections,
 } from '../src/resources.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
-import { cleanupTestRoot, createTestRoot, writeTestFile } from './helpers.js';
+import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
 
 const dummyContext = { sessionId: 'test-session' } as unknown as ServerContext;
 
@@ -379,6 +379,60 @@ describe('MCP Resources', () => {
       assert.strictEqual(registry.isStale(uriA), true);
       assert.strictEqual(registry.isStale(uriB), true);
       assert.strictEqual(registry.isStale('filesystem-mcp://file/nonexistent'), true);
+    });
+  });
+
+  describe('MCP Client Resource Operations', () => {
+    let clientTmpDir: string;
+    let harness: Awaited<ReturnType<typeof createTestClientPair>>;
+
+    before(async () => {
+      clientTmpDir = await createTestRoot();
+      harness = await createTestClientPair([clientTmpDir]);
+    });
+
+    after(async () => {
+      if (harness) {
+        await harness.close();
+      }
+      if (clientTmpDir) {
+        await cleanupTestRoot(clientTmpDir);
+      }
+    });
+
+    it('client.listResources() returns static instructions resource', async () => {
+      const result = await harness.client.listResources();
+      const instructions = result.resources.find((r) => r.uri === INSTRUCTIONS_URI);
+      assert.ok(instructions, 'instructions resource should be present');
+      assert.strictEqual(instructions.mimeType, 'text/markdown');
+    });
+
+    it('client.listResourceTemplates() returns result and file templates', async () => {
+      const result = await harness.client.listResourceTemplates();
+      assert.ok(result.resourceTemplates.length >= 2);
+      assert.ok(
+        result.resourceTemplates.some((t) => t.uriTemplate === 'filesystem-mcp://result/{id}'),
+      );
+      assert.ok(
+        result.resourceTemplates.some((t) => t.uriTemplate === 'filesystem-mcp://file/{+path}'),
+      );
+    });
+
+    it('client.readResource() reads internal instructions', async () => {
+      const result = await harness.client.readResource({ uri: INSTRUCTIONS_URI });
+      assert.strictEqual(result.contents.length, 1);
+      assert.strictEqual(result.contents[0].uri, INSTRUCTIONS_URI);
+      assert.strictEqual(result.contents[0].mimeType, 'text/markdown');
+      assert.ok((result.contents[0] as { text: string }).text.includes('Guidelines:'));
+    });
+
+    it('client.readResource() reads workspace file via uri', async () => {
+      const filePath = await writeTestFile(clientTmpDir, 'client_read.txt', 'client resource read');
+      const uri = buildFileResourceUri(filePath);
+      const result = await harness.client.readResource({ uri });
+      assert.strictEqual(result.contents.length, 1);
+      assert.strictEqual(result.contents[0].uri, uri);
+      assert.strictEqual((result.contents[0] as { text: string }).text, 'client resource read');
     });
   });
 });
