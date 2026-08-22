@@ -119,6 +119,7 @@ export default tseslint.config(
       'preserve-caught-error': 'error',
 
       // TypeScript-specific discipline.
+      '@typescript-eslint/no-deprecated': 'error',
       '@typescript-eslint/consistent-type-imports': [
         'error',
         {
