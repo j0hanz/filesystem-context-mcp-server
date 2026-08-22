@@ -9,7 +9,6 @@ import { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps } from './core/registrar.js';
-import { McpRootsSynchronizer } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import { createInMemoryResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
@@ -32,7 +31,6 @@ const {
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
   public readonly pathGuard: PathGuard;
-  public readonly synchronizer: McpRootsSynchronizer;
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
   private readonly registrars: readonly Registrar[];
@@ -41,13 +39,11 @@ export class FilesystemServerContext {
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
-    synchronizer: McpRootsSynchronizer,
     resources: ResourceStore,
     registrars: readonly Registrar[],
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
-    this.synchronizer = synchronizer;
     this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
     this.registrars = registrars;
@@ -56,7 +52,6 @@ export class FilesystemServerContext {
   disposeRuntimeState(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
-    this.synchronizer.destroy();
     for (const r of this.registrars) r.dispose(this.mcp);
   }
 
@@ -106,19 +101,13 @@ export async function createServer(
 
   // No `logging` capability: SEP-2577 deprecates the subsystem, and this server
   // routes every diagnostic to stderr rather than notifications/message.
-  // Advertising it would promise a setLevel that changes nothing.
   const capabilities = {
     resources: { subscribe: true },
     tools: {},
     prompts: {},
     completions: {},
   } satisfies ServerCapabilities;
-  // 'private' under auth: a shared CDN must not serve the (identical) tool
-  // and prompt rosters to other clients when a bearer is required. 'public'
-  // stays correct for loopback dev. stdio ignores HTTP cache hints either way.
-  // Agrees with bearerAuthMiddleware by construction: assertHttpBindingPolicy
-  // throws at startup for any empty/<16-char API_KEY, so a truthy key here is
-  // exactly the case the bearer guard enforces — the two reads cannot diverge.
+
   const cacheScope = process.env['API_KEY'] ? 'private' : 'public';
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
@@ -132,8 +121,6 @@ export async function createServer(
     // runs, so a tampered or expired state is rejected as `-32602` rather than
     // trusted. The decoded `PendingState` reaches handlers via
     // `ctx.mcpReq.requestState<T>()`.
-    // verify is a closure returned by createRequestStateCodec, not a
-    // `this`-bound method; the SDK's own doc comment says to pass it directly.
     // eslint-disable-next-line @typescript-eslint/unbound-method
     requestState: { verify: requestStateCodec.verify },
   };
@@ -155,14 +142,10 @@ export async function createServer(
   const pathGuard = new PathGuard(options, true);
   await pathGuard.recomputeAllowedDirectories();
 
-  const synchronizer = new McpRootsSynchronizer(pathGuard, true);
-
-  const isInitialized = (): boolean => synchronizer.isInitialized();
   const deps: ServerDeps = {
     server,
     pathGuard,
     resourceStore,
-    isInitialized,
     ...(localIcon ? { iconInfo: localIcon } : {}),
     ...(options.readOnly ? { readOnly: true } : {}),
     ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
@@ -174,5 +157,5 @@ export async function createServer(
   const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];
   for (const r of registrars) r.register(deps);
 
-  return new FilesystemServerContext(server, pathGuard, synchronizer, resourceStore, registrars);
+  return new FilesystemServerContext(server, pathGuard, resourceStore, registrars);
 }

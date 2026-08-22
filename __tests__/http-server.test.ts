@@ -76,7 +76,7 @@ describe('Real HTTP Server integration', () => {
     }
   });
 
-  it('4. Era-branch routes a 2025-era initialize to the legacy sessionful stack', async () => {
+  it('4. Legacy 2025 initialize request is rejected under pure modern v2', async () => {
     const r = await fetch(base, {
       method: 'POST',
       headers: {
@@ -95,7 +95,9 @@ describe('Real HTTP Server integration', () => {
         },
       }),
     });
-    assert.strictEqual(r.status, 200);
-    assert.ok(r.headers.get('mcp-session-id'), 'legacy leg must return a session id');
+    assert.strictEqual(r.status, 400);
+    const body = (await r.json()) as { error?: { code?: number } };
+    assert.ok(body.error, 'response must contain a JSON-RPC error object');
+    assert.strictEqual(typeof body.error.code, 'number', 'error must include a numeric code');
   });
 });

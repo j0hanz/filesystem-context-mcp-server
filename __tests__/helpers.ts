@@ -51,14 +51,9 @@ export async function createTestClientPair(
   options: { readOnly?: boolean } = {},
 ): Promise<TestClientContext> {
   const serverCtx = await createTestServer(allowedDirs, options);
-  // Mirrors the legacy stdio era: push-style roots via registerHandlers.
-  serverCtx.synchronizer.registerHandlers(serverCtx.mcp);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
-  const client = new Client(
-    { name: 'test-harness', version: '1.0.0' },
-    { capabilities: { roots: { listChanged: true } } },
-  );
+  const client = new Client({ name: 'test-harness', version: '1.0.0' }, { capabilities: {} });
 
   await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
 
@@ -98,11 +93,9 @@ export async function createTestHttpHarness(
           notifyResourceUpdated: (uri) => bus.publish({ kind: 'resource_updated', uri }),
         },
       );
-      // Mirrors the modern per-request era: roots from config, no push handlers.
-      serverCtx.synchronizer.markInitialized();
       return serverCtx.mcp;
     },
-    { bus },
+    { bus, legacy: 'reject' },
   );
 
   const transport = new StreamableHTTPClientTransport(new URL('http://test.local/mcp'), {

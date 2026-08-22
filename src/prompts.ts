@@ -40,7 +40,6 @@ interface PromptRegistrationOptions {
   sections: Record<string, string>;
   instructions: string;
   instructionsUri: string;
-  isInitialized: () => boolean;
   iconInfo?: IconInfo;
 }
 
@@ -119,18 +118,7 @@ function linkToPath(absPath: string): PromptMessage {
   return { role: 'user', content };
 }
 
-async function wrapHandler<T>(
-  contract: PromptContract,
-  options: PromptRegistrationOptions,
-  requiresInit: boolean,
-  fn: () => Promise<T> | T,
-): Promise<T> {
-  if (requiresInit && !options.isInitialized()) {
-    throw new ProtocolError(
-      ProtocolErrorCode.InvalidRequest,
-      `Prompt ${contract.name} called before roots are initialized`,
-    );
-  }
+async function wrapHandler<T>(contract: PromptContract, fn: () => Promise<T> | T): Promise<T> {
   const displayName = getDisplayName(contract);
 
   try {
@@ -177,7 +165,7 @@ const GET_HELP: PromptEntry = {
         options.iconInfo,
       ),
       ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
-        wrapHandler(GET_HELP.contract, options, false, () => {
+        wrapHandler(GET_HELP.contract, () => {
           const lowerTopic = topic?.toLowerCase();
           const section =
             lowerTopic && Object.hasOwn(options.sections, lowerTopic)
@@ -225,7 +213,7 @@ const ANALYZE_PATH: PromptEntry = {
         options.iconInfo,
       ),
       async ({ path: rawPath }: { path: string }): Promise<GetPromptResult> =>
-        wrapHandler(ANALYZE_PATH.contract, options, true, async () => {
+        wrapHandler(ANALYZE_PATH.contract, async () => {
           const resolved = await options.pathGuard.validateExistingPath(rawPath);
           const stats = await lstat(resolved);
           const kind = stats.isDirectory() ? 'directory' : 'file';
@@ -296,7 +284,7 @@ const FIND_IN_TREE: PromptEntry = {
         root?: string | undefined;
         mode: 'name' | 'content' | 'both';
       }): Promise<GetPromptResult> =>
-        wrapHandler(FIND_IN_TREE.contract, options, true, async () => {
+        wrapHandler(FIND_IN_TREE.contract, async () => {
           const allowed = options.pathGuard.getAllowedDirectories();
           const candidate = root ?? allowed[0];
           if (candidate === undefined) {
@@ -357,7 +345,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
         options.iconInfo,
       ),
       async ({ path: rawPath, depth }: { path: string; depth: number }): Promise<GetPromptResult> =>
-        wrapHandler(SUMMARIZE_DIRECTORY.contract, options, true, async () => {
+        wrapHandler(SUMMARIZE_DIRECTORY.contract, async () => {
           const resolved = await options.pathGuard.validateExistingDirectory(rawPath);
           const text = [
             `Summarize this project at ${resolved}:`,
@@ -385,7 +373,6 @@ export const promptsRegistrar: Registrar = {
       sections,
       instructions: renderSections(sections),
       instructionsUri: INSTRUCTIONS_URI,
-      isInitialized: deps.isInitialized,
       ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
     };
     for (const { register } of PROMPT_ENTRIES) {

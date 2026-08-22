@@ -58,7 +58,6 @@ export const toolsRegistrar: Registrar = {
   register(deps): void {
     const toolDeps = {
       server: deps.server,
-      isInitialized: deps.isInitialized,
       pathGuard: deps.pathGuard,
       resourceStore: deps.resourceStore,
     };

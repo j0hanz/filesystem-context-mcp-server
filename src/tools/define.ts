@@ -15,7 +15,7 @@ import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
-import { ErrorCode, formatUnknownErrorMessage, FsError, Problem } from '../core/errors.js';
+import { ErrorCode, formatUnknownErrorMessage, Problem } from '../core/errors.js';
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
@@ -54,7 +54,6 @@ export interface ToolCtx {
 }
 
 interface ToolDeps {
-  readonly isInitialized: () => boolean;
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
@@ -304,12 +303,9 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     return undefined;
   }
 
-  async execute(deps: ToolDeps): Promise<CallToolResult | InputRequiredResult> {
+  async execute(): Promise<CallToolResult | InputRequiredResult> {
     const runTool = async (): Promise<CallToolResult | InputRequiredResult> => {
       try {
-        if (!deps.isInitialized()) {
-          throw new FsError(ErrorCode.UNKNOWN, 'Server not initialized. Roots unavailable.');
-        }
         // Access-grant pre-check before any filesystem touch (R7/R8/R9). A
         // grant input_required short-circuits here (progress paused, not
         // finished); an R9 mismatch throws, which this catch surfaces as an
@@ -343,7 +339,7 @@ function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
   deps: ToolDeps,
 ): (args: z.infer<I>, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult> {
   return async (args, ctx) =>
-    new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args).execute(deps);
+    new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args).execute();
 }
 
 // WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a
