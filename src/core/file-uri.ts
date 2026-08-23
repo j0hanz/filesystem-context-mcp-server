@@ -1,3 +1,7 @@
+import type { ContentBlock } from '@modelcontextprotocol/server';
+
+import { basename } from 'node:path';
+
 // Single owner of the `filesystem-mcp://file/` URI scheme: the template string,
 // the path→URI encoder, and the URI→path decoder.
 
@@ -10,6 +14,22 @@ export function buildFileResourceUri(validPath: string): string {
   // query (silently naming a different path) and a '%' makes the decode throw.
   // Separators are restored so the {+path} template still reads as a path.
   return `filesystem-mcp://file/${encodeURIComponent(posix).replace(/%2F/gi, '/')}`;
+}
+
+export function buildFileResourceLink(
+  validPath: string,
+  mimeType: string,
+  size: number,
+  annotations: Record<string, unknown> = { audience: ['user', 'assistant'] },
+): ContentBlock {
+  return {
+    type: 'resource_link',
+    uri: buildFileResourceUri(validPath),
+    name: basename(validPath),
+    mimeType,
+    size,
+    annotations,
+  };
 }
 
 export function extractPath(uri: string): string | undefined {

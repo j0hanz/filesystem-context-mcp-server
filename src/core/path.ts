@@ -17,19 +17,13 @@ import {
   SKIPPABLE_FS_CODES,
 } from './errors.js';
 import { Logger } from './observability.js';
-import {
-  IS_WINDOWS,
-  isAlpha,
-  isSlash,
-  parseEnvDirList,
-  parseTrueEnvFlag,
-  toPosixPath,
-} from './primitives.js';
+import { findProjectRoot, isUnsafeCwdPath, resolveConfiguredDirs } from './path-discovery.js';
+import { IS_WINDOWS, isAlpha, isSlash, parseTrueEnvFlag, toPosixPath } from './primitives.js';
 import type { EntryType } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
-export { IS_WINDOWS, isSlash, toPosixPath };
+export { IS_WINDOWS, isSlash, toPosixPath, findProjectRoot };
 
 // Allowed-directory assembly and the PathGuard that enforces it. The
 // sensitive-file denylist lives in sensitive.ts, and the character-level
@@ -112,10 +106,9 @@ async function filterRootsWithin(
   });
 }
 
+const CHAR_COLON = 58;
 const HOMEDIR = homedir();
 const PATH_SEPARATOR = sep;
-
-const CHAR_COLON = 58;
 
 /** `path.relative` with forward slashes, so displayed paths match across platforms. */
 export function toPosixRelative(from: string, to: string): string {
@@ -217,7 +210,7 @@ export interface AllowedDirectoriesState {
 // Resolver pipeline
 // ---------------------------------------------------------------------------
 
-function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
+export function normalizeAllowedDirectories(dirs: readonly string[]): string[] {
   const normalized: string[] = [];
   for (const dir of dirs) {
     const entry = normalizeAllowedDirectory(dir);
@@ -279,42 +272,6 @@ export async function resolveAllowedDirectoriesState(
   const primary = normalizeAllowedDirectories(dirs);
   const expanded = await expandAllowedDirectories(primary, signal);
   return { primary, expanded };
-}
-
-// Resolve a configured env-var directory list (FS_ALLOWED_DIRS / ROOT_BOUNDARY)
-// into normalized, verified directories. Each entry is stat'd; a non-directory
-// warns and is dropped, a missing entry warns unless `allowMissing` is set (in
-// which case the normalized path is kept). When `resolveReal` is set, a
-// directory entry is pushed as its realpath (normalized) instead of the raw
-// path — ROOT_BOUNDARY uses this so a symlinked root resolves to its target.
-// Both warning messages are templated on `envVar` so operator output is stable.
-async function resolveConfiguredDirs(
-  envVar: string,
-  opts: { allowMissing?: boolean; resolveReal?: boolean } = {},
-): Promise<string[]> {
-  const raw = parseEnvDirList(envVar);
-  const result: string[] = [];
-  for (const rawPath of raw) {
-    const normalized = normalizePath(rawPath);
-    try {
-      const s = await stat(normalized);
-      if (s.isDirectory()) {
-        result.push(opts.resolveReal ? normalizePath(await realpath(normalized)) : normalized);
-      } else {
-        Logger.emit('warning', `Path configured in ${envVar} is not a directory: ${rawPath}`);
-      }
-    } catch (error) {
-      if (opts.allowMissing) {
-        result.push(normalized);
-      } else {
-        Logger.emit(
-          'warning',
-          `Path configured in ${envVar} is invalid or does not exist: ${rawPath} (${formatUnknownErrorMessage(error)})`,
-        );
-      }
-    }
-  }
-  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,83 +1033,4 @@ export class PathGuard {
     this.rootBoundaries = boundaries;
     this.initialize(nextState);
   }
-}
-
-const UNSAFE_CWD_PATHS = new Set(
-  [
-    '/usr',
-    '/etc',
-    '/bin',
-    '/sbin',
-    '/System',
-    'C:\\Windows',
-    'C:\\Program Files',
-    'C:\\Program Files (x86)',
-  ].map((p) => normalizePath(p).toLowerCase()),
-);
-
-function isUnsafeCwdPath(normalizedCwd: string): boolean {
-  const norm = normalizedCwd.toLowerCase();
-
-  // 1. Filesystem root check
-  const root = parse(normalizedCwd).root;
-  if (isSamePath(normalizedCwd, root)) {
-    return true;
-  }
-
-  // 2. Home directory check
-  if (isSamePath(normalizedCwd, homedir())) {
-    return true;
-  }
-
-  // 3. Hard-coded unsafe paths check
-  if (UNSAFE_CWD_PATHS.has(norm)) {
-    return true;
-  }
-
-  return false;
-}
-
-const MAX_PROJECT_ROOT_WALK_DEPTH = 32;
-
-export async function findProjectRoot(startDir: string, ceiling: string[]): Promise<string> {
-  const normCeiling = ceiling.map(normalizePath);
-  let current = normalizePath(startDir);
-  let depth = 0;
-
-  for (;;) {
-    if (depth++ >= MAX_PROJECT_ROOT_WALK_DEPTH) {
-      break;
-    }
-    // Check if the current directory contains any markers
-    const markers = ['.git', 'package.json', 'pyproject.toml'];
-    for (const marker of markers) {
-      const markerPath = join(current, marker);
-      try {
-        const s = await stat(markerPath);
-        if (s.isDirectory() || s.isFile()) {
-          return current;
-        }
-      } catch (_error) {
-        // Skip and try next marker
-      }
-    }
-
-    // Move to parent directory
-    const parent = normalizePath(dirname(current));
-
-    // Check if we hit the filesystem root
-    if (parent === current) {
-      break;
-    }
-
-    // Check if the parent is still within the ceiling
-    if (!isPathWithinDirectories(parent, normCeiling)) {
-      break;
-    }
-
-    current = parent;
-  }
-
-  return normalizePath(startDir);
 }

@@ -80,14 +80,10 @@ export async function runOverPaths<TOverride, TPerPath>(
         const value = await perPath(item, ctx);
         results[index] = { path: item.path, value };
       } catch (error: unknown) {
-        const problem = Problem.fromUnknown(error, defaultErrorCode, item.path);
-        const perPathError: PerPathError = {
-          code: problem.code,
-          message: problem.message,
-          ...(problem.path !== undefined ? { path: problem.path } : {}),
-          ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
+        results[index] = {
+          path: item.path,
+          error: Problem.toPerFileError(error, defaultErrorCode, item.path),
         };
-        results[index] = { path: item.path, error: perPathError };
       } finally {
         tick();
       }

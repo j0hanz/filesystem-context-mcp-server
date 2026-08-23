@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/instructions.js';
 import { PROMPT_ENTRIES } from '../src/prompts.js';
-import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/resources.js';
 import {
   cleanupTestRoot,
   createTestClientPair,

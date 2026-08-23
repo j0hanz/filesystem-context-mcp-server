@@ -14,6 +14,7 @@ import {
   Problem,
   rethrowIfAborted,
 } from '../core/errors.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import { isPathInsideDirectory, isSamePath } from '../core/path.js';
 import {
@@ -25,7 +26,6 @@ import {
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 
 const CopyItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to copy'),
@@ -87,16 +87,10 @@ function copyFailure(
   copy: { source: string; destination: string },
   error: unknown,
 ): CopyFailureItem {
-  const problem = Problem.fromUnknown(error, ErrorCode.UNKNOWN, copy.source);
   return {
     source: copy.source,
     destination: copy.destination,
-    error: {
-      code: problem.code,
-      message: problem.message,
-      ...(problem.path !== undefined ? { path: problem.path } : {}),
-      ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
-    },
+    error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, copy.source),
   };
 }
 

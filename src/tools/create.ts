@@ -5,7 +5,7 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
-import { buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import { formatBytes } from '../core/fmt.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { countLines } from '../core/read.js';
@@ -19,7 +19,6 @@ import {
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
-import { buildFileResourceLink } from './resource-links.js';
 
 const CreateFileItemSchema = z.strictObject({
   path: RequiredPath.describe('Absolute path where the file will be created'),

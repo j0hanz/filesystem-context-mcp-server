@@ -12,12 +12,8 @@ import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
-import {
-  buildSectionsRecord,
-  getResourceContracts,
-  INSTRUCTIONS_URI,
-  renderSections,
-} from '../src/resources.js';
+import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/instructions.js';
+import { getResourceContracts } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
 import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';

@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import { buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
@@ -39,7 +39,6 @@ import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
-import { buildFileResourceLink } from './resource-links.js';
 
 const readRangeFields = createReadRangeFields({
   head: 'Return first N lines',

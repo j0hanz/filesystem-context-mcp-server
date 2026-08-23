@@ -20,11 +20,11 @@ import {
   singleOrBatchAccessPaths,
   singleOrBatchPathsInput,
 } from '../core/schema.js';
+import { putJsonResource } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
-import { putJsonResource } from './resource-links.js';
 
 export function createStatInputSchema(pathSchema?: z.ZodType) {
   return singleOrBatchPathsInput({

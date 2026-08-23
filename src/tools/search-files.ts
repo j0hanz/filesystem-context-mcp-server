@@ -18,13 +18,13 @@ import {
   SafeGlobPattern,
 } from '../core/schema.js';
 import { searchFiles } from '../core/search.js';
+import { putJsonResource } from '../core/store.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { putJsonResource } from './resource-links.js';
 
 // ---------------------------------------------------------------------------
 

@@ -15,7 +15,7 @@ import {
   Problem,
   rethrowIfAborted,
 } from '../core/errors.js';
-import { buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import { truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
@@ -46,7 +46,6 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { buildFileResourceLink } from './resource-links.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
   path: OptionalPath,

@@ -7,7 +7,7 @@ import { diffLines } from 'diff';
 
 import { buildPatchDiff } from '../core/diff.js';
 import { ErrorCode, FsError } from '../core/errors.js';
-import { buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { Logger } from '../core/observability.js';
@@ -31,7 +31,6 @@ import type { ResourceStore } from '../core/store.js';
 import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { buildFileResourceLink } from './resource-links.js';
 
 const EditSpecSchema = z.strictObject({
   oldText: z

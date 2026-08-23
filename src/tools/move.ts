@@ -15,13 +15,13 @@ import {
   rethrowIfAborted,
 } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),
@@ -89,7 +89,7 @@ function moveFailure(
   return {
     source: move.source,
     destination: move.destination,
-    error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, move.source),
+    error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, move.source),
   };
 }
 

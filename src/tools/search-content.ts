@@ -24,6 +24,7 @@ import {
 import type { Regex, SearchContentOptions } from '../core/search.js';
 import { compileRegex, freeRegex, searchContent } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
+import { putJsonResource } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -31,7 +32,6 @@ import {
   parseEnvInt,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { putJsonResource } from './resource-links.js';
 
 /**
  * Configuration constants for the Search Content tool.

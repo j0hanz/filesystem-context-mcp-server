@@ -25,6 +25,7 @@ import {
   OptionalPath,
   PositiveInt,
 } from '../core/schema.js';
+import { putJsonResource } from '../core/store.js';
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   DEFAULT_TREE_ENTRIES,
@@ -32,7 +33,6 @@ import {
   MAX_TREE_DEPTH,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { putJsonResource } from './resource-links.js';
 
 interface CollectedEntry {
   name: string;

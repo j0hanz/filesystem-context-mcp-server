@@ -9,12 +9,12 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isFsError, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
 import { getFileType } from '../core/fs.js';
+import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 
 const DeleteInputSchema = z.strictObject({
   paths: z
@@ -65,6 +65,8 @@ interface DeleteFailure {
   };
 }
 
+const ERR_NOT_EMPTY = new Error('Directory not empty. Set recursive: true.');
+
 function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   if (
     isNodeError(error) &&
@@ -72,25 +74,10 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   ) {
     return {
       path,
-      error: Problem.fromUnknown(
-        new Error('Directory not empty. Set recursive: true.'),
-        ErrorCode.INVALID_INPUT,
-        path,
-      ),
+      error: Problem.toPerFileError(ERR_NOT_EMPTY, ErrorCode.INVALID_INPUT, path),
     };
   }
-  return { path, error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, path) };
-}
-
-// Picks the PerFileError fields explicitly: the internal error is a Problem,
-// which also carries issues/details that the strictObject schema rejects.
-function toPerFileError(error: DeleteFailure['error']): DeleteFailureItem['error'] {
-  return {
-    code: error.code,
-    message: error.message,
-    ...(error.path !== undefined ? { path: error.path } : {}),
-    ...(error.suggestion !== undefined ? { suggestion: error.suggestion } : {}),
-  };
+  return { path, error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, path) };
 }
 
 type LstatResult = Awaited<ReturnType<GuardedFileSystem['lstat']>>;
@@ -327,11 +314,11 @@ async function handleDelete(
   const successPaths: string[] = earlyNoop.map((n) => n.path);
   const failures: DeleteFailureItem[] = [];
   for (const f of earlyFailures) {
-    failures.push({ path: f.path, error: toPerFileError(f.error) });
+    failures.push({ path: f.path, error: f.error });
   }
   for (const { value: r } of executed.results) {
     if ('failure' in r) {
-      failures.push({ path: r.failure.path, error: toPerFileError(r.failure.error) });
+      failures.push({ path: r.failure.path, error: r.failure.error });
     } else if (r.item.path) {
       successPaths.push(r.item.path);
     }

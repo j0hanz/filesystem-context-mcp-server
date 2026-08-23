@@ -14,9 +14,9 @@ import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/gl
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import { completablePath, NonNegInt, RequiredPath } from '../core/schema.js';
+import { putJsonResource } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS, PARALLEL_CONCURRENCY } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { putJsonResource } from './resource-links.js';
 
 const SUPPORTED_ALGORITHMS = ['sha256', 'md5', 'sha1', 'sha512'] as const;
 

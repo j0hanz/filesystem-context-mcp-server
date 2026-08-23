@@ -10,7 +10,7 @@ import {
   pendingRoundTrip,
   readAcceptedConfirm,
   requestStateCodec,
-} from '../src/tools/input-required.js';
+} from '../src/core/input-required.js';
 
 describe('input_required multi-round-trip infrastructure', () => {
   it('1. requestStateCodec mint/verify round-trip', async () => {

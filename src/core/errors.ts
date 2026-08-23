@@ -19,6 +19,13 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
+export interface PerFileError {
+  readonly code: ErrorCode;
+  readonly message: string;
+  readonly path?: string;
+  readonly suggestion?: string;
+}
+
 export interface Problem {
   readonly code: ErrorCode;
   readonly message: string;
@@ -92,6 +99,19 @@ export const Problem = {
   toText(error: unknown, defaultCode: ErrorCode): { code: ErrorCode; text: string } {
     const resolved = Problem.fromUnknown(error, defaultCode);
     return { code: resolved.code, text: formatDetailedError(resolved) };
+  },
+  toPerFileError(
+    error: unknown,
+    defaultCode: ErrorCode = ErrorCode.UNKNOWN,
+    path?: string,
+  ): PerFileError {
+    const problem = Problem.fromUnknown(error, defaultCode, path);
+    return {
+      code: problem.code,
+      message: problem.message,
+      ...(problem.path !== undefined ? { path: problem.path } : {}),
+      ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
+    };
   },
 } as const;
 

@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
+import { requestStateCodec } from './core/input-required.js';
 import { Logger } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
@@ -12,11 +13,11 @@ import { withDefaultIcons } from './core/primitives.js';
 import type { Registrar, ServerDeps, ServerNotifier } from './core/registrar.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
+import { INSTRUCTIONS_URI } from './instructions.js';
 import { pkgInfo } from './pkg-info.js';
 import { promptsRegistrar } from './prompts.js';
-import { INSTRUCTIONS_URI, resourcesRegistrar } from './resources.js';
+import { resourcesRegistrar } from './resources.js';
 import { toolsRegistrar } from './tools/index.js';
-import { requestStateCodec } from './tools/input-required.js';
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
