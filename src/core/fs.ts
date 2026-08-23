@@ -35,7 +35,7 @@ import {
   readNormalized,
   STREAM_CHUNK_SIZE,
 } from './read.js';
-import { MAX_TEXT_FILE_SIZE } from './util.js';
+import { getMaxTextFileSize } from './util.js';
 
 export type { FileType };
 export type { Stats, ReadStream };
@@ -257,8 +257,9 @@ export class GuardedFileSystem {
     assertFileStats(filePath, stats);
     // Enforce size limit before reading to avoid loading large files into memory.
     // Binary detection is best-effort, but this is a hard limit.
-    if (stats.size > MAX_TEXT_FILE_SIZE) {
-      throw createTooLargeError(stats.size, MAX_TEXT_FILE_SIZE, filePath);
+    const maxTextFileSize = getMaxTextFileSize();
+    if (stats.size > maxTextFileSize) {
+      throw createTooLargeError(stats.size, maxTextFileSize, filePath);
     }
     const content = await withAbort(fsReadFile(validPath), options?.signal);
     const mimeInfo = detectMimeFromContent(validPath, content);

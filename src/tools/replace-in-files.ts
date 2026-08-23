@@ -41,8 +41,8 @@ import { compileRegex, freeRegex } from '../core/search.js';
 import {
   DEFAULT_SEARCH_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  getMaxTextFileSize,
   MAX_SEARCH_RESULTS,
-  MAX_TEXT_FILE_SIZE,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
@@ -508,7 +508,7 @@ async function handleSearchAndReplace(
   structured: SearchAndReplaceOutput;
   link?: ContentBlock;
 }> {
-  const maxFileSize = MAX_TEXT_FILE_SIZE;
+  const maxFileSize = getMaxTextFileSize();
   const { root, singleFile } = await resolveSearchRoot(args.path, ctx.fs);
   const effectivePattern = args.pattern ?? '**/*';
 

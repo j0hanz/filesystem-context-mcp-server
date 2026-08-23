@@ -19,7 +19,6 @@ import { formatUnknownErrorMessage } from './core/errors.js';
 import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
-import type { ServerNotifier } from './core/registrar.js';
 import { MIB, parseEnvInt } from './core/util.js';
 import { createWatcherRegistry, type WatcherRegistry } from './core/watcher-registry.js';
 import {
@@ -34,7 +33,7 @@ import {
   resolveTrustProxySetting,
 } from './http-policy.js';
 import { attachFileWatcherForUri } from './resources.js';
-import type { FilesystemServerContext } from './server.js';
+import type { FilesystemServerContext, ServerNotifier } from './server.js';
 import { createServer } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════

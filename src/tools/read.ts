@@ -30,9 +30,9 @@ import {
 } from '../core/schema.js';
 import {
   DEFAULT_CONTINUATION_CHUNK_SIZE,
-  DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
   DEFAULT_SEARCH_TIMEOUT_MS,
-  MAX_TEXT_FILE_SIZE,
+  getDefaultReadManyMaxTotalSize,
+  getMaxTextFileSize,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import type { PerPathResult } from './batch.js';
@@ -157,7 +157,7 @@ interface ReadSpecCommon {
 function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
   const common: ReadSpecCommon = {
     encoding: 'utf-8',
-    maxSize: MAX_TEXT_FILE_SIZE,
+    maxSize: getMaxTextFileSize(),
     skipBinary: true,
     ...(signal ? { signal } : {}),
   };
@@ -433,16 +433,13 @@ export const READ_FILE = defineTool({
 
     if (args.paths !== undefined) {
       pathList = args.paths;
-      const budget = await collectFileBudget(
-        pathList,
-        DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
-        MAX_TEXT_FILE_SIZE,
-        ctx,
-      );
+      const defaultMaxTotalSize = getDefaultReadManyMaxTotalSize();
+      const maxTextFileSize = getMaxTextFileSize();
+      const budget = await collectFileBudget(pathList, defaultMaxTotalSize, maxTextFileSize, ctx);
       known = budget.known;
       const filtered = preFilterByBudget(pathList, {
         skippedBudget: budget.skippedBudget,
-        maxTotalSize: DEFAULT_READ_MANY_MAX_TOTAL_SIZE,
+        maxTotalSize: defaultMaxTotalSize,
       });
       skippedResults = filtered.skippedResults;
       survivors = filtered.survivors;

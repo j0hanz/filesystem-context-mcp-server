@@ -7,6 +7,7 @@ import ignore from 'ignore';
 import { processInParallel } from './concurrency.js';
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
+import { isWindowsDriveRelativePath } from './path-utils.js';
 import { toPosixPath } from './primitives.js';
 import type { EntryType } from './primitives.js';
 
@@ -23,6 +24,30 @@ export function resolveEntryType(dirent: DirentLike): EntryType {
   if (dirent.isFile()) return 'file';
   if (dirent.isSymbolicLink()) return 'symlink';
   return 'other';
+}
+
+export function isSafeGlobSyntax(pattern: string): boolean {
+  if (!pattern || pattern.trim().length === 0) {
+    return false;
+  }
+  if (isAbsolute(pattern)) {
+    return false;
+  }
+  if (isWindowsDriveRelativePath(pattern)) {
+    return false;
+  }
+  if (pattern.includes('..')) {
+    return false;
+  }
+  // Reject glob-engine-specific traversal bypass forms that some engines
+  // expand as path separators or parent-directory references.
+  if (/\{[^}]*\.\.[^}]*\}/u.test(pattern)) {
+    return false;
+  }
+  if (pattern.includes('[..]')) {
+    return false;
+  }
+  return true;
 }
 
 async function loadGitignoreFiles(

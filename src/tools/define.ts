@@ -27,8 +27,8 @@ import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { IconInfo } from '../core/primitives.js';
 import { withDefaultIcons } from '../core/primitives.js';
-import type { ServerNotifier } from '../core/registrar.js';
 import type { ResourceStore } from '../core/store.js';
+import type { ServerNotifier } from '../server.js';
 import type { ProgressSink } from './progress.js';
 import { McpProgressSink, ProgressSession, StderrProgressSink } from './progress.js';
 

@@ -7,12 +7,19 @@ export const KIB = 1024;
 export const MIB = 1024 * KIB;
 export const GIB = 1024 * MIB;
 
+const loggedWarns = new Set<string>();
+
 function logInvalidEnvValue(
   envVar: string,
   value: string,
   expected: string,
   defaultValue: number | boolean,
 ): void {
+  const key = `${envVar}:${value}:${expected}`;
+  if (loggedWarns.has(key)) {
+    return;
+  }
+  loggedWarns.add(key);
   Logger.warn(
     `Invalid ${envVar} value: ${value} (must be ${expected}). Using default: ${String(defaultValue)}`,
   );
@@ -44,7 +51,9 @@ export function parseEnvInt(
   return parsed;
 }
 
-export const INIT_TIMEOUT_CLOSE = parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
+export function getInitTimeoutClose(): boolean {
+  return parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
+}
 
 const BYTES_PER_PARALLEL_TASK = 64 * MIB;
 
@@ -73,14 +82,13 @@ export const PARALLEL_CONCURRENCY = getOptimalParallelism();
 
 export const ROOTS_TIMEOUT_MS = 5000;
 
-export const MAX_TEXT_FILE_SIZE = parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
+export function getMaxTextFileSize(): number {
+  return parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
+}
 
-export const DEFAULT_READ_MANY_MAX_TOTAL_SIZE = parseEnvInt(
-  'MAX_READ_MANY_TOTAL_SIZE',
-  512 * KIB,
-  10 * KIB,
-  100 * MIB,
-);
+export function getDefaultReadManyMaxTotalSize(): number {
+  return parseEnvInt('MAX_READ_MANY_TOTAL_SIZE', 512 * KIB, 10 * KIB, 100 * MIB);
+}
 
 /** Default line chunk size for read continuation when no explicit range was given. */
 export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;

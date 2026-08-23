@@ -2,10 +2,10 @@ import { completable } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
+import { isSafeGlobSyntax } from './glob.js';
 import { MIME_KINDS } from './mime.js';
 import { PathCompleter } from './path-completer.js';
 import type { PathGuard } from './path.js';
-import { isSafeGlobSyntax } from './path.js';
 import { ENTRY_TYPES } from './primitives.js';
 import { MAX_SEARCH_DEPTH } from './util.js';
 

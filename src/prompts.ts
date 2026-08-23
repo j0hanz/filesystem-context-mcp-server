@@ -23,9 +23,14 @@ import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
-import type { Registrar } from './core/registrar.js';
 import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './core/schema.js';
-import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from './instructions.js';
+import {
+  buildSectionsRecord,
+  INSTRUCTIONS_URI,
+  linkToInstructions,
+  renderSections,
+} from './instructions.js';
+import type { ServerDeps } from './server.js';
 
 // --- Types ---
 
@@ -93,17 +98,6 @@ function userText(text: string): PromptMessage {
     type: 'text',
     text,
     annotations: { audience: ['assistant'], priority: 1 },
-  };
-  return { role: 'user', content };
-}
-
-function linkToInstructions(uri: string): PromptMessage {
-  const content: ResourceLink = {
-    type: 'resource_link',
-    uri,
-    name: 'filesystem-mcp-instructions',
-    mimeType: 'text/markdown',
-    annotations: { audience: ['assistant'], priority: 0.5 },
   };
   return { role: 'user', content };
 }
@@ -506,23 +500,18 @@ const PROMPT_ENTRIES: PromptEntry[] = [
   REFACTOR_WORKFLOW,
 ];
 
-export const promptsRegistrar: Registrar = {
-  register(deps): void {
-    const sections = buildSectionsRecord(deps.readOnly ?? false);
-    const options = {
-      pathGuard: deps.pathGuard,
-      sections,
-      instructions: renderSections(sections),
-      instructionsUri: INSTRUCTIONS_URI,
-      ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
-    };
-    for (const { register } of PROMPT_ENTRIES) {
-      register(deps.server, options);
-    }
-  },
-  dispose(): void {
-    /* no-op */
-  },
-};
+export function registerPrompts(deps: ServerDeps): void {
+  const sections = buildSectionsRecord(deps.readOnly ?? false);
+  const options = {
+    pathGuard: deps.pathGuard,
+    sections,
+    instructions: renderSections(sections),
+    instructionsUri: INSTRUCTIONS_URI,
+    ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+  };
+  for (const { register } of PROMPT_ENTRIES) {
+    register(deps.server, options);
+  }
+}
 
 export { PROMPT_ENTRIES };

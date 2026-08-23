@@ -28,7 +28,7 @@ import {
 import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { getMaxTextFileSize } from '../core/util.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
@@ -353,20 +353,21 @@ async function loadEditableFile(
   signal?: AbortSignal,
 ): Promise<{ validPath: string; content: string }> {
   const { stats, validPath } = await fs.stat(requestedPath, signal ? { signal } : undefined);
+  const maxTextFileSize = getMaxTextFileSize();
 
-  if (stats.size > MAX_TEXT_FILE_SIZE) {
+  if (stats.size > maxTextFileSize) {
     throw new FsError(
       ErrorCode.TOO_LARGE,
-      `File too large for edit (${stats.size} bytes > ${MAX_TEXT_FILE_SIZE} bytes)`,
+      `File too large for edit (${stats.size} bytes > ${maxTextFileSize} bytes)`,
       requestedPath,
-      { size: stats.size, maxFileSize: MAX_TEXT_FILE_SIZE },
+      { size: stats.size, maxFileSize: maxTextFileSize },
     );
   }
 
   const { content } = await readFileWithStats(requestedPath, validPath, stats, {
     kind: 'full',
     encoding: 'utf-8',
-    maxSize: MAX_TEXT_FILE_SIZE,
+    maxSize: maxTextFileSize,
     skipBinary: true,
     ...(signal ? { signal } : {}),
   });

@@ -16,7 +16,7 @@ import {
   PathFailureSchema,
   RequiredPath,
 } from '../core/schema.js';
-import { MAX_TEXT_FILE_SIZE } from '../core/util.js';
+import { getMaxTextFileSize } from '../core/util.js';
 import { runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
 
@@ -24,7 +24,9 @@ const CreateFileItemSchema = z.strictObject({
   path: RequiredPath.describe('Absolute path where the file will be created'),
   content: z
     .string()
-    .max(MAX_TEXT_FILE_SIZE)
+    .refine((val) => val.length <= getMaxTextFileSize(), {
+      message: 'Content exceeds maximum allowed text file size',
+    })
     .describe(
       'Text content to write. Overwrites any existing file at this path. Cannot contain shell commands or malicious injection sequences.',
     ),

@@ -7,23 +7,11 @@ import process from 'node:process';
 
 import * as z from 'zod/v4';
 
-// cli-env.ts has zero intra-package dependencies; statically importing it here
-// does NOT pull in util.ts or any config-bearing module.
-import { liftFlagsToEnv } from './cli-env.js';
+import { CliExitError, parseArgs, runPrintConfig } from './cli.js';
+import { logRuntimeFailure } from './core/observability.js';
+import { startHttpServer, startServer } from './transport.js';
 
 z.config(z.locales.en());
-
-// Must run before the dynamic imports below: core/observability.ts and
-// core/util.ts freeze several env-tuned constants (LOG_LEVEL, MAX_FILE_SIZE,
-// MAX_READ_MANY_TOTAL_SIZE, DEFAULT_SEARCH_TIMEOUT, …) into module-level
-// constants at import time.
-liftFlagsToEnv();
-
-// Dynamically import all modules that transitively load util.ts so that the
-// lifted flags above are in effect when their module-level constants are set.
-const { CliExitError, parseArgs, runPrintConfig } = await import('./cli.js');
-const { logRuntimeFailure } = await import('./core/observability.js');
-const { startHttpServer, startServer } = await import('./transport.js');
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 let activeStdioHandle: StdioServerHandle | undefined;

@@ -5,14 +5,10 @@ import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs }
 import { processInParallel } from './core/concurrency.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
 import { cliFmt, padEndVisible } from './core/fmt.js';
-import {
-  getReservedDeviceNameForPath,
-  isWindowsDriveRelativePath,
-  normalizePath,
-  PathGuard,
-} from './core/path.js';
+import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './core/path-utils.js';
+import { normalizePath, PathGuard } from './core/path.js';
 import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
-import { MAX_TEXT_FILE_SIZE } from './core/util.js';
+import { getMaxTextFileSize } from './core/util.js';
 import { pkgInfo } from './pkg-info.js';
 import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
@@ -387,11 +383,34 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    // Both halves of these flag-or-env reads stay live even though
-    // liftFlagsToEnv (index.ts) has already copied every flag into its env var
-    // by the time the server calls this: the flag half covers parseArgs called
-    // standalone (tests, --print-config), the env half covers an operator who
-    // sets only the env var and passes no flag.
+    if (typeof vals['http-host'] === 'string') process.env['HTTP_HOST'] = vals['http-host'];
+    if (typeof vals['api-key'] === 'string') process.env['API_KEY'] = vals['api-key'];
+    if (typeof vals['log-level'] === 'string') process.env['LOG_LEVEL'] = vals['log-level'];
+    if (typeof vals['log-format'] === 'string') process.env['LOG_FORMAT'] = vals['log-format'];
+    if (typeof vals['max-file-size'] === 'string')
+      process.env['MAX_FILE_SIZE'] = vals['max-file-size'];
+    if (typeof vals['root-boundary'] === 'string')
+      process.env['ROOT_BOUNDARY'] = vals['root-boundary'];
+    if (vals['allow-sensitive'] === true) process.env['ALLOW_SENSITIVE'] = '1';
+    if (vals['walk-cwd'] === true) process.env['ALLOW_CWD_WALK'] = '1';
+    if (vals['allow-missing-roots'] === true) process.env['ALLOW_MISSING_ROOTS'] = '1';
+    if (Array.isArray(vals['deny']) && vals['deny'].length > 0) {
+      const existing = process.env['DENYLIST'];
+      const entries = existing
+        ? existing
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      for (const entry of vals['deny']) {
+        if (typeof entry === 'string') {
+          const trimmed = entry.trim();
+          if (trimmed && !entries.includes(trimmed)) entries.push(trimmed);
+        }
+      }
+      process.env['DENYLIST'] = entries.join(',');
+    }
+
     const allowCwd =
       (vals['allow-cwd'] as boolean) ||
       (vals['walk-cwd'] as boolean) ||
@@ -471,7 +490,7 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
     allowedRoots,
     tools,
     apiKey: options.apiKey ? '***' : null,
-    limits: { maxFileSizeBytes: MAX_TEXT_FILE_SIZE },
+    limits: { maxFileSizeBytes: getMaxTextFileSize() },
   };
 
   if (options.json) {

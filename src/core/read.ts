@@ -9,7 +9,7 @@ import { withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isFsError } from './errors.js';
 import { isBinarySample, isKnownBinaryExtension, MIME_SAMPLE_SIZE } from './mime.js';
 import { Logger } from './observability.js';
-import { MAX_TEXT_FILE_SIZE } from './util.js';
+import { getMaxTextFileSize } from './util.js';
 
 export const STREAM_CHUNK_SIZE = 64 * 1024;
 
@@ -167,9 +167,10 @@ function buildBaseOptions(spec: ReadSpec): NormalizedBase {
   if (spec.maxSize !== undefined) {
     assertPositiveIntegerOption('maxSize', spec.maxSize, 'maxSize must be at least 1');
   }
+  const maxTextFileSize = getMaxTextFileSize();
   return {
     encoding: spec.encoding ?? 'utf-8',
-    maxSize: Math.min(spec.maxSize ?? MAX_TEXT_FILE_SIZE, MAX_TEXT_FILE_SIZE),
+    maxSize: Math.min(spec.maxSize ?? maxTextFileSize, maxTextFileSize),
     skipBinary: spec.skipBinary ?? false,
     ...(spec.signal ? { signal: spec.signal } : {}),
   };

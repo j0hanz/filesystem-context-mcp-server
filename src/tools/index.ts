@@ -1,4 +1,4 @@
-import type { Registrar } from '../core/registrar.js';
+import type { ServerDeps } from '../server.js';
 import { CALCULATE_HASH } from './calculate-hash.js';
 import { COPY_FILES } from './copy.js';
 import { CREATE } from './create.js';
@@ -56,20 +56,15 @@ export {
   GET_FILE_INFO,
 };
 
-export const toolsRegistrar: Registrar = {
-  register(deps): void {
-    const toolDeps = {
-      server: deps.server,
-      pathGuard: deps.pathGuard,
-      resourceStore: deps.resourceStore,
-      iconInfo: deps.iconInfo,
-      ...(deps.notifier ? { notifier: deps.notifier } : {}),
-    };
-    for (const tool of registeredTools(deps.readOnly ?? false)) {
-      tool.register(toolDeps);
-    }
-  },
-  dispose(): void {
-    /* no-op */
-  },
-};
+export function registerTools(deps: ServerDeps): void {
+  const toolDeps = {
+    server: deps.server,
+    pathGuard: deps.pathGuard,
+    resourceStore: deps.resourceStore,
+    iconInfo: deps.iconInfo,
+    ...(deps.notifier ? { notifier: deps.notifier } : {}),
+  };
+  for (const tool of registeredTools(deps.readOnly ?? false)) {
+    tool.register(toolDeps);
+  }
+}

@@ -8,7 +8,7 @@ import type { StoppedReason } from './concurrency.js';
 import { globEntries, type GlobEntry } from './glob.js';
 import type { PathGuard } from './path.js';
 import { escapeRegexLiteral } from './primitives.js';
-import { MAX_TEXT_FILE_SIZE } from './util.js';
+import { getMaxTextFileSize } from './util.js';
 
 interface SearchResult {
   file: string;
@@ -174,7 +174,7 @@ async function scanContent(
 ): Promise<SearchContentOutcome> {
   const matches: SearchResult[] = [];
   const maxResults = options.maxResults ?? 100;
-  const maxFileSize = options.maxFileSize ?? MAX_TEXT_FILE_SIZE;
+  const maxFileSize = options.maxFileSize ?? getMaxTextFileSize();
 
   const entries = globEntries({
     cwd: directory,

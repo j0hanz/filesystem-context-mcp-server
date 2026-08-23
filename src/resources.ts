@@ -33,7 +33,6 @@ import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
-import type { Registrar, ServerDeps, ServerNotifier } from './core/registrar.js';
 import type { ResourceStore } from './core/store.js';
 import {
   createWatcherRegistry,
@@ -41,6 +40,7 @@ import {
   type WatcherRegistry,
 } from './core/watcher-registry.js';
 import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from './instructions.js';
+import type { ServerDeps, ServerNotifier } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -429,7 +429,7 @@ function wrapRead(contract: ResourceContract) {
   };
 }
 
-function registerResources(
+function registerResourceContracts(
   server: McpServer,
   options: ResourceRegistrationOptions,
 ): ResourceContract[] {
@@ -540,44 +540,24 @@ function registerResources(
   return resourceContracts;
 }
 
-export const resourcesRegistrar: Registrar = (() => {
-  const serverContracts = new Map<McpServer, ResourceContract[]>();
+export function registerResources(deps: ServerDeps): { dispose(): void } {
+  const contracts = registerResourceContracts(deps.server, {
+    resourceStore: deps.resourceStore,
+    pathGuard: deps.pathGuard,
+    server: deps.server,
+    ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
+    ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
+    ...(deps.notifier ? { notifier: deps.notifier } : {}),
+    readOnly: deps.readOnly ?? false,
+  });
 
   return {
-    register(deps: ServerDeps): void {
-      const contracts = registerResources(deps.server, {
-        resourceStore: deps.resourceStore,
-        pathGuard: deps.pathGuard,
-        server: deps.server,
-        ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
-        ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
-        ...(deps.notifier ? { notifier: deps.notifier } : {}),
-        readOnly: deps.readOnly ?? false,
-      });
-      serverContracts.set(deps.server, contracts);
-    },
-
-    dispose(server?: McpServer): void {
-      if (server) {
-        const contracts = serverContracts.get(server);
-        if (contracts) {
-          for (const contract of contracts) {
-            if (contract.destroy) {
-              contract.destroy();
-            }
-          }
-          serverContracts.delete(server);
+    dispose(): void {
+      for (const contract of contracts) {
+        if (contract.destroy) {
+          contract.destroy();
         }
-      } else {
-        for (const contracts of serverContracts.values()) {
-          for (const contract of contracts) {
-            if (contract.destroy) {
-              contract.destroy();
-            }
-          }
-        }
-        serverContracts.clear();
       }
     },
   };
-})();
+}

@@ -45,13 +45,17 @@ function parseLogLevelEnv(): LoggingLevel {
 
 /**
  * Minimum severity that reaches stderr, from `LOG_LEVEL` / `--log-level`.
- * Read once at import: `src/index.ts` lifts the flag into the environment
- * before any module that reads it loads.
+ * Evaluated lazily on access.
  */
-const LOG_LEVEL: LoggingLevel = parseLogLevelEnv();
+export function getLogLevel(): LoggingLevel {
+  return parseLogLevelEnv();
+}
 
 /** True when `level` is at least as severe as the configured minimum. */
-export function isLevelEnabled(level: LoggingLevel, minimum: LoggingLevel = LOG_LEVEL): boolean {
+export function isLevelEnabled(
+  level: LoggingLevel,
+  minimum: LoggingLevel = getLogLevel(),
+): boolean {
   return LEVEL_ORDER.indexOf(level) <= LEVEL_ORDER.indexOf(minimum);
 }
 

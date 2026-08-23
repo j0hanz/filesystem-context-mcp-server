@@ -1,7 +1,9 @@
+import type { PromptMessage, ResourceLink } from '@modelcontextprotocol/server';
+
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
+  getMaxTextFileSize,
   MAX_SEARCH_RESULTS,
-  MAX_TEXT_FILE_SIZE,
 } from './core/util.js';
 import {
   CALCULATE_HASH,
@@ -35,7 +37,7 @@ function buildToolsOverview(readOnly: boolean): string {
 export const INSTRUCTIONS_URI = 'internal://instructions';
 
 export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
-  const maxFileMb = Math.floor(MAX_TEXT_FILE_SIZE / 1024 / 1024);
+  const maxFileMb = Math.floor(getMaxTextFileSize() / 1024 / 1024);
   return {
     guidelines: [
       'Guidelines:',
@@ -74,4 +76,15 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
 
 export function renderSections(sections: Record<string, string>): string {
   return `\n${Object.values(sections).join('\n\n')}\n`;
+}
+
+export function linkToInstructions(uri: string = INSTRUCTIONS_URI): PromptMessage {
+  const content: ResourceLink = {
+    type: 'resource_link',
+    uri,
+    name: 'filesystem-mcp-instructions',
+    mimeType: 'text/markdown',
+    annotations: { audience: ['assistant'], priority: 0.5 },
+  };
+  return { role: 'user', content };
 }

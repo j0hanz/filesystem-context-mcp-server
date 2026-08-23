@@ -10,14 +10,32 @@ import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
 import { withDefaultIcons } from './core/primitives.js';
-import type { Registrar, ServerDeps, ServerNotifier } from './core/registrar.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
 import { INSTRUCTIONS_URI } from './instructions.js';
 import { pkgInfo } from './pkg-info.js';
-import { promptsRegistrar } from './prompts.js';
-import { resourcesRegistrar } from './resources.js';
-import { toolsRegistrar } from './tools/index.js';
+import { registerPrompts } from './prompts.js';
+import { registerResources } from './resources.js';
+import { registerTools } from './tools/index.js';
+
+export interface ServerNotifier {
+  readonly toolsChanged?: () => void;
+  readonly promptsChanged?: () => void;
+  readonly resourcesChanged?: () => void;
+  readonly resourceUpdated: (uri: string) => void;
+}
+
+export interface ServerDeps {
+  readonly server: McpServer;
+  readonly pathGuard: PathGuard;
+  readonly resourceStore: ResourceStore;
+  readonly iconInfo?: IconInfo;
+  readonly readOnly?: boolean;
+  /** Shared file-watcher registry for the modern HTTP leg; omitted on stdio. */
+  readonly watcherRegistry?: WatcherRegistry;
+  /** Modern-leg typed notification publisher. */
+  readonly notifier?: ServerNotifier;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
@@ -34,26 +52,26 @@ export class FilesystemServerContext {
   public readonly pathGuard: PathGuard;
   public readonly fs: GuardedFileSystem;
   public readonly resources: ResourceStore;
-  private readonly registrars: readonly Registrar[];
+  private readonly resourceDisposable?: { dispose(): void } | undefined;
   private cleanedUp = false;
 
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
     resources: ResourceStore,
-    registrars: readonly Registrar[],
+    resourceDisposable?: { dispose(): void },
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
     this.fs = new GuardedFileSystem(pathGuard);
     this.resources = resources;
-    this.registrars = registrars;
+    this.resourceDisposable = resourceDisposable;
   }
 
   disposeRuntimeState(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
-    for (const r of this.registrars) r.dispose(this.mcp);
+    this.resourceDisposable?.dispose();
   }
 
   async close(): Promise<void> {
@@ -160,8 +178,9 @@ export async function createServer(
     ...(extraDeps?.notifier ? { notifier: extraDeps.notifier } : {}),
   };
 
-  const registrars: Registrar[] = [resourcesRegistrar, promptsRegistrar, toolsRegistrar];
-  for (const r of registrars) r.register(deps);
+  const resourceDisposable = registerResources(deps);
+  registerPrompts(deps);
+  registerTools(deps);
 
-  return new FilesystemServerContext(server, pathGuard, resourceStore, registrars);
+  return new FilesystemServerContext(server, pathGuard, resourceStore, resourceDisposable);
 }
