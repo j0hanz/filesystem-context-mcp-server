@@ -18,6 +18,7 @@ import {
   INSTRUCTIONS_URI,
   renderSections,
 } from '../src/resources.js';
+import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
 import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
 
@@ -467,6 +468,14 @@ describe('MCP Resources', () => {
       assert.strictEqual(result.contents.length, 1);
       assert.strictEqual(result.contents[0].uri, uri);
       assert.strictEqual((result.contents[0] as { text: string }).text, 'client resource read');
+    });
+
+    it('advertises resources.subscribe and resources.listChanged capabilities', async () => {
+      const serverContext = await createServer({ cliAllowedDirs: [clientTmpDir] });
+      const capabilities = serverContext.mcp.server.getCapabilities();
+      assert.strictEqual(capabilities.resources?.subscribe, true);
+      assert.strictEqual(capabilities.resources?.listChanged, true);
+      await serverContext.close();
     });
   });
 });

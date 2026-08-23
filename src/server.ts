@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { readFile } from 'node:fs/promises';
 
 import { GuardedFileSystem } from './core/fs.js';
+import { Logger } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import type { IconInfo } from './core/primitives.js';
@@ -101,7 +102,7 @@ export async function createServer(
   // No `logging` capability: SEP-2577 deprecates the subsystem, and this server
   // routes every diagnostic to stderr rather than notifications/message.
   const capabilities = {
-    resources: { subscribe: true },
+    resources: { subscribe: true, listChanged: true },
     tools: {},
     prompts: {},
     completions: {},
@@ -114,6 +115,9 @@ export async function createServer(
     cacheHints: {
       'tools/list': { ttlMs: 60_000, cacheScope },
       'prompts/list': { ttlMs: 60_000, cacheScope },
+      'resources/list': { ttlMs: 30_000, cacheScope },
+      'resources/templates/list': { ttlMs: 60_000, cacheScope },
+      'server/discover': { ttlMs: 60_000, cacheScope },
     },
     // Multi-round-trip `requestState` integrity (protocol revision 2026-07-28):
     // the codec verifies the HMAC on every retried round before the handler
@@ -137,6 +141,10 @@ export async function createServer(
     ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
   };
   const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
+  server.server.fallbackNotificationHandler = (notification) => {
+    Logger.debug('Unhandled client notification', { method: notification.method });
+    return Promise.resolve();
+  };
 
   const pathGuard = new PathGuard(options, true);
   await pathGuard.recomputeAllowedDirectories();

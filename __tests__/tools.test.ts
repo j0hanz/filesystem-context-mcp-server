@@ -1,11 +1,13 @@
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { createServer } from '../src/server.js';
 import {
   ALL_REGISTERED_TOOL_NAMES,
   ALL_TOOLS,
@@ -286,5 +288,64 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const listTool = ALL_TOOLS.find((t) => t.name === 'list');
     assert.ok(listTool, 'list tool should be defined');
     assert.strictEqual(listTool.annotations.idempotentHint, true);
+  });
+
+  it('TC-FUNC-059: createServer wires notifier to tool context on grant', async () => {
+    const parentDir = await createTestRoot();
+    const rootDir = join(parentDir, 'root');
+    const outsideDir = join(parentDir, 'outside');
+    await mkdir(rootDir, { recursive: true });
+    await mkdir(outsideDir, { recursive: true });
+    const outsideFile = join(outsideDir, 'file.txt');
+    await writeFile(outsideFile, 'test content');
+
+    const prevBoundary = process.env['ROOT_BOUNDARY'];
+    process.env['ROOT_BOUNDARY'] = parentDir;
+
+    let notified = false;
+    const notifier = {
+      toolsChanged: () => {},
+      promptsChanged: () => {},
+      resourcesChanged: () => {
+        notified = true;
+      },
+      resourceUpdated: () => {},
+    };
+
+    try {
+      const serverCtx = await createServer({ cliAllowedDirs: [rootDir] }, { notifier });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client(
+        { name: 'test-harness', version: '1.0.0' },
+        { capabilities: { elicitation: {} } },
+      );
+      client.setRequestHandler('elicitation/create', async () => {
+        return {
+          action: 'accept',
+          content: { confirm: true },
+        };
+      });
+      await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
+
+      try {
+        assert.strictEqual(notified, false);
+        const result = await client.callTool({
+          name: 'read',
+          arguments: { path: outsideFile },
+        });
+        assert.notStrictEqual(result.isError, true);
+        assert.strictEqual(notified, true, 'notifier.resourcesChanged should be called on grant');
+      } finally {
+        await client.close();
+        await serverCtx.close();
+      }
+    } finally {
+      if (prevBoundary !== undefined) {
+        process.env['ROOT_BOUNDARY'] = prevBoundary;
+      } else {
+        delete process.env['ROOT_BOUNDARY'];
+      }
+      await cleanupTestRoot(parentDir);
+    }
   });
 });

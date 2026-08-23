@@ -26,6 +26,7 @@ import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import type { IconInfo } from '../core/primitives.js';
 import { withDefaultIcons } from '../core/primitives.js';
+import type { ServerNotifier } from '../core/registrar.js';
 import type { ResourceStore } from '../core/store.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 import type { ProgressSink } from './progress.js';
@@ -55,6 +56,7 @@ export interface ToolCtx {
    */
   readonly requestState?: RequestStateAccessor | undefined;
   readonly server?: McpServer;
+  readonly notifier?: ServerNotifier | undefined;
 }
 
 interface ToolDeps {
@@ -62,6 +64,7 @@ interface ToolDeps {
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
   readonly iconInfo?: IconInfo | undefined;
+  readonly notifier?: ServerNotifier | undefined;
 }
 
 interface RunResult<T> {
@@ -117,7 +120,7 @@ export interface DefinedTool {
 
 function toToolCtx(
   ctx: ServerContext | undefined,
-  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server'>,
+  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server' | 'notifier'>,
 ): ToolCtx {
   if (!ctx) {
     const signal = new AbortController().signal;
@@ -126,6 +129,7 @@ function toToolCtx(
       fs: new GuardedFileSystem(deps.pathGuard),
       resourceStore: deps.resourceStore,
       server: deps.server,
+      ...(deps.notifier ? { notifier: deps.notifier } : {}),
     };
   }
   return {
@@ -138,6 +142,7 @@ function toToolCtx(
     inputResponses: ctx.mcpReq.inputResponses,
     requestState: ctx.mcpReq.requestState,
     server: deps.server,
+    ...(deps.notifier ? { notifier: deps.notifier } : {}),
   };
 }
 
@@ -153,6 +158,7 @@ function buildExecutionCtx(
     fs: ctx.fs,
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
+    ...(ctx.notifier ? { notifier: ctx.notifier } : {}),
     log: (level: LoggingLevel, data: unknown) => {
       Logger.emit(level, typeof data === 'string' ? data : String(data));
     },
@@ -311,10 +317,18 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       }
     }
     if (appliedAny) {
-      try {
-        await this.toolCtx.server?.server.sendResourceListChanged();
-      } catch (err) {
-        Logger.debug('sendResourceListChanged error on grant', { error: String(err) });
+      if (this.toolCtx.notifier?.resourcesChanged) {
+        try {
+          this.toolCtx.notifier.resourcesChanged();
+        } catch (err) {
+          Logger.debug('notifier.resourcesChanged error on grant', { error: String(err) });
+        }
+      } else {
+        try {
+          await this.toolCtx.server?.server.sendResourceListChanged();
+        } catch (err) {
+          Logger.debug('sendResourceListChanged error on grant', { error: String(err) });
+        }
       }
     }
     return undefined;
