@@ -331,6 +331,9 @@ export const COPY_FILES = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
+  execution: {
+    taskSupport: 'optional',
+  },
   progress: (args) => {
     const firstCopy = args.copies[0];
     const subject =

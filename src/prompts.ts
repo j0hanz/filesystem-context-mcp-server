@@ -363,7 +363,148 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
   },
 };
 
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP, ANALYZE_PATH, FIND_IN_TREE, SUMMARIZE_DIRECTORY];
+const AUDIT_WORKSPACE_SECURITY: PromptEntry = {
+  contract: {
+    name: 'audit-workspace-security',
+    title: 'Audit Workspace Security',
+    description:
+      'Scan workspace for sensitive files, credential leaks, and review directory access permissions.',
+  },
+  register(server, options) {
+    server.registerPrompt(
+      AUDIT_WORKSPACE_SECURITY.contract.name,
+      withDefaultIcons(
+        {
+          title: AUDIT_WORKSPACE_SECURITY.contract.title,
+          description: AUDIT_WORKSPACE_SECURITY.contract.description,
+          argsSchema: z.strictObject({
+            root: pathArg(
+              options.pathGuard,
+              'root',
+              'Directory to audit (defaults to first allowed root)',
+            ).optional(),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({ root }: { root?: string | undefined }): Promise<GetPromptResult> =>
+        wrapHandler(AUDIT_WORKSPACE_SECURITY.contract, async () => {
+          const candidate = root ?? options.pathGuard.getAllowedDirectories()[0];
+          if (candidate === undefined) {
+            throw new ProtocolError(
+              ProtocolErrorCode.InvalidRequest,
+              'audit-workspace-security: no root provided and no allowed directories',
+            );
+          }
+          const resolved = await options.pathGuard.validateExistingDirectory(candidate);
+          const text = [
+            `Security audit for workspace at ${resolved}:`,
+            '',
+            '- Call `list_roots` to confirm active workspace root boundaries.',
+            '- Call `find_files` with patterns for sensitive files: `.env*`, `*.pem`, `*.key`, `*id_rsa*`, `credentials.json`.',
+            '- Call `stat` on discovered candidate paths to inspect permissions and ownership.',
+            '- Call `search_text` for high-risk pattern markers (e.g. `API_KEY`, `PASSWORD`, `SECRET`, `BEGIN PRIVATE KEY`).',
+            '- Report: found sensitive files, exposure risks, and recommended remediations.',
+          ].join('\n');
+          return {
+            description: AUDIT_WORKSPACE_SECURITY.contract.description,
+            messages: [
+              userText(text),
+              linkToPath(resolved),
+              linkToInstructions(options.instructionsUri),
+            ],
+          };
+        }),
+    );
+  },
+};
+
+const REFACTOR_WORKFLOW: PromptEntry = {
+  contract: {
+    name: 'refactor-workflow',
+    title: 'Refactor Workflow',
+    description:
+      'Guided multi-step refactoring workflow: locate occurrences, preview diffs via dryRun, and verify edits.',
+  },
+  register(server, options) {
+    server.registerPrompt(
+      REFACTOR_WORKFLOW.contract.name,
+      withDefaultIcons(
+        {
+          title: REFACTOR_WORKFLOW.contract.title,
+          description: REFACTOR_WORKFLOW.contract.description,
+          argsSchema: z.strictObject({
+            query: z
+              .string()
+              .min(1)
+              .refine((val) => !isBlank(val), {
+                message: 'Query cannot be empty or whitespace-only',
+              })
+              .refine((val) => !SHELL_METACHAR_RE.test(val), {
+                message: 'Query contains prohibited characters (newlines or shell metacharacters)',
+              })
+              .describe('Symbol, function, or string pattern to refactor across the workspace.'),
+            root: pathArg(
+              options.pathGuard,
+              'root',
+              'Root directory to scope the refactoring within (defaults to first allowed root)',
+            ).optional(),
+            dryRun: z
+              .stringbool()
+              .default(true)
+              .describe('Preview changes as unified diffs first before applying (default: true).'),
+          }),
+        },
+        options.iconInfo,
+      ),
+      async ({
+        query,
+        root,
+        dryRun,
+      }: {
+        query: string;
+        root?: string | undefined;
+        dryRun: boolean;
+      }): Promise<GetPromptResult> =>
+        wrapHandler(REFACTOR_WORKFLOW.contract, async () => {
+          const candidate = root ?? options.pathGuard.getAllowedDirectories()[0];
+          if (candidate === undefined) {
+            throw new ProtocolError(
+              ProtocolErrorCode.InvalidRequest,
+              'refactor-workflow: no root provided and no allowed directories',
+            );
+          }
+          const resolved = await options.pathGuard.validateExistingDirectory(candidate);
+          const dryLabel = dryRun ? ' (dryRun=true)' : '';
+          const text = [
+            `Refactor workflow for "${query}" under ${resolved}${dryLabel}:`,
+            '',
+            `1. Discover: Call \`search_text\` with searchPattern "${query}" to list all affected files and line occurrences.`,
+            '2. Read Context: Call `read` on each matching file to inspect surrounding block context (3-5 lines).',
+            `3. Preview: Call \`edit\` with dryRun=true (or \`replace_text\` with dryRun=true and returnDiff=true) to inspect unified diffs without modifying files.`,
+            '4. Apply & Verify: Once confirmed, re-run `edit` with dryRun=false, run validation checks, and verify behavior.',
+          ].join('\n');
+          return {
+            description: REFACTOR_WORKFLOW.contract.description,
+            messages: [
+              userText(text),
+              linkToPath(resolved),
+              linkToInstructions(options.instructionsUri),
+            ],
+          };
+        }),
+    );
+  },
+};
+
+const PROMPT_ENTRIES: PromptEntry[] = [
+  GET_HELP,
+  ANALYZE_PATH,
+  FIND_IN_TREE,
+  SUMMARIZE_DIRECTORY,
+  AUDIT_WORKSPACE_SECURITY,
+  REFACTOR_WORKFLOW,
+];
 
 export const promptsRegistrar: Registrar = {
   register(deps): void {

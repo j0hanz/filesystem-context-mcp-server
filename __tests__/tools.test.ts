@@ -273,18 +273,18 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
   });
 
-  it('TC-FUNC-057: search tools declare execution taskSupport metadata', () => {
-    const searchContent = ALL_TOOLS.find((t) => t.name === 'search_text');
-    const searchFiles = ALL_TOOLS.find((t) => t.name === 'find_files');
-    const replaceText = ALL_TOOLS.find((t) => t.name === 'replace_text');
+  it('TC-FUNC-057: long-running tools declare execution taskSupport metadata', () => {
+    const taskTools = ['search_text', 'find_files', 'replace_text', 'hash_file', 'copy', 'delete'];
+    for (const name of taskTools) {
+      const tool = ALL_TOOLS.find((t) => t.name === name);
+      assert.ok(tool, `${name} tool should be defined`);
+      assert.deepStrictEqual(tool.execution, { taskSupport: 'optional' });
+    }
+  });
 
-    assert.ok(searchContent, 'search_text tool should be defined');
-    assert.deepStrictEqual(searchContent.execution, { taskSupport: 'optional' });
-
-    assert.ok(searchFiles, 'find_files tool should be defined');
-    assert.deepStrictEqual(searchFiles.execution, { taskSupport: 'optional' });
-
-    assert.ok(replaceText, 'replace_text tool should be defined');
-    assert.deepStrictEqual(replaceText.execution, { taskSupport: 'optional' });
+  it('TC-FUNC-058: list tool declares idempotentHint', () => {
+    const listTool = ALL_TOOLS.find((t) => t.name === 'list');
+    assert.ok(listTool, 'list tool should be defined');
+    assert.strictEqual(listTool.annotations.idempotentHint, true);
   });
 });

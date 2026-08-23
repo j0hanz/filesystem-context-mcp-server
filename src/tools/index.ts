@@ -62,6 +62,7 @@ export const toolsRegistrar: Registrar = {
       server: deps.server,
       pathGuard: deps.pathGuard,
       resourceStore: deps.resourceStore,
+      iconInfo: deps.iconInfo,
     };
     for (const tool of registeredTools(deps.readOnly ?? false)) {
       tool.register(toolDeps);

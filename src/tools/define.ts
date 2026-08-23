@@ -4,6 +4,7 @@ import type {
   InputRequiredResult,
   McpServer,
   Notification,
+  RegisteredTool,
   RequestMeta,
   RequestStateAccessor,
   ServerContext,
@@ -23,6 +24,8 @@ import { GuardedFileSystem } from '../core/fs.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import type { IconInfo } from '../core/primitives.js';
+import { withDefaultIcons } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from './input-required.js';
 import type { ProgressSink } from './progress.js';
@@ -58,6 +61,7 @@ interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
+  readonly iconInfo?: IconInfo | undefined;
 }
 
 interface RunResult<T> {
@@ -108,7 +112,7 @@ export interface DefinedTool {
   readonly inputSchema: Tool['inputSchema'];
   readonly outputSchema: Record<string, unknown>;
 
-  register(deps: ToolDeps): void;
+  register(deps: ToolDeps): RegisteredTool;
 }
 
 function toToolCtx(
@@ -404,20 +408,23 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
 
-    register(deps: ToolDeps) {
+    register(deps: ToolDeps): RegisteredTool {
       const resolvedInput = def.buildInput ? def.buildInput(deps.pathGuard) : def.input;
-      const toolDefShape = {
-        title: def.title,
-        description: def.description,
-        inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
-        outputSchema: outputSchemaWithJson,
-        annotations: def.annotations,
-        ...(def.execution !== undefined ? { execution: def.execution } : {}),
-      };
+      const toolDefShape = withDefaultIcons(
+        {
+          title: def.title,
+          description: def.description,
+          inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
+          outputSchema: outputSchemaWithJson,
+          annotations: def.annotations,
+          ...(def.execution !== undefined ? { execution: def.execution } : {}),
+        },
+        deps.iconInfo,
+      );
 
       const serverCtxHandler = createServerToolHandler(def, deps);
 
-      deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
+      return deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
     },
   };
 

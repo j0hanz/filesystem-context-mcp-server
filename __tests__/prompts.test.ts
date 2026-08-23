@@ -37,8 +37,8 @@ describe('MCP Prompts Tests (MCP Client)', () => {
   });
 
   describe('Prompt Definitions & Registration', () => {
-    it('TC-FUNC-067: PROMPT_ENTRIES and client.listPrompts() return all 4 prompts', async () => {
-      assert.equal(PROMPT_ENTRIES.length, 4);
+    it('TC-FUNC-067: PROMPT_ENTRIES and client.listPrompts() return all 6 prompts', async () => {
+      assert.equal(PROMPT_ENTRIES.length, 6);
 
       const promptsList = await harness.client.listPrompts();
       const promptNames = promptsList.prompts.map((p) => p.name);
@@ -47,6 +47,8 @@ describe('MCP Prompts Tests (MCP Client)', () => {
         'analyze-path',
         'find-in-tree',
         'summarize-directory',
+        'audit-workspace-security',
+        'refactor-workflow',
       ]);
 
       for (const entry of promptsList.prompts) {
@@ -261,6 +263,85 @@ describe('MCP Prompts Tests (MCP Client)', () => {
           arguments: { path: missingDir, depth: '3' },
         });
       });
+    });
+  });
+
+  describe('Prompt: audit-workspace-security', () => {
+    it('TC-FUNC-080: Security audit prompt returns guided steps and links', async () => {
+      const result = await harness.client.getPrompt({
+        name: 'audit-workspace-security',
+        arguments: { root: tmpDir },
+      });
+      assert.equal(result.messages.length, 3);
+
+      const textMsg = result.messages[0].content as TextContent;
+      assert.equal(textMsg.type, 'text');
+      assert.ok(textMsg.text.includes('Security audit for workspace at'));
+      assert.ok(textMsg.text.includes('`list_roots`'));
+      assert.ok(textMsg.text.includes('`find_files`'));
+      assert.ok(textMsg.text.includes('`stat`'));
+      assert.ok(textMsg.text.includes('`search_text`'));
+
+      const pathLink = result.messages[1].content as ResourceLink;
+      assert.equal(pathLink.type, 'resource_link');
+
+      const instructionsLink = result.messages[2].content as ResourceLink;
+      assert.equal(instructionsLink.type, 'resource_link');
+      assert.equal(instructionsLink.uri, INSTRUCTIONS_URI);
+    });
+
+    it('TC-FUNC-081: Defaults root when omitted', async () => {
+      const result = await harness.client.getPrompt({
+        name: 'audit-workspace-security',
+        arguments: {},
+      });
+      const textMsg = result.messages[0].content as TextContent;
+      assert.ok(textMsg.text.includes('Security audit for workspace at'));
+    });
+  });
+
+  describe('Prompt: refactor-workflow', () => {
+    it('TC-FUNC-082: Refactor workflow prompt includes query, steps, and dryRun flag', async () => {
+      const result = await harness.client.getPrompt({
+        name: 'refactor-workflow',
+        arguments: { query: 'oldFunction', root: tmpDir, dryRun: 'true' },
+      });
+      assert.equal(result.messages.length, 3);
+
+      const textMsg = result.messages[0].content as TextContent;
+      assert.equal(textMsg.type, 'text');
+      assert.ok(textMsg.text.includes('Refactor workflow for "oldFunction"'));
+      assert.ok(textMsg.text.includes('(dryRun=true)'));
+      assert.ok(textMsg.text.includes('`search_text`'));
+      assert.ok(textMsg.text.includes('`read`'));
+      assert.ok(textMsg.text.includes('`edit`'));
+
+      const pathLink = result.messages[1].content as ResourceLink;
+      assert.equal(pathLink.type, 'resource_link');
+
+      const instructionsLink = result.messages[2].content as ResourceLink;
+      assert.equal(instructionsLink.type, 'resource_link');
+      assert.equal(instructionsLink.uri, INSTRUCTIONS_URI);
+    });
+
+    it('TC-FUNC-083: Defaults root and dryRun when omitted', async () => {
+      const result = await harness.client.getPrompt({
+        name: 'refactor-workflow',
+        arguments: { query: 'renameVar' },
+      });
+      const textMsg = result.messages[0].content as TextContent;
+      assert.ok(textMsg.text.includes('Refactor workflow for "renameVar"'));
+      assert.ok(textMsg.text.includes('(dryRun=true)'));
+    });
+
+    it('TC-FUNC-084: Omits dryRun label when dryRun is false', async () => {
+      const result = await harness.client.getPrompt({
+        name: 'refactor-workflow',
+        arguments: { query: 'applyChange', dryRun: 'false' },
+      });
+      const textMsg = result.messages[0].content as TextContent;
+      assert.ok(textMsg.text.includes('Refactor workflow for "applyChange"'));
+      assert.ok(!textMsg.text.includes('(dryRun=true)'));
     });
   });
 });

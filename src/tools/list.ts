@@ -304,6 +304,7 @@ export const LIST = defineTool({
   output: ListOutputSchema,
   annotations: {
     readOnlyHint: true,
+    idempotentHint: true,
     destructiveHint: false,
     openWorldHint: false,
   },
