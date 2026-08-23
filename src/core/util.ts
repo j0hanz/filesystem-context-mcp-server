@@ -55,30 +55,7 @@ export function getInitTimeoutClose(): boolean {
   return parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 }
 
-const BYTES_PER_PARALLEL_TASK = 64 * MIB;
-
-function getAvailableMemory(): number | undefined {
-  if (typeof process.availableMemory !== 'function') {
-    return undefined;
-  }
-  const available = process.availableMemory();
-  if (!Number.isFinite(available) || available <= 0) {
-    return undefined;
-  }
-  return available;
-}
-
-function getOptimalParallelism(): number {
-  const cpuBound = Math.min(Math.max(availableParallelism(), 4), 32);
-  const availableMemory = getAvailableMemory();
-  if (availableMemory === undefined) {
-    return cpuBound;
-  }
-  const memoryBound = Math.floor(availableMemory / BYTES_PER_PARALLEL_TASK);
-  return Math.min(cpuBound, Math.max(memoryBound, 2));
-}
-
-export const PARALLEL_CONCURRENCY = getOptimalParallelism();
+export const PARALLEL_CONCURRENCY = Math.min(Math.max(availableParallelism(), 4), 32);
 
 export const ROOTS_TIMEOUT_MS = 5000;
 

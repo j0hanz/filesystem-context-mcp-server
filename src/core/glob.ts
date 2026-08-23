@@ -63,7 +63,7 @@ async function loadGitignoreFiles(
       try {
         const contents = await fsReadFile(absPath, { encoding: 'utf-8', signal });
         const matcher = ignore();
-        matcher.add(parseGitignoreLines(contents));
+        matcher.add(contents);
         const dir = toPosixPath(dirname(relPath));
         manager.addMatcher(dir === '.' ? '' : dir, matcher);
       } catch (error) {
@@ -74,13 +74,6 @@ async function loadGitignoreFiles(
     GLOB_BATCH_CONCURRENCY,
     signal,
   );
-}
-
-function parseGitignoreLines(contents: string): string[] {
-  return contents
-    .split(/\r?\n/u)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
 }
 
 export class GitignoreManager {

@@ -2,6 +2,7 @@ import type { Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
 
+import packageJson from '../package.json' with { type: 'json' };
 import { processInParallel } from './core/concurrency.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
 import { cliFmt, padEndVisible } from './core/fmt.js';
@@ -9,10 +10,9 @@ import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './core
 import { normalizePath, PathGuard } from './core/path.js';
 import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
 import { getMaxTextFileSize } from './core/util.js';
-import { pkgInfo } from './pkg-info.js';
 import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
-const { version: SERVER_VERSION } = pkgInfo;
+const { version: SERVER_VERSION } = packageJson;
 const CLI_VALIDATE_CONCURRENCY = 8;
 
 // ════════════════════════════════════════════════════════════

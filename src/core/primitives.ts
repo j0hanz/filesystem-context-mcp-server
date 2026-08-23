@@ -2,8 +2,6 @@ import type { Icon } from '@modelcontextprotocol/server';
 
 import { platform } from 'node:os';
 
-import * as z from 'zod/v4';
-
 /**
  * Minimal shared primitives with no intra-package dependencies.
  * Kept separate to avoid import cycles between observability.ts and util.ts.
@@ -18,11 +16,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export const ENTRY_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
 
-const STRING_BOOL_SCHEMA = z.stringbool();
-
 export function parseTrueEnvFlag(value: string | undefined): boolean {
   if (value === undefined) return false;
-  return STRING_BOOL_SCHEMA.safeParse(value.trim().toLowerCase()).data === true;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed === 'true' || trimmed === '1';
 }
 
 export function escapeRegexLiteral(str: string): string {

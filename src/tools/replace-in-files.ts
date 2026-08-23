@@ -4,10 +4,10 @@ import { Buffer } from 'node:buffer';
 import { dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
+import { createTwoFilesPatch } from 'diff';
 
-import { processEntriesConcurrently, StoppedReasonSchema } from '../core/concurrency.js';
 import type { StoppedReason, StopReasonTracker } from '../core/concurrency.js';
-import { buildPatchDiff } from '../core/diff.js';
+import { processEntriesConcurrently, StoppedReasonSchema } from '../core/concurrency.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
@@ -399,7 +399,21 @@ async function maybeAppendPatchDiff(
   if (!params.includeDiff) return;
   const header = toPosixRelative(summary.root, params.filePath);
 
-  const patch = await buildPatchDiff(header, params.originalContent, params.updatedContent);
+  const patch = await new Promise<string>((resolve) => {
+    createTwoFilesPatch(
+      header,
+      header,
+      params.originalContent,
+      params.updatedContent,
+      'Original',
+      'Modified',
+      {
+        callback: (res: string | undefined) => {
+          resolve(res ?? '');
+        },
+      },
+    );
+  });
 
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;

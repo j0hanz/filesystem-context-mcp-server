@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 
 import { readFile } from 'node:fs/promises';
 
+import packageJson from '../package.json' with { type: 'json' };
 import { GuardedFileSystem } from './core/fs.js';
 import { requestStateCodec } from './core/input-required.js';
 import { Logger } from './core/observability.js';
@@ -13,7 +14,6 @@ import { withDefaultIcons } from './core/primitives.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
 import { INSTRUCTIONS_URI } from './instructions.js';
-import { pkgInfo } from './pkg-info.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
@@ -45,7 +45,7 @@ const {
   version: SERVER_VERSION,
   description: SERVER_DESCRIPTION,
   homepage: SERVER_HOMEPAGE,
-} = pkgInfo;
+} = packageJson;
 
 export class FilesystemServerContext {
   public readonly mcp: McpServer;
