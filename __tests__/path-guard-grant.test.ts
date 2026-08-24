@@ -59,7 +59,8 @@ describe('PathGuard grant round-trip', () => {
 
     const grants = await guard.precheckAccess([outOfRoot]);
     assert.strictEqual(grants.length, 1, 'precheck should offer one grant dir');
-    const grantDir = grants[0]!;
+    const grantDir = grants[0];
+    assert.ok(grantDir, 'precheck should offer a grant dir');
     assert.ok(containsPath([grantDir], outOfRoot), 'offered dir should be the out-of-root target');
 
     const accepted = await guard.applyGrant(grantDir);
@@ -122,7 +123,9 @@ describe('PathGuard grant round-trip', () => {
     const grants = await guard.precheckAccess([outOfRoot]);
     assert.strictEqual(grants.length, 1, 'precheck should offer the out-of-root dir (no boundary)');
 
-    const accepted = await guard.applyGrant(grants[0]!);
+    const grantDir = grants[0];
+    assert.ok(grantDir, 'precheck should offer a grant dir');
+    const accepted = await guard.applyGrant(grantDir);
     assert.strictEqual(accepted, true, 'applyGrant reports success');
 
     // Pin the broken state: the granted dir is NOT actually present.
