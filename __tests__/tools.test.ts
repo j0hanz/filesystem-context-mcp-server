@@ -348,4 +348,29 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       await cleanupTestRoot(parentDir);
     }
   });
+
+  it('TC-LOG-001: Tool execution forwards log notifications to MCP client', async () => {
+    const file = join(tmpDir, 'log-test.txt');
+    await writeFile(file, 'initial line\n');
+
+    const receivedLogs: unknown[] = [];
+    harness.client.setNotificationHandler('notifications/message', (notification) => {
+      receivedLogs.push(notification.params);
+    });
+
+    const result = await harness.client.callTool({
+      name: 'edit',
+      arguments: {
+        path: file,
+        edits: [{ oldText: 'initial', newText: 'updated' }],
+      },
+    });
+
+    assert.notStrictEqual(result.isError, true);
+    assert.ok(receivedLogs.length > 0, 'Should receive at least one log notification');
+    const firstLog = receivedLogs[0] as { level?: string; logger?: string; data?: unknown };
+    assert.strictEqual(firstLog.level, 'info');
+    assert.strictEqual(firstLog.logger, 'edit');
+    assert.ok(typeof firstLog.data === 'string' && firstLog.data.includes('edit:'));
+  });
 });

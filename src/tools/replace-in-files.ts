@@ -20,7 +20,6 @@ import { truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
 import { detectMimeFromContent } from '../core/mime.js';
-import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import { countLines, readFileBufferWithLimit } from '../core/read.js';
@@ -595,8 +594,10 @@ async function handleSearchAndReplace(
   ctx.onProgress?.({ current: summary.processedFiles });
 
   if (!args.dryRun && summary.totalMatches > 0) {
-    Logger.info(
+    ctx.log?.(
+      'info',
       `search_and_replace: ${summary.filesChanged} file(s), ${summary.totalMatches} match(es)`,
+      'replace_text',
     );
   }
 
@@ -640,8 +641,10 @@ async function handleSearchAndReplace(
     } catch (error) {
       rethrowIfAborted(error);
       // Gracefully fall back if resource storage fails
-      Logger.error(
+      ctx.log?.(
+        'error',
         `Failed to store primary file in resource store: ${formatUnknownErrorMessage(error)}`,
+        'replace_text',
       );
     }
   }

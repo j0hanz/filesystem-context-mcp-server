@@ -10,7 +10,6 @@ import { ErrorCode, isFsError, isNodeError, isNotFoundErrno, Problem } from '../
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
 import { getFileType } from '../core/fs.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
-import { Logger } from '../core/observability.js';
 import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
@@ -180,11 +179,11 @@ async function performDeletion(
 async function finalizeDeletion(
   plan: DeletePlan,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
-  fsOps: Pick<GuardedFileSystem, 'lstat' | 'rm' | 'rmdir'>,
+  ctx: Pick<ToolCtx, 'fs' | 'log'>,
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   let currentStats: LstatResult;
   try {
-    currentStats = await fsOps.lstat(plan.validPath);
+    currentStats = await ctx.fs.lstat(plan.validPath);
   } catch (error) {
     if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
       return { item: { path: plan.validPath } };
@@ -215,12 +214,12 @@ async function finalizeDeletion(
   }
 
   try {
-    await performDeletion(plan.validPath, args, currentStats.stats.isDirectory(), fsOps);
+    await performDeletion(plan.validPath, args, currentStats.stats.isDirectory(), ctx.fs);
   } catch (error) {
     return { failure: toDeleteFailure(plan.inputPath, error) };
   }
 
-  Logger.info(`rm: ${plan.inputPath}`);
+  ctx.log?.('info', `rm: ${plan.inputPath}`, 'delete');
   return { item: { path: plan.validPath } };
 }
 
@@ -233,7 +232,7 @@ async function finalizeDeletion(
 async function executePlan(
   plan: DeletePlan,
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
-  ctx: Pick<ToolCtx, 'fs' | 'inputResponses'>,
+  ctx: Pick<ToolCtx, 'fs' | 'inputResponses' | 'log'>,
   pendingSorted: readonly string[],
 ): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
   if (plan.pending) {
@@ -249,7 +248,7 @@ async function executePlan(
       };
     }
   }
-  return finalizeDeletion(plan, args, ctx.fs);
+  return finalizeDeletion(plan, args, ctx);
 }
 
 async function handleDelete(

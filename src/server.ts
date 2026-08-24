@@ -118,13 +118,12 @@ export async function createServer(
   const resourceStore = new ResourceStore();
   const localIcon = await getLocalIconInfo();
 
-  // No `logging` capability: SEP-2577 deprecates the subsystem, and this server
-  // routes every diagnostic to stderr rather than notifications/message.
   const capabilities = {
     resources: { subscribe: true, listChanged: true },
     tools: {},
     prompts: {},
     completions: {},
+    logging: {},
   } satisfies ServerCapabilities;
 
   const cacheScope = process.env['API_KEY'] ? 'private' : 'public';

@@ -10,7 +10,6 @@ import { formatBytes } from '../core/fmt.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
-import { Logger } from '../core/observability.js';
 import {
   completableOptionalPath,
   FileInfoSchema,
@@ -24,6 +23,7 @@ import { putJsonResource } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import type { PerPathResult } from './batch.js';
 import { runOverPaths } from './batch.js';
+import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
 export function createStatInputSchema(pathSchema?: z.ZodType) {
@@ -95,6 +95,7 @@ async function getSymlinkTarget(
   pathToRead: string,
   fs: GuardedFileSystem,
   signal?: AbortSignal,
+  log?: ToolCtx['log'],
 ): Promise<string | undefined> {
   signal?.throwIfAborted();
   try {
@@ -102,7 +103,7 @@ async function getSymlinkTarget(
     return linkString;
   } catch (error) {
     rethrowIfAborted(error);
-    Logger.warn(`stat: readlink failed for "${pathToRead}": ${String(error)}`);
+    log?.('warning', `stat: readlink failed for "${pathToRead}": ${String(error)}`, 'stat');
     return undefined;
   }
 }
@@ -110,12 +111,13 @@ async function getSymlinkTarget(
 interface FileInfoOptions {
   includeMimeType?: boolean | undefined;
   signal?: AbortSignal | undefined;
-  onProgress?: () => void;
+  onProgress?: (() => void) | undefined;
   fs: GuardedFileSystem;
+  log?: ToolCtx['log'] | undefined;
 }
 
 async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<FileInfo> {
-  const { signal, fs } = options;
+  const { signal, fs, log } = options;
   signal?.throwIfAborted();
 
   const {
@@ -149,7 +151,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   // a symlinked parent is reported as a file and no readlink is attempted.
   const isOwnSymlink = stats.isSymbolicLink();
   const symlinkTarget = isOwnSymlink
-    ? await getSymlinkTarget(requestedPath, fs, signal)
+    ? await getSymlinkTarget(requestedPath, fs, signal, log)
     : undefined;
 
   return buildFileInfoResult(name, requestedPath, isOwnSymlink, stats, mimeType, symlinkTarget);
@@ -236,6 +238,7 @@ export const GET_FILE_INFO = defineTool({
           includeMimeType: true,
           fs: ctx.fs,
           signal: ctx.signal,
+          log: ctx.log,
         }),
       { defaultErrorCode: ErrorCode.NOT_FOUND },
     );

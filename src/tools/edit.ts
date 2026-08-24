@@ -9,7 +9,6 @@ import { ErrorCode, FsError } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
-import { Logger } from '../core/observability.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import { countLines, readFileWithStats } from '../core/read.js';
 import {
@@ -460,8 +459,10 @@ async function handleEditFile(
       encoding: 'utf-8',
       signal: ctx.signal,
     });
-    Logger.info(
+    ctx.log?.(
+      'info',
       `edit: ${filePath} (${editResult.appliedEdits} edits, +${editResult.linesAdded}/-${editResult.linesRemoved})`,
+      'edit',
     );
   }
 

@@ -159,8 +159,24 @@ function buildExecutionCtx(
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
     ...(ctx.notifier ? { notifier: ctx.notifier } : {}),
-    log: (level: LoggingLevel, data: unknown) => {
-      Logger.emit(level, typeof data === 'string' ? data : String(data));
+    log: (level: LoggingLevel, data: unknown, logger?: string) => {
+      const msg = typeof data === 'string' ? data : String(data);
+      const prefix = logger ? `[${logger}] ` : '';
+      Logger.emit(level, `${prefix}${msg}`);
+      if (ctx.sendNotification) {
+        ctx
+          .sendNotification({
+            method: 'notifications/message',
+            params: {
+              level,
+              data,
+              ...(logger ? { logger } : {}),
+            },
+          })
+          .catch((err: unknown) => {
+            Logger.debug('Failed to send log notification', { error: String(err) });
+          });
+      }
     },
     ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
     onProgress,

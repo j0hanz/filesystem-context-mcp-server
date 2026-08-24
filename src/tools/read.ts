@@ -10,7 +10,6 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
 import { detectMimeFromContent } from '../core/mime.js';
-import { Logger } from '../core/observability.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import { readFileWithStats } from '../core/read.js';
 import {
@@ -228,7 +227,7 @@ async function collectFileBudget(
   filePaths: readonly string[],
   maxTotalSize: number,
   maxSize: number,
-  ctx: Pick<ToolCtx, 'fs' | 'signal'>,
+  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'log'>,
 ): Promise<{
   skippedBudget: Set<number>;
   known: Map<string, { validPath: string; stats: Stats }>;
@@ -246,7 +245,7 @@ async function collectFileBudget(
           stats: out.stats,
         };
       } catch (err: unknown) {
-        Logger.debug(`collectFileBudget: stat failed for "${path}": ${String(err)}`);
+        ctx.log?.('debug', `collectFileBudget: stat failed for "${path}": ${String(err)}`, 'read');
         return undefined;
       }
     },
