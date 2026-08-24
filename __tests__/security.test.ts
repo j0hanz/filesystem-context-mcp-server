@@ -158,4 +158,60 @@ describe('Security (P0)', () => {
       );
     });
   });
+
+  describe('SensitiveMatcher directly (extended)', () => {
+    it('TC-SENS-001: path-glob pattern matches under any parent via **/ prefix', () => {
+      const matcher = new SensitiveMatcher(['.aws/credentials']);
+      assert.strictEqual(
+        matcher.isSensitive('/home/u/.aws/credentials'),
+        true,
+        'non-rooted path pattern should match under any parent via **/ prefix',
+      );
+    });
+
+    it('TC-SENS-002: path-glob pattern does not match a sibling of the pattern dir', () => {
+      const matcher = new SensitiveMatcher(['.aws/credentials']);
+      assert.strictEqual(
+        matcher.isSensitive('/home/u/other'),
+        false,
+        'should not match an unrelated path',
+      );
+    });
+
+    it('TC-SENS-003: rooted path glob does NOT get the **/ prefix', () => {
+      const matcher = new SensitiveMatcher(['/abs/path/secret']);
+      assert.strictEqual(
+        matcher.isSensitive('/abs/path/secret'),
+        true,
+        'rooted pattern should match the exact absolute path',
+      );
+      assert.strictEqual(
+        matcher.isSensitive('other/secret'),
+        false,
+        'rooted pattern must NOT match via **/ prefix on unrelated parents',
+      );
+    });
+
+    it('TC-SENS-004: default .mcpregistry_*_token pattern matches', () => {
+      const matcher = new SensitiveMatcher();
+      assert.strictEqual(
+        matcher.isSensitive('.mcpregistry_github_token'),
+        true,
+        'default .mcpregistry_*_token pattern should match',
+      );
+    });
+
+    it('TC-SENS-005: trailing dot/space is trimmed before matching on Windows', (t) => {
+      if (process.platform !== 'win32') {
+        t.skip('trailing dot/space trim is Windows-only (Win32 syscall boundary)');
+        return;
+      }
+      const matcher = new SensitiveMatcher();
+      // Win32 strips trailing dots/spaces at the syscall boundary, so ".env "
+      // and ".env." create ".env". The matcher trims before denylist matching
+      // or the exact-name patterns are bypassed.
+      assert.strictEqual(matcher.isSensitive('.env '), true, '".env " should be caught as ".env"');
+      assert.strictEqual(matcher.isSensitive('.env.'), true, '".env." should be caught as ".env"');
+    });
+  });
 });
