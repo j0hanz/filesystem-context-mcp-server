@@ -1,5 +1,6 @@
 import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/express';
 import { localhostAllowedHostnames } from '@modelcontextprotocol/server';
+import type { AuthInfo } from '@modelcontextprotocol/server';
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 
@@ -53,7 +54,10 @@ export function isOriginAllowed(origin: string, allowedHostnames: readonly strin
   return host !== undefined && allowedHostnames.includes(host);
 }
 
-export function validateBearerAuthorization(apiKey: string, authHeader: unknown): boolean {
+export function validateBearerAuthorization(
+  apiKey: string,
+  authHeader: unknown,
+): authHeader is string {
   const bearerPrefix = 'Bearer ';
   if (typeof authHeader !== 'string' || !authHeader.startsWith(bearerPrefix)) {
     return false;
@@ -234,7 +238,17 @@ export function bearerAuthMiddleware(
       next();
       return;
     }
-    if (isSecureApiKey(apiKey) && validateBearerAuthorization(apiKey, req.headers.authorization)) {
+    const authHeader = req.headers.authorization;
+    if (isSecureApiKey(apiKey) && validateBearerAuthorization(apiKey, authHeader)) {
+      // Forward the validated caller to the SDK pipeline: toNodeHandler reads
+      // req.auth and passes it as the handler's pass-through authInfo, which the
+      // per-request factory receives and tool handlers read as ctx.http.authInfo.
+      const presented = authHeader.slice('Bearer '.length).trim();
+      (req as Request & { auth?: AuthInfo }).auth = {
+        token: presented,
+        clientId: 'api-key',
+        scopes: [],
+      };
       next();
       return;
     }

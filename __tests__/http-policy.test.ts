@@ -197,6 +197,11 @@ describe('HTTP Policy & Security', () => {
       });
       assert.strictEqual(okNext, true);
       assert.strictEqual(okRes.statusCode, undefined);
+      // okReq is `as unknown as Request`; read auth back the same way.
+      const auth = (okReq as unknown as { auth?: { clientId: string; scopes: string[] } }).auth;
+      assert.ok(auth, 'matching bearer must attach req.auth for toNodeHandler to forward');
+      assert.strictEqual(auth.clientId, 'api-key');
+      assert.deepStrictEqual(auth.scopes, []);
 
       // Wrong bearer -> 401 JSON-RPC error
       const badReq = createMockRequest({
