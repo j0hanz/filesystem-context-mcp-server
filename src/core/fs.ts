@@ -22,7 +22,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import { withAbort } from './concurrency.js';
-import { formatUnknownErrorMessage, isNodeError } from './errors.js';
+import { ErrorCode, formatUnknownErrorMessage, isFsError, isNodeError } from './errors.js';
 import { detectMimeFromContent } from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
@@ -319,5 +319,28 @@ export class GuardedFileSystem {
         );
       });
     }
+  }
+}
+
+export interface StatPath {
+  stat(filePath: string, options?: { signal?: AbortSignal }): Promise<unknown>;
+}
+
+/**
+ * Returns whether `path` exists, treating "not found" as absent and logging any
+ * other stat failure. Used for TOCTOU re-checks between plan and execute phases.
+ */
+export async function destExists(fs: StatPath, path: string, label: string): Promise<boolean> {
+  try {
+    await fs.stat(path);
+    return true;
+  } catch (err) {
+    const missing =
+      (isNodeError(err) && err.code === 'ENOENT') ||
+      (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
+    if (!missing) {
+      Logger.warn(`${label}: dest stat failed unexpectedly for "${path}": ${String(err)}`);
+    }
+    return false;
   }
 }

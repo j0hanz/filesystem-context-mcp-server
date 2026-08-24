@@ -14,9 +14,9 @@ import {
   Problem,
   rethrowIfAborted,
 } from '../core/errors.js';
+import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
-import { Logger } from '../core/observability.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -153,20 +153,7 @@ async function planMove(
   }
 
   const isCaseOnlyRename = isSamePath(resolvedSource, resolvedDest);
-  let destExistedOriginally = false;
-  if (!isCaseOnlyRename) {
-    try {
-      await fs.stat(validDest);
-      destExistedOriginally = true;
-    } catch (err) {
-      const missing =
-        (isNodeError(err) && err.code === 'ENOENT') ||
-        (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
-      if (!missing) {
-        Logger.warn(`move: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
-      }
-    }
-  }
+  const destExistedOriginally = !isCaseOnlyRename && (await destExists(fs, validDest, 'move'));
 
   const pending = !isCaseOnlyRename && destExistedOriginally;
   return {
@@ -198,31 +185,20 @@ async function executeMove(
     }
   }
 
-  await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
-
-  // TOCTOU check immediately before the rename: a destination that did not exist
-  // when planned but exists now was created during the confirmation gap.
-  let existsNow = false;
+  // TOCTOU check before any mutation: a destination that did not exist when
+  // planned but exists now was created during the confirmation gap.
   if (!plan.isCaseOnlyRename) {
-    try {
-      await ctx.fs.stat(plan.validDest);
-      existsNow = true;
-    } catch (err) {
-      const missing =
-        (isNodeError(err) && err.code === 'ENOENT') ||
-        (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
-      if (!missing) {
-        Logger.warn(`move: dest stat failed unexpectedly for "${plan.validDest}": ${String(err)}`);
-      }
+    const existsNow = await destExists(ctx.fs, plan.validDest, 'move');
+    if (existsNow && !plan.destExistedOriginally) {
+      throw new FsError(
+        ErrorCode.CANCELLED,
+        `Move cancelled: destination "${plan.move.destination}" was created during confirmation.`,
+        plan.move.destination,
+      );
     }
   }
-  if (existsNow && !plan.destExistedOriginally) {
-    throw new FsError(
-      ErrorCode.CANCELLED,
-      `Move cancelled: destination "${plan.move.destination}" was created during confirmation.`,
-      plan.move.destination,
-    );
-  }
+
+  await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
 
   await performRenameWithFallback(plan.renamePath, plan.validDest, ctx.fs, plan.move.source);
   return { ok: true as const, from: plan.renamePath, to: plan.validDest };

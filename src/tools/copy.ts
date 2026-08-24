@@ -6,16 +6,9 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import {
-  ErrorCode,
-  FsError,
-  isFsError,
-  isNodeError,
-  Problem,
-  rethrowIfAborted,
-} from '../core/errors.js';
+import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js';
+import { destExists } from '../core/fs.js';
 import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
-import { Logger } from '../core/observability.js';
 import { isPathInsideDirectory, isSamePath } from '../core/path.js';
 import {
   completablePath,
@@ -132,18 +125,7 @@ async function planCopy(
     };
   }
 
-  let destExistedOriginally = false;
-  try {
-    await fs.stat(validDest);
-    destExistedOriginally = true;
-  } catch (err) {
-    const missing =
-      (isNodeError(err) && err.code === 'ENOENT') ||
-      (isFsError(err) && err.code === ErrorCode.NOT_FOUND);
-    if (!missing) {
-      Logger.warn(`copy: dest stat failed unexpectedly for "${validDest}": ${String(err)}`);
-    }
-  }
+  const destExistedOriginally = await destExists(fs, validDest, 'copy');
 
   const pending = destExistedOriginally && !overwrite;
   return {
@@ -167,6 +149,16 @@ async function executeCopy(
         plan.copy.destination,
       );
     }
+  }
+
+  // TOCTOU check before any mutation: a destination that did not exist when
+  // planned but exists now was created during the confirmation gap.
+  if ((await destExists(ctx.fs, plan.validDest, 'copy')) && !plan.destExistedOriginally) {
+    throw new FsError(
+      ErrorCode.CANCELLED,
+      `Copy cancelled: destination "${plan.copy.destination}" was created during confirmation.`,
+      plan.copy.destination,
+    );
   }
 
   await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
