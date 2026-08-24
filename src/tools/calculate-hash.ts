@@ -10,7 +10,12 @@ import * as z from 'zod/v4';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, rethrowIfAborted } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
-import { globEntries, isIgnoredByGitignore, loadRootGitignore } from '../core/glob.js';
+import {
+  globEntries,
+  isIgnoredByGitignore,
+  loadRootGitignore,
+  resolveEntryType,
+} from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import type { PathGuard } from '../core/path.js';
 import { completablePath, NonNegInt, RequiredPath } from '../core/schema.js';
@@ -154,10 +159,16 @@ async function hashDirectory(
     if (gitignoreMatcher && isIgnoredByGitignore(gitignoreMatcher, dirPath, entry.path)) {
       continue;
     }
-    // Skip sensitive files so their content never enters the composite digest.
-    // Skipping (rather than aborting) keeps directories that legitimately
-    // contain a denylisted file (e.g. `.env`) hashable and deterministic.
-    if (pathGuard.isSensitive(entry.path)) {
+    // Skip sensitive files (including a symlink whose target is sensitive) so
+    // their content never enters the composite digest. isEntryAccessible
+    // resolves the realpath via validateExistingPathDetailed and checks BOTH
+    // the requested and resolved paths — the lexical isSensitive check above
+    // missed a symlink → .env, which then threw in Phase 2 and aborted the
+    // whole hash. Mirrors list.ts:119. A genuine out-of-root escape rethrows
+    // here and aborts, matching the existing "one unreadable file aborts"
+    // contract.
+    const entryType = resolveEntryType(entry.dirent);
+    if (!(await pathGuard.isEntryAccessible(entry.path, entryType, [dirPath]))) {
       continue;
     }
     filteredPaths.push({
