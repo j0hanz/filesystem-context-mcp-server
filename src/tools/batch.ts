@@ -28,19 +28,13 @@ interface RunOverPathsOptions {
 function normalizeBatchItems<TOverride>(
   args: BatchInput<TOverride>,
 ): { path: string; override?: TOverride }[] {
-  if ('path' in args) {
-    return [{ path: args.path }];
-  }
-  if ('paths' in args) {
-    return args.paths.map((path) => ({ path }));
-  }
-  if ('files' in args) {
+  if ('path' in args) return [{ path: args.path }];
+  if ('paths' in args) return args.paths.map((path) => ({ path }));
+  if ('files' in args)
     return args.files.map(({ path, ...rest }) => ({
       path,
       override: rest as TOverride,
     }));
-  }
-  // For invalid input not matching the discriminated union
   return [];
 }
 

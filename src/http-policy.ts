@@ -107,7 +107,7 @@ export function parseAllowedHostsEnv(value: string | undefined): string[] {
   return (value ?? '')
     .split(',')
     .map((h) => h.trim())
-    .filter((h) => h.length > 0);
+    .filter(Boolean);
 }
 
 /**

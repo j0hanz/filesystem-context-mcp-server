@@ -1,18 +1,5 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-
 export type LoggingLevel =
   'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
-
-interface SessionContextData {
-  sessionId?: string;
-}
-
-const SessionContext = new AsyncLocalStorage<SessionContextData>();
-
-export function withSession<T>(sessionId: string | undefined, run: () => Promise<T>): Promise<T> {
-  const store: SessionContextData = sessionId ? { sessionId } : {};
-  return SessionContext.run(store, run);
-}
 
 // RFC 5424 severities, most severe first. A message is emitted when its
 // severity is at least as high as the configured minimum.
@@ -93,19 +80,17 @@ function safeJsonStringify(value: unknown): string {
 
 function write(level: LoggingLevel, message: string, args: readonly unknown[]): void {
   if (!isLevelEnabled(level)) return;
-  const sessionId = SessionContext.getStore()?.sessionId;
   if (process.env['LOG_FORMAT'] === 'json') {
     const entry: Record<string, unknown> = {
       timestamp: new Date().toISOString(),
       level,
       message,
-      ...(sessionId ? { sessionId } : {}),
       ...(args.length > 0 ? { details: args.map(serializeLogDetail) } : {}),
     };
     console.error(safeJsonStringify(entry));
     return;
   }
-  const prefix = sessionId ? `[${level}] [session ${sessionId}]` : `[${level}]`;
+  const prefix = `[${level}]`;
   console.error(`${prefix} ${message}`, ...args);
 }
 
