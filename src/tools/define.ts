@@ -419,7 +419,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
   const tool: DefinedTool = {
     name: def.name,
-    annotations: def.annotations,
+    annotations: { ...def.annotations, title: def.title },
     ...(def.execution !== undefined ? { execution: def.execution } : {}),
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
@@ -432,7 +432,7 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
           description: def.description,
           inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
           outputSchema: outputSchemaWithJson,
-          annotations: def.annotations,
+          annotations: { ...def.annotations, title: def.title },
           ...(def.execution !== undefined ? { execution: def.execution } : {}),
         },
         deps.iconInfo,

@@ -2,7 +2,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -16,6 +16,7 @@ import {
 } from '../src/tools/index.js';
 import {
   cleanupTestRoot,
+  createElicitationClientPair,
   createTestClientPair,
   createTestRoot,
   failedSummary,
@@ -304,8 +305,6 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
 
     let notified = false;
     const notifier = {
-      toolsChanged: () => {},
-      promptsChanged: () => {},
       resourcesChanged: () => {
         notified = true;
       },
@@ -429,6 +428,159 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       );
     } finally {
       console.error = origErr;
+    }
+  });
+
+  it('TC-FUNC-064: copy skip via choice round-trip leaves dst untouched', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'skip' },
+    }));
+    try {
+      const src = join(tmpDir, 'choice_skip_src.txt');
+      const dst = join(tmpDir, 'choice_skip_dst.txt');
+      await writeFile(src, 'new source');
+      await writeFile(dst, 'existing dst');
+      const result = await eh.client.callTool({
+        name: 'copy',
+        arguments: { copies: [{ source: src, destination: dst }] },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as { copies?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.copies?.length, 0);
+      assert.ok(s.skipped?.includes(dst));
+      assert.strictEqual(await readFile(dst, 'utf-8'), 'existing dst');
+    } finally {
+      await eh.close();
+    }
+  });
+
+  it('TC-FUNC-065: copy overwrite via choice round-trip replaces dst', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'overwrite' },
+    }));
+    try {
+      const src = join(tmpDir, 'choice_ow_src.txt');
+      const dst = join(tmpDir, 'choice_ow_dst.txt');
+      await writeFile(src, 'new source');
+      await writeFile(dst, 'existing dst');
+      const result = await eh.client.callTool({
+        name: 'copy',
+        arguments: { copies: [{ source: src, destination: dst }] },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as { copies?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.copies?.length, 1);
+      assert.strictEqual(s.skipped, undefined);
+      assert.strictEqual(await readFile(dst, 'utf-8'), 'new source');
+    } finally {
+      await eh.close();
+    }
+  });
+
+  it('TC-FUNC-066: move skip via choice round-trip leaves src and dst intact', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'skip' },
+    }));
+    try {
+      const src = join(tmpDir, 'move_skip_src.txt');
+      const dst = join(tmpDir, 'move_skip_dst.txt');
+      await writeFile(src, 'move me');
+      await writeFile(dst, 'dst stays');
+      const result = await eh.client.callTool({
+        name: 'move',
+        arguments: { moves: [{ source: src, destination: dst }] },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.moves?.length, 0);
+      assert.ok(s.skipped?.includes(dst));
+      assert.strictEqual(await readFile(src, 'utf-8'), 'move me');
+      assert.strictEqual(await readFile(dst, 'utf-8'), 'dst stays');
+    } finally {
+      await eh.close();
+    }
+  });
+
+  it('TC-FUNC-067: move overwrite via choice round-trip replaces dst', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'overwrite' },
+    }));
+    try {
+      const src = join(tmpDir, 'move_ow_src.txt');
+      const dst = join(tmpDir, 'move_ow_dst.txt');
+      await writeFile(src, 'move me');
+      await writeFile(dst, 'dst old');
+      const result = await eh.client.callTool({
+        name: 'move',
+        arguments: { moves: [{ source: src, destination: dst }] },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.moves?.length, 1);
+      assert.strictEqual(s.skipped, undefined);
+      assert.strictEqual(await readFile(dst, 'utf-8'), 'move me');
+    } finally {
+      await eh.close();
+    }
+  });
+
+  it('TC-FUNC-068: delete skip via choice round-trip leaves dir in place', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'skip' },
+    }));
+    try {
+      const dir = join(tmpDir, 'del_skip_dir');
+      await mkdir(join(dir, 'sub'), { recursive: true });
+      await writeFile(join(dir, 'sub', 'f.txt'), 'x');
+      const result = await eh.client.callTool({
+        name: 'delete',
+        arguments: { paths: [dir], recursive: true },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as {
+        ok?: boolean;
+        failures?: { path?: string }[];
+        skipped?: string[];
+      };
+      assert.strictEqual(s.ok, true);
+      assert.ok((s.failures?.length ?? 0) === 0);
+      assert.ok(s.skipped?.some((p) => p.toLowerCase() === dir.toLowerCase()));
+      await access(dir); // still exists
+    } finally {
+      await eh.close();
+    }
+  });
+
+  it('TC-FUNC-069: delete via choice round-trip removes the dir', async () => {
+    const eh = await createElicitationClientPair([tmpDir], async () => ({
+      action: 'accept' as const,
+      content: { choice: 'delete' },
+    }));
+    try {
+      const dir = join(tmpDir, 'del_choice_dir');
+      await mkdir(join(dir, 'sub'), { recursive: true });
+      await writeFile(join(dir, 'sub', 'f.txt'), 'x');
+      const result = await eh.client.callTool({
+        name: 'delete',
+        arguments: { paths: [dir], recursive: true },
+      });
+      assert.notStrictEqual(result.isError, true);
+      const s = result.structuredContent as {
+        ok?: boolean;
+        path?: string;
+        skipped?: string[];
+      };
+      assert.strictEqual(s.ok, true);
+      assert.strictEqual(s.path?.toLowerCase(), dir.toLowerCase());
+      assert.strictEqual(s.skipped, undefined);
+      await assert.rejects(() => access(dir));
+    } finally {
+      await eh.close();
     }
   });
 });

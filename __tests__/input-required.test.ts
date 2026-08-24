@@ -6,8 +6,10 @@ import { describe, it } from 'node:test';
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import {
   buildInputRequired,
+  choiceInput,
   confirmInput,
   pendingRoundTrip,
+  readAcceptedChoice,
   readAcceptedConfirm,
   requestStateCodec,
 } from '../src/core/input-required.js';
@@ -119,6 +121,66 @@ describe('input_required multi-round-trip infrastructure', () => {
     assert.strictEqual(
       readAcceptedConfirm({ confirm_0: { action: 'accept', content: {} } }, 'confirm_0'),
       false,
+    );
+  });
+
+  const overwriteSkipChoices = [
+    { value: 'overwrite', title: 'Overwrite' },
+    { value: 'skip', title: 'Skip' },
+  ];
+
+  it('10. buildInputRequired with choiceInput returns InputRequiredResult with requestState', async () => {
+    const r = await buildInputRequired({ op: 'copy', paths: ['/dst'] }, [
+      choiceInput(
+        'confirm_0',
+        'Destination "/dst" exists. Overwrite or skip?',
+        overwriteSkipChoices,
+      ),
+    ]);
+    assert.strictEqual(isInputRequiredResult(r), true);
+    assert.ok(r.inputRequests['confirm_0'] !== undefined);
+    assert.strictEqual(typeof r.requestState, 'string');
+    assert.ok(typeof r.requestState === 'string' && r.requestState.length > 0);
+  });
+
+  it('11. readAcceptedChoice accept-skip -> "skip"', () => {
+    assert.strictEqual(
+      readAcceptedChoice(
+        { confirm_0: { action: 'accept', content: { choice: 'skip' } } },
+        'confirm_0',
+      ),
+      'skip',
+    );
+  });
+
+  it('12. readAcceptedChoice accept-overwrite -> "overwrite"', () => {
+    assert.strictEqual(
+      readAcceptedChoice(
+        { confirm_0: { action: 'accept', content: { choice: 'overwrite' } } },
+        'confirm_0',
+      ),
+      'overwrite',
+    );
+  });
+
+  it('13. readAcceptedChoice decline -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedChoice({ confirm_0: { action: 'decline' } }, 'confirm_0'),
+      undefined,
+    );
+  });
+
+  it('14. readAcceptedChoice accept-without-choice -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedChoice({ confirm_0: { action: 'accept', content: {} } }, 'confirm_0'),
+      undefined,
+    );
+  });
+
+  it('15. readAcceptedChoice missing-key -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedChoice({ other: { action: 'accept', content: { choice: 'skip' } } }, 'confirm_0'),
+      undefined,
     );
   });
 });

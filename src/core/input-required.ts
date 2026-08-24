@@ -38,12 +38,19 @@ export interface PendingState {
   readonly paths: readonly string[];
 }
 
-/** One embedded form-mode boolean confirmation, keyed within the call. */
+/** One embedded form-mode confirmation, keyed within the call. */
 export interface PendingInput {
   /** Server-assigned key, unique within the `tools/call`. */
   readonly key: string;
   /** Human-readable prompt for this item. */
   readonly message: string;
+  /**
+   * When set, the form offers a titled single-select enum (`choice` field)
+   * instead of a boolean `confirm`. Each entry is a `{ value, title }` pair.
+   */
+  readonly choices?: readonly { value: string; title: string }[];
+  /** Preselected enum value (only meaningful with `choices`). */
+  readonly defaultValue?: string;
 }
 
 /**
@@ -87,6 +94,20 @@ export function confirmInput(key: string, message: string): PendingInput {
 }
 
 /**
+ * Build a single-select enum confirmation input. The form renders a `choice`
+ * field whose options are the titled `choices`; the caller reads the selection
+ * with `readAcceptedChoice`. A `defaultValue` preselects one option.
+ */
+export function choiceInput(
+  key: string,
+  message: string,
+  choices: readonly { value: string; title: string }[],
+  defaultValue?: string,
+): PendingInput {
+  return { key, message, choices, ...(defaultValue !== undefined ? { defaultValue } : {}) };
+}
+
+/**
  * Build an `input_required` result carrying one boolean confirmation per pending
  * item, plus the integrity-protected `requestState` sealing the operation kind
  * and sorted target paths. `mint` is async (HMAC + base64url).
@@ -96,14 +117,27 @@ export async function buildInputRequired(
   inputs: readonly PendingInput[],
 ): Promise<InputRequiredResult> {
   const inputRequests: Record<string, InputRequest> = {};
-  for (const { key, message } of inputs) {
-    inputRequests[key] = inputRequired.elicit({
-      message,
-      requestedSchema: {
-        type: 'object',
-        properties: { confirm: { type: 'boolean', title: 'Confirm' } },
-        required: ['confirm'],
-      },
+  for (const input of inputs) {
+    const requestedSchema = input.choices
+      ? {
+          type: 'object' as const,
+          properties: {
+            choice: {
+              type: 'string' as const,
+              oneOf: input.choices.map((c) => ({ const: c.value, title: c.title })),
+              ...(input.defaultValue !== undefined ? { default: input.defaultValue } : {}),
+            },
+          },
+          required: ['choice'],
+        }
+      : {
+          type: 'object' as const,
+          properties: { confirm: { type: 'boolean' as const, title: 'Confirm' } },
+          required: ['confirm'],
+        };
+    inputRequests[input.key] = inputRequired.elicit({
+      message: input.message,
+      requestedSchema,
     });
   }
   const requestState = await requestStateCodec.mint({
@@ -173,6 +207,29 @@ export function readAcceptedConfirm(
   if (view.kind !== 'elicit' || view.action !== 'accept') return false;
   const content = acceptedContent<{ confirm?: boolean }>(responses, key);
   return content?.confirm === true;
+}
+
+/**
+ * Read one pending item's enum selection from a retried request's
+ * `inputResponses`. Returns the chosen `value` only when the client explicitly
+ * accepted AND the `choice` field is a string; every other outcome (decline,
+ * cancel, missing key, accept-without-choice) returns `undefined`, which the
+ * caller reports as `CANCELLED` — same contract as the boolean reader.
+ *
+ * The returned value is NOT validated against the `choices` offered in the
+ * request schema. Callers must compare against the expected values (e.g.
+ * `choice === 'overwrite'`) before acting — never echo the string back into a
+ * path or trust it as an enum member.
+ */
+export function readAcceptedChoice(
+  responses: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const view = inputResponse(responses, key);
+  if (view.kind !== 'elicit' || view.action !== 'accept') return undefined;
+  const content = acceptedContent<{ choice?: string }>(responses, key);
+  const choice = content?.choice;
+  return typeof choice === 'string' ? choice : undefined;
 }
 
 /**

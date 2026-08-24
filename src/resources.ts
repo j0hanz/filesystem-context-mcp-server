@@ -212,6 +212,7 @@ export async function attachFileWatcherForUri(
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
+  const guardedFs = options.pathGuard ? new GuardedFileSystem(options.pathGuard) : undefined;
   const registry = options.watcherRegistry ?? createWatcherRegistry();
   // Only the per-server (legacy/stdio) registry is owned by this resource and
   // destroyed on dispose; the shared modern-leg registry is owned by the host
@@ -225,14 +226,33 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
 
-    list() {
+    async list() {
       const allowed = options.pathGuard?.getAllowedDirectories() ?? [];
-      const resources: Resource[] = allowed.map((rootDir) => ({
-        uri: buildFileResourceUri(rootDir),
-        name: basename(rootDir) || rootDir,
-        description: `Workspace root directory: ${rootDir}`,
-        mimeType: 'inode/directory',
-      }));
+      const resources: Resource[] = [];
+      for (const rootDir of allowed) {
+        let lastModified: string | undefined;
+        if (guardedFs) {
+          try {
+            const { stats } = await guardedFs.stat(rootDir);
+            lastModified = new Date(stats.mtimeMs).toISOString();
+          } catch (err) {
+            // ENOENT: root vanished mid-list. Anything else (EACCES, EBUSY):
+            // root exists but is unreadable. Either way omit lastModified and
+            // keep the entry — list() must not throw for one bad root.
+            const code = (err as NodeJS.ErrnoException | undefined)?.code;
+            if (code && code !== 'ENOENT') {
+              /* unreadable root: best-effort, no log channel in list() */
+            }
+          }
+        }
+        resources.push({
+          uri: buildFileResourceUri(rootDir),
+          name: basename(rootDir) || rootDir,
+          description: `Workspace root directory: ${rootDir}`,
+          mimeType: 'inode/directory',
+          ...(lastModified ? { annotations: { lastModified } } : {}),
+        });
+      }
       return { resources };
     },
 

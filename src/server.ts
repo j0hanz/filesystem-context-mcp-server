@@ -19,8 +19,6 @@ import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
 
 export interface ServerNotifier {
-  readonly toolsChanged?: () => void;
-  readonly promptsChanged?: () => void;
   readonly resourcesChanged?: () => void;
   readonly resourceUpdated: (uri: string) => void;
 }

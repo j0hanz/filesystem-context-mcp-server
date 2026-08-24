@@ -16,7 +16,7 @@ import {
 } from '../core/errors.js';
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
+import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
 import { isSamePath } from '../core/path.js';
 import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
@@ -61,6 +61,10 @@ const MoveOutputSchema = z.strictObject({
     .array(MoveFailureItemSchema)
     .optional()
     .describe('Move operations that failed with per-item error details'),
+  skipped: z
+    .array(z.string())
+    .optional()
+    .describe('Destinations skipped because the user chose Skip'),
 });
 
 type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
@@ -173,10 +177,14 @@ async function executeMove(
   plan: MovePlan,
   ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
   pendingSorted: readonly string[],
-): Promise<MoveItemResult> {
+): Promise<MoveItemResult | { skipped: true; path: string }> {
   if (plan.pending) {
     const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
-    if (!readAcceptedConfirm(ctx.inputResponses, key)) {
+    const choice = readAcceptedChoice(ctx.inputResponses, key);
+    if (choice === 'skip') {
+      return { skipped: true as const, path: plan.move.destination };
+    }
+    if (choice !== 'overwrite') {
       throw new FsError(
         ErrorCode.CANCELLED,
         `Move cancelled: overwrite of "${plan.move.destination}" was declined or missing`,
@@ -261,7 +269,12 @@ async function handleMove(
       pending: pendingSorted,
       requestState: ctx.requestState,
       buildInputs: (ds) =>
-        ds.map((d, i) => confirmInput(`confirm_${i}`, `"${d}" already exists. Overwrite it?`)),
+        ds.map((d, i) =>
+          choiceInput(`confirm_${i}`, `"${d}" already exists. Overwrite it?`, [
+            { value: 'overwrite', title: 'Overwrite' },
+            { value: 'skip', title: 'Skip' },
+          ]),
+        ),
     });
     if (round !== undefined) return round;
   }
@@ -271,7 +284,9 @@ async function handleMove(
     async (plan) => {
       try {
         const res = await executeMove(plan, ctx, pendingSorted);
-        ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
+        if (!('skipped' in res)) {
+          ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
+        }
         return { ok: true as const, res };
       } catch (err) {
         if (ctx.signal.aborted) throw err;
@@ -283,10 +298,15 @@ async function handleMove(
   );
 
   const results: MoveItemResult[] = [];
+  const skipped: string[] = [];
   const failures = [...earlyFailures];
   for (const { value: r } of executed.results) {
     if (r.ok) {
-      results.push(r.res);
+      if ('skipped' in r.res) {
+        skipped.push(r.res.path);
+      } else {
+        results.push(r.res);
+      }
     } else {
       failures.push(r.failure);
     }
@@ -302,6 +322,7 @@ async function handleMove(
     ok: true as const,
     moves: results,
     ...(failures.length > 0 ? { failures } : {}),
+    ...(skipped.length > 0 ? { skipped } : {}),
   };
 }
 

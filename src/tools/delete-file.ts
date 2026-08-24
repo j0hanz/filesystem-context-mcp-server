@@ -9,7 +9,7 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, isFsError, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
 import { getFileType } from '../core/fs.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
+import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
 import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
@@ -44,6 +44,7 @@ const DeleteOutputSchema = z.strictObject({
     .array(PathFailureSchema)
     .optional()
     .describe('Per-path error details for paths that could not be deleted'),
+  skipped: z.array(z.string()).optional().describe('Paths skipped because the user chose Skip'),
 });
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
@@ -234,10 +235,14 @@ async function executePlan(
   args: Pick<DeleteInput, 'recursive' | 'ignoreIfNotExists'>,
   ctx: Pick<ToolCtx, 'fs' | 'inputResponses' | 'log'>,
   pendingSorted: readonly string[],
-): Promise<{ item: DeletedItem } | { failure: DeleteFailure }> {
+): Promise<{ item: DeletedItem } | { failure: DeleteFailure } | { skipped: true; path: string }> {
   if (plan.pending) {
     const key = `confirm_${pendingSorted.indexOf(plan.validPath)}`;
-    if (!readAcceptedConfirm(ctx.inputResponses, key)) {
+    const choice = readAcceptedChoice(ctx.inputResponses, key);
+    if (choice === 'skip') {
+      return { skipped: true as const, path: plan.validPath };
+    }
+    if (choice !== 'delete') {
       return {
         failure: {
           path: plan.validPath,
@@ -293,9 +298,13 @@ async function handleDelete(
       requestState: ctx.requestState,
       buildInputs: (ps) =>
         ps.map((p, i) =>
-          confirmInput(
+          choiceInput(
             `confirm_${i}`,
             `Permanently delete "${p}" and all its contents? This cannot be undone.`,
+            [
+              { value: 'delete', title: 'Delete' },
+              { value: 'skip', title: 'Skip' },
+            ],
           ),
         ),
     });
@@ -312,11 +321,14 @@ async function handleDelete(
 
   const successPaths: string[] = earlyNoop.map((n) => n.path);
   const failures: DeleteFailureItem[] = [];
+  const skipped: string[] = [];
   for (const f of earlyFailures) {
     failures.push({ path: f.path, error: f.error });
   }
   for (const { value: r } of executed.results) {
-    if ('failure' in r) {
+    if ('skipped' in r) {
+      skipped.push(r.path);
+    } else if ('failure' in r) {
       failures.push({ path: r.failure.path, error: r.failure.error });
     } else if (r.item.path) {
       successPaths.push(r.item.path);
@@ -337,6 +349,9 @@ async function handleDelete(
   }
   if (failures.length > 0) {
     output.failures = failures;
+  }
+  if (skipped.length > 0) {
+    output.skipped = skipped;
   }
   return output;
 }

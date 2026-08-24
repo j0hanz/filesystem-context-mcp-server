@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/client';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import type { ElicitRequestParams, ElicitResult } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
 
@@ -54,6 +55,47 @@ export async function createTestClientPair(
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   const client = new Client({ name: 'test-harness', version: '1.0.0' }, { capabilities: {} });
+
+  await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
+
+  return {
+    client,
+    serverCtx,
+    close: async () => {
+      await client.close();
+      await serverCtx.close();
+    },
+  };
+}
+
+/**
+ * Elicitation handler: returns the `ElicitResult` the client auto-fulfils an
+ * `input_required` round-trip with. The SDK retries the original `tools/call`
+ * carrying the returned `content` as `inputResponses`.
+ */
+export type ElicitHandler = (params: ElicitRequestParams) => Promise<ElicitResult> | ElicitResult;
+
+/**
+ * Like `createTestClientPair`, but the client negotiates the 2026 era and
+ * declares form-mode elicitation, registering `elicitHandler` for
+ * `elicitation/create` so an `input_required` round-trip is auto-fulfilled.
+ */
+export async function createElicitationClientPair(
+  allowedDirs: string[],
+  elicitHandler: ElicitHandler,
+  options: { readOnly?: boolean } = {},
+): Promise<TestClientContext> {
+  const serverCtx = await createTestServer(allowedDirs, options);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  const client = new Client(
+    { name: 'test-elicit', version: '1.0.0' },
+    {
+      versionNegotiation: { mode: 'auto' },
+      capabilities: { elicitation: { form: {} } },
+    },
+  );
+  client.setRequestHandler('elicitation/create', elicitHandler);
 
   await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
 

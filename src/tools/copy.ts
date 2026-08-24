@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js';
 import { destExists } from '../core/fs.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
+import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
 import { isPathInsideDirectory, isSamePath } from '../core/path.js';
 import {
   completablePath,
@@ -59,6 +59,10 @@ const CopyOutputSchema = z.strictObject({
     .array(CopyFailureItemSchema)
     .optional()
     .describe('Copy operations that failed with per-item error details'),
+  skipped: z
+    .array(z.string())
+    .optional()
+    .describe('Destinations skipped because the user chose Skip'),
 });
 
 type CopyItemResult = z.infer<typeof CopyItemResultSchema>;
@@ -139,10 +143,14 @@ async function executeCopy(
   ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
   pendingSorted: readonly string[],
   overwrite: boolean,
-): Promise<CopyItemResult> {
+): Promise<CopyItemResult | { skipped: true; path: string }> {
   if (plan.pending && !overwrite) {
     const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
-    if (!readAcceptedConfirm(ctx.inputResponses, key)) {
+    const choice = readAcceptedChoice(ctx.inputResponses, key);
+    if (choice === 'skip') {
+      return { skipped: true as const, path: plan.copy.destination };
+    }
+    if (choice !== 'overwrite') {
       throw new FsError(
         ErrorCode.CANCELLED,
         `Copy cancelled: overwrite of "${plan.copy.destination}" was declined or missing`,
@@ -230,7 +238,10 @@ async function handleCopy(
       requestState: ctx.requestState,
       buildInputs: (dests) =>
         dests.map((dest, i) =>
-          confirmInput(`confirm_${i}`, `Destination "${dest}" already exists. Overwrite it?`),
+          choiceInput(`confirm_${i}`, `Destination "${dest}" already exists. Overwrite it?`, [
+            { value: 'overwrite', title: 'Overwrite' },
+            { value: 'skip', title: 'Skip' },
+          ]),
         ),
     });
     if (round !== undefined) return round;
@@ -252,11 +263,21 @@ async function handleCopy(
     }
   }
 
-  const copies = execResults.map((r) => r.value);
+  const copies: CopyItemResult[] = [];
+  const skipped: string[] = [];
+  for (const r of execResults) {
+    const v = r.value;
+    if ('skipped' in v) {
+      skipped.push(v.path);
+    } else {
+      copies.push(v);
+    }
+  }
   const structured: z.infer<typeof CopyOutputSchema> = {
     ok: true as const,
     copies,
     ...(finalFailures.length > 0 ? { failures: finalFailures } : {}),
+    ...(skipped.length > 0 ? { skipped } : {}),
   };
 
   const lines: string[] = [];
@@ -265,8 +286,15 @@ async function handleCopy(
     for (const c of copies) {
       lines.push(`  ${c.from} -> ${c.to}`);
     }
-  } else if (finalFailures.length === 0) {
+  } else if (finalFailures.length === 0 && skipped.length === 0) {
     lines.push('copy: 0 paths');
+  }
+  if (skipped.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push(`Skipped ${skipped.length} destination(s):`);
+    for (const p of skipped) {
+      lines.push(`  ${p}`);
+    }
   }
   if (finalFailures.length > 0) {
     if (lines.length > 0) lines.push('');

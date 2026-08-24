@@ -42,6 +42,13 @@ import { createServer } from './server.js';
 
 /**
  * Serve filesystem-mcp over stdio using modern protocol revision 2026-07-28.
+ *
+ * Known SDK gap: on stdio, `subscriptions/listen` with `resourceSubscriptions`
+ * is acknowledged and stamped with a `subscriptionId` by the SDK's
+ * `StdioListenRouter`, but no filesystem watcher is attached (the SDK exposes
+ * no listen-filter hook on stdio), so subscribed resources never emit updates.
+ * Clients that need live updates on stdio must use `resources/subscribe`, which
+ * attaches a watcher directly. The HTTP leg does not have this gap.
  */
 export function startServer(options: ServerOptions): StdioServerHandle {
   let activeCtx: FilesystemServerContext | undefined;
@@ -143,12 +150,6 @@ async function attachListenWatchers(
 
 function createServerNotifier(bus: InMemoryServerEventBus): ServerNotifier {
   return {
-    toolsChanged: () => {
-      bus.publish({ kind: 'tools_list_changed' });
-    },
-    promptsChanged: () => {
-      bus.publish({ kind: 'prompts_list_changed' });
-    },
     resourcesChanged: () => {
       bus.publish({ kind: 'resources_list_changed' });
     },
