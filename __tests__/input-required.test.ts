@@ -1,10 +1,11 @@
 import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import {
+  assertFleetRequestStateKey,
   buildInputRequired,
   choiceInput,
   confirmInput,
@@ -182,5 +183,45 @@ describe('input_required multi-round-trip infrastructure', () => {
       readAcceptedChoice({ other: { action: 'accept', content: { choice: 'skip' } } }, 'confirm_0'),
       undefined,
     );
+  });
+});
+
+describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
+  const envKeys = ['API_KEY', 'FILESYSTEM_MCP_REQUEST_STATE_KEY'] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of envKeys) saved[k] = process.env[k];
+  });
+
+  afterEach(() => {
+    for (const k of envKeys) {
+      if (saved[k] === undefined) Reflect.deleteProperty(process.env, k);
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('throws when API_KEY set and request state key is missing', () => {
+    process.env['API_KEY'] = 'sekret';
+    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    assert.throws(() => assertFleetRequestStateKey(), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
+  });
+
+  it('throws when API_KEY set and request state key is <32 bytes', () => {
+    process.env['API_KEY'] = 'sekret';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'short';
+    assert.throws(() => assertFleetRequestStateKey(), />=32 bytes/);
+  });
+
+  it('is a no-op when API_KEY is unset (stdio / public HTTP)', () => {
+    delete process.env['API_KEY'];
+    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    assert.doesNotThrow(() => assertFleetRequestStateKey());
+  });
+
+  it('is a no-op when API_KEY set and request state key is >=32 bytes', () => {
+    process.env['API_KEY'] = 'sekret';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'a'.repeat(32);
+    assert.doesNotThrow(() => assertFleetRequestStateKey());
   });
 });

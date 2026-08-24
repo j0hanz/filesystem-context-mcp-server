@@ -57,10 +57,15 @@ export interface PendingInput {
  * HMAC key for the requestState codec. Read once from
  * `FILESYSTEM_MCP_REQUEST_STATE_KEY` (UTF-8, must be >=32 bytes); a random
  * 32-byte key is generated at boot when the env var is unset or too short. A
- * per-process key is correct here because one process serves every round of a
- * flow (stdio is single-process; HTTP runs a single node with
- * `InMemoryEventStore` — decision record 11). A server restart invalidates
- * in-flight tokens; the client re-requests, which is fail-closed and safe.
+ * per-process key is correct for stdio and the single-node HTTP leg (decision
+ * record 11). For a multi-instance HTTP fleet behind a load balancer, a random
+ * per-process key silently breaks any `input_required` round that lands on a
+ * different instance — `assertFleetRequestStateKey()` is the boot-time HTTP
+ * guard that refuses to start the HTTP leg in that state. It is NOT called at
+ * module load (the codec is constructed at module scope, before the stdio/HTTP
+ * decision in `main()`), so a stdio launch with `API_KEY` exported still boots.
+ * A server restart invalidates in-flight tokens; the client re-requests, which
+ * is fail-closed and safe.
  */
 function resolveRequestStateKey(): Uint8Array {
   const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
@@ -72,6 +77,26 @@ function resolveRequestStateKey(): Uint8Array {
     );
   }
   return randomBytes(32);
+}
+
+/**
+ * Boot-time HTTP guard: when the HTTP leg is active (`API_KEY` set) and
+ * `FILESYSTEM_MCP_REQUEST_STATE_KEY` is missing or <32 bytes, refuse to start —
+ * a multi-instance fleet behind a load balancer would otherwise silently break
+ * every `input_required` round that lands on a different instance (each node
+ * mints tokens with its own random per-boot key). No-op when `API_KEY` is unset
+ * (stdio / public HTTP) or when the env key is already strong. Called from
+ * `startHttpServer`, never at module load.
+ */
+export function assertFleetRequestStateKey(): void {
+  const apiKey = process.env['API_KEY'];
+  if (!apiKey) return;
+  const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+  if (!env || Buffer.from(env, 'utf8').length < 32) {
+    throw new Error(
+      'FILESYSTEM_MCP_REQUEST_STATE_KEY must be >=32 bytes when API_KEY is set (multi-instance HTTP).',
+    );
+  }
 }
 
 /**

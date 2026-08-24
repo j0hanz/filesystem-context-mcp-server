@@ -68,6 +68,9 @@ Desktop.ini
 coverage/
 .nyc_output/
 
+# Reference scratch
+temp_refs/
+
 # Cache
 .cache/
 *.cache

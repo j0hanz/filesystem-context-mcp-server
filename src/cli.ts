@@ -216,14 +216,6 @@ export const ENV_HELP: HelpRow[] = [
   },
   { flags: 'FILESYSTEM_MCP_PUBLIC_URL', desc: 'Resource identifier URL for RFC 9728 discovery' },
   {
-    flags: 'FILESYSTEM_MCP_MAX_HTTP_SESSIONS',
-    desc: 'Max concurrent HTTP sessions (default 100, 1–10000)',
-  },
-  {
-    flags: 'FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS',
-    desc: 'HTTP session idle timeout in ms (default 1800000, 1000–86400000)',
-  },
-  {
     flags: 'FILESYSTEM_MCP_RATE_LIMIT_RPM',
     desc: 'Per-client-IP requests/min on public HTTP bind (default 120, 1–100000)',
   },

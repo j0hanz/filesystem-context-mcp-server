@@ -9,7 +9,7 @@ import * as z from 'zod/v4';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { detectMimeFromContent } from '../core/mime.js';
+import { detectMimeFromContent, detectMimeType } from '../core/mime.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import { readFileWithStats } from '../core/read.js';
 import {
@@ -101,6 +101,10 @@ const ReadPerPathValueSchema = z.strictObject({
   content: z.string().optional().describe('File text content'),
   mimeType: z.string().optional().describe('Detected MIME type (e.g. text/typescript)'),
   kind: FileKind.optional().describe('Broad file kind: text, binary, image, audio, or pdf'),
+  mediaData: z
+    .string()
+    .optional()
+    .describe('Base64-encoded media content for image/audio files (full read only)'),
   resourceUri: z
     .string()
     .optional()
@@ -366,6 +370,34 @@ async function readOnePath(
   ctx: ToolCtx,
   known?: { validPath: string; stats: Stats },
 ): Promise<PerPathReadValue> {
+  // Image/audio full read: return a media content block instead of throwing
+  // INVALID_INPUT ("Binary file detected."). Line/byte-range reads are
+  // text-oriented and stay rejected. `readRaw` enforces the same size cap as
+  // the text path (getMaxTextFileSize), so a too-large image surfaces TOO_LARGE
+  // rather than blowing memory. svg carries kind:'image' but is XML text —
+  // readRaw.isBinary is false for it, so it falls through to the text path.
+  const isRangeRead =
+    args.offset !== undefined ||
+    args.length !== undefined ||
+    args.head !== undefined ||
+    args.tail !== undefined ||
+    args.startLine !== undefined ||
+    args.endLine !== undefined;
+  if (!isRangeRead) {
+    const mime = detectMimeType(filePath);
+    if (mime.kind === 'image' || mime.kind === 'audio') {
+      const raw = await ctx.fs.readRaw(filePath, { signal: ctx.signal });
+      if (raw.isBinary) {
+        return {
+          content: `[binary ${mime.kind} content: ${String(raw.content.length)} bytes; returned as a ${mime.kind} content block]`,
+          mimeType: raw.mimeType,
+          kind: mime.kind,
+          mediaData: raw.content.toString('base64'),
+        };
+      }
+    }
+  }
+
   const spec = buildReadSpec(args, ctx.signal);
   const result = known
     ? await readFileWithStats(filePath, known.validPath, known.stats, spec)
@@ -489,12 +521,23 @@ export const READ_FILE = defineTool({
     const resources: ContentBlock[] = [];
     for (const result of ordered) {
       if ('error' in result) continue;
-      if (!result.value.resourceUri || !result.value.content) continue;
+      const v = result.value;
+      // Image/audio full read: emit the media content block alongside the
+      // structured value. The base64 lives in v.mediaData (set in readOnePath).
+      if (v.mediaData && v.mimeType && (v.kind === 'image' || v.kind === 'audio')) {
+        resources.push(
+          v.kind === 'image'
+            ? { type: 'image', data: v.mediaData, mimeType: v.mimeType }
+            : { type: 'audio', data: v.mediaData, mimeType: v.mimeType },
+        );
+        continue;
+      }
+      if (!v.resourceUri || !v.content) continue;
       resources.push(
         buildFileResourceLink(
           result.path,
-          result.value.mimeType ?? 'application/octet-stream',
-          Buffer.byteLength(result.value.content, 'utf8'),
+          v.mimeType ?? 'application/octet-stream',
+          Buffer.byteLength(v.content, 'utf8'),
         ),
       );
     }

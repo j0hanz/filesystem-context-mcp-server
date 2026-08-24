@@ -153,6 +153,26 @@ describe('PathGuard grant round-trip', () => {
     assert.ok(containsPath(allowed, dir1), `dir1 (${dir1}) should be in allowed dirs`);
     assert.ok(containsPath(allowed, dir2), `dir2 (${dir2}) should be in allowed dirs`);
   });
+
+  it('TC-PG-011: with no ROOT_BOUNDARY, precheckAccess never offers and applyGrant never accepts an unsafe path', async () => {
+    // No ROOT_BOUNDARY: isWithinBoundary returns true for everything, so the
+    // unsafe-path denylist is the only guard keeping a grant out of /etc,
+    // C:\Windows, or the home directory. isUnsafeCwdPath flags the path used.
+    delete process.env['ROOT_BOUNDARY'];
+    const unsafeDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+
+    const guard = new PathGuard({ cliAllowedDirs: [root] });
+    await guard.recomputeAllowedDirectories();
+
+    const grants = await guard.precheckAccess([unsafeDir]);
+    assert.deepStrictEqual(grants, [], 'must never offer an unsafe path as a grant');
+
+    const accepted = await guard.applyGrant(unsafeDir);
+    assert.strictEqual(accepted, false, 'applyGrant must refuse an unsafe path');
+
+    const allowed = guard.getAllowedDirectories();
+    assert.ok(!containsPath(allowed, unsafeDir), 'unsafe path must not appear in allowed dirs');
+  });
 });
 
 // Shared assertion helper for the write/delete block.

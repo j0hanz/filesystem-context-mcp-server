@@ -1,3 +1,4 @@
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 import type { ResourceLink, TextContent } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -342,6 +343,35 @@ describe('MCP Prompts Tests (MCP Client)', () => {
       const textMsg = result.messages[0].content as TextContent;
       assert.ok(textMsg.text.includes('Refactor workflow for "applyChange"'));
       assert.ok(!textMsg.text.includes('(dryRun=true)'));
+    });
+  });
+
+  describe('Prompt param failures return InvalidParams (-32602)', () => {
+    // A harness with NO allowed directories: the prompt cannot default a root,
+    // so the no-root guard fires. Per temp_refs/prompts.md, prompt callback
+    // invalid-param failures must surface as -32602 InvalidParams, not -32600.
+    let noDirsHarness: TestClientContext;
+
+    before(async () => {
+      noDirsHarness = await createTestClientPair([]);
+    });
+
+    after(async () => {
+      if (noDirsHarness) {
+        await noDirsHarness.close();
+      }
+    });
+
+    it('find-in-tree with no root and no allowed dirs rejects with InvalidParams', async () => {
+      await assert.rejects(
+        async () => {
+          await noDirsHarness.client.getPrompt({
+            name: 'find-in-tree',
+            arguments: { query: 'x', mode: 'name' },
+          });
+        },
+        { code: ProtocolErrorCode.InvalidParams },
+      );
     });
   });
 });

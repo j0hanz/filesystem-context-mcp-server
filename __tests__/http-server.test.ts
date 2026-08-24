@@ -18,6 +18,7 @@ describe('Real HTTP Server integration', () => {
   beforeEach(async () => {
     tmpDir = await createTestRoot();
     process.env['API_KEY'] = 'x-test-key-0123456789';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'x-test-state-key-01234567890123456789';
     process.env['HTTP_HOST'] = '127.0.0.1';
     httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
     port = (httpServer.address() as AddressInfo).port;

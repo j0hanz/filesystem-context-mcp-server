@@ -398,6 +398,7 @@ describe('HTTP Policy & Security', () => {
         resLocalhost.headers['access-control-allow-origin'],
         'http://localhost:3000',
       );
+      assert.strictEqual(resLocalhost.headers['vary'], 'Origin');
       assert.strictEqual(
         resLocalhost.headers['access-control-allow-methods'],
         'GET, POST, DELETE, OPTIONS',
@@ -419,6 +420,7 @@ describe('HTTP Policy & Security', () => {
         resRemote.headers['access-control-allow-origin'],
         'https://app.example.com',
       );
+      assert.strictEqual(resRemote.headers['vary'], 'Origin');
 
       // 3. Disallowed origin
       const reqDisallowed = createMockRequest({
@@ -429,6 +431,7 @@ describe('HTTP Policy & Security', () => {
 
       assert.strictEqual(resDisallowed.statusCode, 204);
       assert.strictEqual(resDisallowed.headers['access-control-allow-origin'], undefined);
+      assert.strictEqual(resDisallowed.headers['vary'], undefined);
       assert.strictEqual(
         resDisallowed.headers['access-control-allow-methods'],
         'GET, POST, DELETE, OPTIONS',
@@ -441,6 +444,7 @@ describe('HTTP Policy & Security', () => {
 
       assert.strictEqual(resNoOrigin.statusCode, 204);
       assert.strictEqual(resNoOrigin.headers['access-control-allow-origin'], undefined);
+      assert.strictEqual(resNoOrigin.headers['vary'], undefined);
     });
   });
 

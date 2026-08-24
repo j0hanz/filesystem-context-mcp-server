@@ -126,7 +126,7 @@ async function wrapHandler<T>(contract: PromptContract, fn: () => Promise<T> | T
       promptName: contract.name,
       error,
     });
-    const protocolError = new ProtocolError(ProtocolErrorCode.InvalidRequest, message);
+    const protocolError = new ProtocolError(ProtocolErrorCode.InvalidParams, message);
     protocolError.cause = error;
     throw protocolError;
   }
@@ -283,7 +283,7 @@ const FIND_IN_TREE: PromptEntry = {
           const candidate = root ?? allowed[0];
           if (candidate === undefined) {
             throw new ProtocolError(
-              ProtocolErrorCode.InvalidRequest,
+              ProtocolErrorCode.InvalidParams,
               'find-in-tree: no root provided and no allowed directories',
             );
           }
@@ -386,7 +386,7 @@ const AUDIT_WORKSPACE_SECURITY: PromptEntry = {
           const candidate = root ?? options.pathGuard.getAllowedDirectories()[0];
           if (candidate === undefined) {
             throw new ProtocolError(
-              ProtocolErrorCode.InvalidRequest,
+              ProtocolErrorCode.InvalidParams,
               'audit-workspace-security: no root provided and no allowed directories',
             );
           }
@@ -464,7 +464,7 @@ const REFACTOR_WORKFLOW: PromptEntry = {
           const candidate = root ?? options.pathGuard.getAllowedDirectories()[0];
           if (candidate === undefined) {
             throw new ProtocolError(
-              ProtocolErrorCode.InvalidRequest,
+              ProtocolErrorCode.InvalidParams,
               'refactor-workflow: no root provided and no allowed directories',
             );
           }

@@ -303,6 +303,9 @@ export function corsPreflightHandler(allowedOriginHostnames: readonly string[]):
     const origin = req.headers.origin;
     if (origin && isOriginAllowed(origin, allowedOriginHostnames)) {
       res.header('Access-Control-Allow-Origin', origin);
+      // Key the response by Origin so a CDN/proxy caching one origin's preflight
+      // cannot replay it for a different origin (cache-poison).
+      res.header('Vary', 'Origin');
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header(

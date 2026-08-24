@@ -16,6 +16,7 @@ import { createServer as createHttpServer } from 'node:http';
 import type { Express, NextFunction, Request, Response } from 'express';
 
 import { formatUnknownErrorMessage } from './core/errors.js';
+import { assertFleetRequestStateKey } from './core/input-required.js';
 import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
@@ -284,6 +285,9 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
   const apiKey = process.env['API_KEY'];
   assertHttpBindingPolicy(httpHost, apiKey);
+  // A multi-instance HTTP fleet needs a shared requestState key; refuse to boot
+  // when API_KEY is set and the key is missing/weak (see input-required.ts).
+  assertFleetRequestStateKey();
   const allowedHosts = resolveAllowedHosts(httpHost, process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,

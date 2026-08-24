@@ -483,6 +483,13 @@ export class PathGuard {
       if (this.isFilesystemRoot(targetDir)) {
         continue;
       }
+      // Never offer a grant into an unsafe path (home, /etc, C:\Windows, ...).
+      // Without ROOT_BOUNDARY, isWithinBoundary returns true for everything, so
+      // this is the one guard that still rejects roots a misleading grant could
+      // reach. Mirrors the isUnsafeCwdPath check gating --allow-cwd.
+      if (isUnsafeCwdPath(targetDir)) {
+        continue;
+      }
       if (grantDirs.includes(targetDir)) {
         continue;
       }
@@ -503,6 +510,12 @@ export class PathGuard {
    * allowed directory is a no-op via `setRoots` dedup.
    */
   async applyGrant(targetDir: string): Promise<boolean> {
+    // Defense-in-depth: even a tampered/accepted grant cannot extend roots into
+    // an unsafe path. The precheckAccess guard already refuses to offer these;
+    // this catches a grant that arrived by another route.
+    if (isUnsafeCwdPath(normalizePath(targetDir))) {
+      return false;
+    }
     if (!(await this.isWithinBoundary(targetDir))) {
       return false;
     }

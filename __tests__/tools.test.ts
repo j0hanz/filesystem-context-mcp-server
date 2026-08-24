@@ -56,6 +56,38 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.ok(firstBlock.text?.includes('Hello\nWorld\n'));
   });
 
+  it('TC-FUNC-002: Read image file returns an image content block with base64 data', async () => {
+    // Minimal 1x1 transparent PNG (known-good bytes).
+    const pngBytes = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4' +
+        '890000000d49444154789c63f8cf00000001000100000005defb0a00000000' +
+        '49454e44ae426082',
+      'hex',
+    );
+    const file = join(tmpDir, 'pixel.png');
+    await writeFile(file, pngBytes);
+
+    const result = await harness.client.callTool({
+      name: 'read',
+      arguments: { path: file },
+    });
+    assert.notStrictEqual(result.isError, true);
+
+    const imageBlock = (
+      result.content as readonly { type: string; data?: string; mimeType?: string }[]
+    ).find((b) => b.type === 'image');
+    assert.ok(imageBlock, 'expected an image content block');
+    assert.strictEqual(imageBlock.mimeType, 'image/png');
+    assert.ok(imageBlock.data, 'image block must carry base64 data');
+    const data = imageBlock.data;
+    assert.ok(typeof data === 'string');
+    assert.strictEqual(Buffer.from(data, 'base64').equals(pngBytes), true);
+
+    const structured = result.structuredContent as
+      { results?: { value?: { kind?: string } }[] } | undefined;
+    assert.strictEqual(structured?.results?.[0]?.value?.kind, 'image');
+  });
+
   it('TC-FUNC-007: Read path outside allowed root returns isError: true with ACCESS_DENIED', async () => {
     const outsideFile = join(tmpdir(), 'outside_test.txt');
     await writeFile(outsideFile, 'secret');
