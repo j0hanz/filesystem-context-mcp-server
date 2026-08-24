@@ -53,10 +53,7 @@ describe('PathGuard containment helpers', () => {
     // No non-root entry carries a trailing separator.
     for (const dir of result) {
       if (isSamePath(dir, fsRoot)) continue;
-      assert.ok(
-        !dir.endsWith(sep),
-        `non-root entry "${dir}" must not end with a path separator`,
-      );
+      assert.ok(!dir.endsWith(sep), `non-root entry "${dir}" must not end with a path separator`);
     }
 
     // The '/foo' entry (deduped from both '/foo/' and '/foo') is present.
