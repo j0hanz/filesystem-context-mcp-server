@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { ErrorCode, isFsError } from '../src/core/errors.js';
+import { ErrorCode, isFsError, isNodeError } from '../src/core/errors.js';
 import { isSamePath, PathGuard } from '../src/core/path.js';
-import { cleanupTestRoot, createTestRoot } from './helpers.js';
+import { cleanupTestRoot, createTestRoot, writeTestFile } from './helpers.js';
 
 // Grant round-trip characterization: precheckAccess → applyGrant → the
 // guard's allowed-directory view. These pin the working behavior (and, in
@@ -152,7 +152,7 @@ describe('PathGuard grant round-trip', () => {
   });
 });
 
-// Shared assertion helper for the write/delete block (added in step 3).
+// Shared assertion helper for the write/delete block.
 const assertAccessDenied = async (p: Promise<unknown>, msg: string): Promise<void> => {
   await assert.rejects(
     p,
@@ -164,3 +164,102 @@ const assertAccessDenied = async (p: Promise<unknown>, msg: string): Promise<voi
     msg,
   );
 };
+
+// Some symlink creations need elevated privileges on Windows; skip those
+// tests when the platform refuses. Mirrors TC-SEC-006 at security.test.ts:46.
+// `type` is only honored on Windows: 'junction' for directory targets (no
+// admin needed); 'file' for file symlinks (needs developer mode). On posix
+// the type is ignored.
+const trySymlink = async (
+  target: string,
+  linkPath: string,
+  skip: () => void,
+  type: 'junction' | 'file' | undefined = 'junction',
+): Promise<boolean> => {
+  try {
+    await symlink(target, linkPath, type);
+    return true;
+  } catch (err: unknown) {
+    if (
+      process.platform === 'win32' &&
+      isNodeError(err) &&
+      (err.code === 'EPERM' || err.code === 'EACCES')
+    ) {
+      skip();
+      return false;
+    }
+    throw err;
+  }
+};
+
+describe('Write/Delete PathGuard', () => {
+  let root: string;
+  let guard: PathGuard;
+
+  beforeEach(async () => {
+    root = await createTestRoot();
+    guard = await PathGuard.fromAllowedDirectories([root]);
+  });
+
+  afterEach(async () => {
+    if (root) await cleanupTestRoot(root);
+  });
+
+  it('TC-PG-007: validatePathForWrite denies when an ancestor symlink escapes the root', async (t) => {
+    const linkPath = join(root, 'escape_link');
+    const outsideTarget = tmpdir();
+    if (!(await trySymlink(outsideTarget, linkPath, () => t.skip('symlink not permitted')))) return;
+
+    const through = join(linkPath, 'newfile.txt');
+
+    await assertAccessDenied(
+      guard.validatePathForWrite(through),
+      'should deny writing through a symlink that escapes the root',
+    );
+  });
+
+  it('TC-PG-008: validatePathForWrite denies a sensitive target reached through an in-root symlink', async (t) => {
+    const envPath = await writeTestFile(root, '.env', 'SECRET=1');
+    const linkPath = join(root, 'link');
+    // File symlink: 'file' type (junctions are directory-only on Win32 and
+    // autodetect has been observed to create a broken dir-symlink to a file).
+    if (!(await trySymlink(envPath, linkPath, () => t.skip('symlink not permitted'), 'file')))
+      return;
+
+    await assertAccessDenied(
+      guard.validatePathForWrite(linkPath),
+      'should deny writing through a symlink that resolves to a sensitive file',
+    );
+  });
+
+  it('TC-PG-009: validatePathForDelete permits deleting an in-root symlink whose target is outside the root', async (t) => {
+    const linkPath = join(root, 'escape_link');
+    const outsideTarget = tmpdir();
+    if (!(await trySymlink(outsideTarget, linkPath, () => t.skip('symlink not permitted')))) return;
+
+    // Deleting the link itself is safe even though its target escapes.
+    await assert.doesNotReject(
+      guard.validatePathForDelete(linkPath),
+      'should allow deleting a symlink regardless of its target',
+    );
+  });
+
+  it('TC-PG-010: validatePathForDelete denies deleting a non-symlink whose realpath escapes the root', async (t) => {
+    const outsideDir = await mkdtemp(join(tmpdir(), 'fsmcp-pg010-'));
+    const linkPath = join(root, 'escape_link');
+    if (!(await trySymlink(outsideDir, linkPath, () => t.skip('symlink not permitted')))) return;
+    // A real (non-symlink) file living under the symlinked ancestor. The
+    // parent directory's realpath resolves through the symlink to outside
+    // the root, so the delete is denied (the realpath escapes the root).
+    await writeTestFile(outsideDir, 'target.txt', 'data');
+    const through = join(linkPath, 'target.txt');
+    try {
+      await assertAccessDenied(
+        guard.validatePathForDelete(through),
+        'should deny deleting a non-symlink whose realpath escapes the root',
+      );
+    } finally {
+      await cleanupTestRoot(outsideDir);
+    }
+  });
+});
