@@ -482,8 +482,8 @@ export const CursorSchema = base64urlCursor
   .optional()
   .describe(
     'Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. ' +
-      'list cursors expire after ~5 min or server restart; find_files cursors re-run the full query per page, ' +
-      'so matches may shift (duplicate or skip) if files change between page requests.',
+      'list cursors are stateless offsets and never expire; find_files cursors re-run the full query per page ' +
+      'and expire after ~5 min or server restart, so matches may shift (duplicate or skip) if files change between page requests.',
   );
 
 export const NextCursorSchema = base64urlCursor

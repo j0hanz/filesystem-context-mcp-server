@@ -7,7 +7,7 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import type { GuardedFileSystem } from '../core/fs.js';
+import type { GuardedFileSystem, Stats } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import { countLines, readFileWithStats } from '../core/read.js';
@@ -345,18 +345,21 @@ function buildEditFileMetadata(
   };
 }
 
-async function loadEditableFile(
+// Shared by diff.ts and patch.ts. Returns stats so callers that need mtime
+// (patch's dryRun) don't re-stat. `tool` labels the TOO_LARGE message.
+export async function loadEditableFile(
   requestedPath: string,
   fs: GuardedFileSystem,
-  signal?: AbortSignal,
-): Promise<{ validPath: string; content: string }> {
+  signal: AbortSignal | undefined,
+  tool = 'edit',
+): Promise<{ validPath: string; content: string; stats: Stats }> {
   const { stats, validPath } = await fs.stat(requestedPath, signal ? { signal } : undefined);
   const maxTextFileSize = getMaxTextFileSize();
 
   if (stats.size > maxTextFileSize) {
     throw new FsError(
       ErrorCode.TOO_LARGE,
-      `File too large for edit (${stats.size} bytes > ${maxTextFileSize} bytes)`,
+      `File too large for ${tool} (${stats.size} bytes > ${maxTextFileSize} bytes)`,
       requestedPath,
       { size: stats.size, maxFileSize: maxTextFileSize },
     );
@@ -369,7 +372,7 @@ async function loadEditableFile(
     skipBinary: true,
     ...(signal ? { signal } : {}),
   });
-  return { validPath, content };
+  return { validPath, content, stats };
 }
 
 async function applyEdits(

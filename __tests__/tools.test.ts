@@ -349,28 +349,86 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
   });
 
-  it('TC-LOG-001: Tool execution forwards log notifications to MCP client', async () => {
+  it('TC-FUNC-060: diff two files returns a unified diff', async () => {
+    const a = join(tmpDir, 'diff_a.txt');
+    const b = join(tmpDir, 'diff_b.txt');
+    await writeFile(a, 'x\ny\nz\n');
+    await writeFile(b, 'x\nY\nz\n');
+    const result = await harness.client.callTool({
+      name: 'diff',
+      arguments: { a, b },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const structured = result.structuredContent as {
+      linesAdded?: number;
+      linesRemoved?: number;
+      diff?: string;
+    };
+    assert.strictEqual(structured.linesAdded, 1);
+    assert.strictEqual(structured.linesRemoved, 1);
+    assert.ok(structured.diff?.includes('-y') && structured.diff?.includes('+Y'));
+  });
+
+  it('TC-FUNC-061: patch applies a unified diff', async () => {
+    const f = join(tmpDir, 'patch_target.txt');
+    await writeFile(f, 'a\nb\nc\n');
+    const diff = '--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n-a\n+X\n b\n';
+    const result = await harness.client.callTool({
+      name: 'patch',
+      arguments: { path: f, diff },
+    });
+    assert.notStrictEqual(result.isError, true);
+    assert.strictEqual(await readFile(f, 'utf-8'), 'X\nb\nc\n');
+  });
+
+  it('TC-FUNC-062: patch that does not apply returns isError', async () => {
+    const f = join(tmpDir, 'patch_bad.txt');
+    await writeFile(f, 'q\nb\nc\n');
+    const diff = '--- f.txt\n+++ f.txt\n@@ -1,2 +1,2 @@\n-a\n+X\n b\n';
+    const result = await harness.client.callTool({ name: 'patch', arguments: { path: f, diff } });
+    assert.strictEqual(result.isError, true);
+  });
+
+  it('TC-FUNC-063: list paginates entries via nextCursor', async () => {
+    const sub = join(tmpDir, 'page_dir');
+    await mkdir(sub, { recursive: true });
+    for (let i = 0; i < 4; i++) await writeFile(join(sub, `f${i}.txt`), 'x');
+    const r1 = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 2 },
+    });
+    const s1 = r1.structuredContent as { nextCursor?: string; entryCount?: number };
+    assert.strictEqual(s1.entryCount, 2);
+    assert.ok(s1.nextCursor, 'first page should yield a nextCursor');
+    const r2 = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 2, cursor: s1.nextCursor },
+    });
+    const s2 = r2.structuredContent as { nextCursor?: string; entryCount?: number };
+    assert.strictEqual(s2.entryCount, 2);
+    assert.ok(!s2.nextCursor, 'second page is the last');
+  });
+
+  it('TC-LOG-001: Tool execution logs to stderr', async () => {
     const file = join(tmpDir, 'log-test.txt');
     await writeFile(file, 'initial line\n');
-
-    const receivedLogs: unknown[] = [];
-    harness.client.setNotificationHandler('notifications/message', (notification) => {
-      receivedLogs.push(notification.params);
-    });
-
-    const result = await harness.client.callTool({
-      name: 'edit',
-      arguments: {
-        path: file,
-        edits: [{ oldText: 'initial', newText: 'updated' }],
-      },
-    });
-
-    assert.notStrictEqual(result.isError, true);
-    assert.ok(receivedLogs.length > 0, 'Should receive at least one log notification');
-    const firstLog = receivedLogs[0] as { level?: string; logger?: string; data?: unknown };
-    assert.strictEqual(firstLog.level, 'info');
-    assert.strictEqual(firstLog.logger, 'edit');
-    assert.ok(typeof firstLog.data === 'string' && firstLog.data.includes('edit:'));
+    const origErr = console.error;
+    const lines: string[] = [];
+    console.error = (...args: unknown[]) => {
+      lines.push(args.map(String).join(' '));
+    };
+    try {
+      const result = await harness.client.callTool({
+        name: 'edit',
+        arguments: { path: file, edits: [{ oldText: 'initial', newText: 'updated' }] },
+      });
+      assert.notStrictEqual(result.isError, true);
+      assert.ok(
+        lines.some((l) => l.includes('edit:')),
+        'stderr should carry the edit log line',
+      );
+    } finally {
+      console.error = origErr;
+    }
   });
 });

@@ -4,9 +4,11 @@ import { COPY_FILES } from './copy.js';
 import { CREATE } from './create.js';
 import type { DefinedTool } from './define.js';
 import { DELETE_FILE } from './delete-file.js';
+import { DIFF } from './diff.js';
 import { EDIT } from './edit.js';
 import { LIST } from './list.js';
 import { MOVE } from './move.js';
+import { PATCH } from './patch.js';
 import { READ_FILE } from './read.js';
 import { SEARCH_AND_REPLACE } from './replace-in-files.js';
 import { LIST_ALLOWED_DIRECTORIES } from './roots.js';
@@ -19,9 +21,11 @@ export const ALL_TOOLS = [
   COPY_FILES,
   CREATE,
   DELETE_FILE,
+  DIFF,
   EDIT,
   LIST,
   MOVE,
+  PATCH,
   READ_FILE,
   SEARCH_AND_REPLACE,
   LIST_ALLOWED_DIRECTORIES,

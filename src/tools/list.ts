@@ -5,6 +5,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
+import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import type { EntryType } from '../core/glob.js';
 import {
@@ -18,9 +19,11 @@ import type { PathGuard } from '../core/path.js';
 import { toPosixRelative } from '../core/path.js';
 import {
   completableOptionalPath,
+  CursorSchema,
   FileType as FileTypeEnum,
   includeHiddenField,
   includeIgnoredField,
+  NextCursorSchema,
   NonNegInt,
   OptionalPath,
   PositiveInt,
@@ -46,6 +49,12 @@ interface CollectOptions {
   includeIgnored: boolean;
   signal: AbortSignal;
   pathGuard: PathGuard;
+  // Upper bound on the collected (and thus paginable) entry array. MUST match
+  // the `max` passed to openPage: offset pagination is only correct when
+  // every page scans and sorts the same universe up to the same cap. The
+  // caller threads openPage's fetchMax here so the invariant is enforced,
+  // not implicit across two constants.
+  entryCap: number;
   onProgress?: (progress: { current: number; total?: number }) => void;
 }
 
@@ -132,7 +141,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
       type: entryType,
     };
 
-    if (entries.length < MAX_LIST_ENTRIES) {
+    if (entries.length < options.entryCap) {
       entries.push(collectedEntry);
     }
   }
@@ -205,6 +214,7 @@ const ListInputSchema = z.strictObject({
     ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
+  cursor: CursorSchema,
 });
 
 const ListOutputSchema = z.strictObject({
@@ -228,8 +238,11 @@ const ListOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the entry list in the resource store (present when inline entries were truncated; the stored list is itself capped at the hard limit and marked truncated if total entries exceed it)',
+      'URI to the full entry list in the resource store. Only present when total entries exceed the hard cap ' +
+        '(the same cap that bounds pagination); below it, page through the remaining entries with nextCursor. ' +
+        'The stored list is itself capped at the hard limit and marked truncated if total entries exceed it.',
     ),
+  nextCursor: NextCursorSchema,
 });
 
 async function handleList(
@@ -240,21 +253,28 @@ async function handleList(
   const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
   const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
 
+  const { offset, fetchMax } = openPage({ cursor: args.cursor, max: MAX_LIST_ENTRIES });
+
   const result = await collect(validDir, {
     maxDepth: args.maxDepth,
     includeHidden: args.includeHidden,
     includeIgnored: args.includeIgnored,
     signal: timedSignal(ctx.signal, DEFAULT_SEARCH_TIMEOUT_MS),
     pathGuard: ctx.fs.pathGuard,
+    entryCap: fetchMax,
     ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
   });
-
-  const inlineEntries = result.entries.slice(0, args.maxEntries);
-  const markdown = renderMarkdown(basename(validDir), inlineEntries);
+  const page = result.entries.slice(offset, offset + args.maxEntries);
+  const nextCursor = closePage({
+    total: result.entries.length,
+    offset,
+    pageCount: page.length,
+  });
+  const markdown = renderMarkdown(basename(validDir), page);
 
   let resourceUri: string | undefined;
   let link: ContentBlock | undefined;
-  if (result.totalEntries > inlineEntries.length && ctx.resourceStore) {
+  if (result.totalEntries > result.entries.length && ctx.resourceStore) {
     const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
     const fullTruncated = result.totalEntries > result.entries.length;
     const fullOutput = {
@@ -273,13 +293,14 @@ async function handleList(
   const output: z.infer<typeof ListOutputSchema> = {
     ok: true,
     path: validDir,
-    entries: inlineEntries,
+    entries: page,
     markdown,
-    entryCount: inlineEntries.length,
+    entryCount: page.length,
     totalEntries: result.totalEntries,
     totalFiles: result.totalFiles,
     totalDirectories: result.totalDirectories,
     ...(resourceUri ? { resourceUri } : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
 
   return { structured: output, ...(link ? { link } : {}) };
