@@ -9,7 +9,7 @@ import { cliFmt, padEndVisible } from './core/fmt.js';
 import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './core/path-utils.js';
 import { normalizePath, PathGuard } from './core/path.js';
 import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
-import { getMaxTextFileSize } from './core/util.js';
+import { getMaxTextFileSize, splitCsvList } from './core/util.js';
 import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
 const { version: SERVER_VERSION } = packageJson;
@@ -352,6 +352,8 @@ export async function parseArgs(): Promise<{
   readOnly: boolean;
   printConfig: boolean;
   json: boolean;
+  httpHost: string | undefined;
+  apiKey: string | undefined;
 }> {
   try {
     const parsed = utilParseArgs(CLI_PARSER_CONFIG);
@@ -369,8 +371,12 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    if (typeof vals['http-host'] === 'string') process.env['HTTP_HOST'] = vals['http-host'];
-    if (typeof vals['api-key'] === 'string') process.env['API_KEY'] = vals['api-key'];
+    // `--http-host` and `--api-key` are returned to the caller and handed to
+    // the server as options. The rest still travel by env because their readers
+    // are deep in core (path, sensitive, observability) and read the operator's
+    // environment anyway.
+    const httpHost = typeof vals['http-host'] === 'string' ? vals['http-host'] : undefined;
+    const apiKey = typeof vals['api-key'] === 'string' ? vals['api-key'] : undefined;
     if (typeof vals['log-level'] === 'string') process.env['LOG_LEVEL'] = vals['log-level'];
     if (typeof vals['max-file-size'] === 'string')
       process.env['MAX_FILE_SIZE'] = vals['max-file-size'];
@@ -380,13 +386,7 @@ export async function parseArgs(): Promise<{
     if (vals['walk-cwd'] === true) process.env['ALLOW_CWD_WALK'] = '1';
     if (vals['allow-missing-roots'] === true) process.env['ALLOW_MISSING_ROOTS'] = '1';
     if (Array.isArray(vals['deny']) && vals['deny'].length > 0) {
-      const existing = process.env['DENYLIST'];
-      const entries = existing
-        ? existing
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
+      const entries = splitCsvList(process.env['DENYLIST']);
       for (const entry of vals['deny']) {
         if (typeof entry === 'string') {
           const trimmed = entry.trim();
@@ -425,6 +425,8 @@ export async function parseArgs(): Promise<{
       readOnly,
       printConfig,
       json,
+      httpHost,
+      apiKey,
     };
   } catch (error: unknown) {
     if (error instanceof CliExitError) {

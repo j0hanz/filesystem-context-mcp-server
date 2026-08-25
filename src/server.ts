@@ -111,7 +111,7 @@ export async function createServer(
     completions: {},
   } satisfies ServerCapabilities;
 
-  const cacheScope = process.env['API_KEY'] ? 'private' : 'public';
+  const cacheScope = (options.apiKey ?? process.env['API_KEY']) ? 'private' : 'public';
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,

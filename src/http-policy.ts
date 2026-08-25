@@ -8,6 +8,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 
 import { ErrorCode, FsError } from './core/errors.js';
 import { Logger } from './core/observability.js';
+import { splitCsvList } from './core/util.js';
 
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 
@@ -57,6 +58,12 @@ export function isLoopbackHttpHost(host: string): boolean {
 
 export function isAllowedLocalhostOrigin(origin: string): boolean {
   return LOCALHOST_ORIGIN_RE.test(origin);
+}
+
+/** A bind to every interface. Clients never send `Host: 0.0.0.0`, so this bind
+ * cannot derive its allowed-host set from itself. */
+function isWildcardHttpHost(host: string): boolean {
+  return host === '0.0.0.0' || host === '::';
 }
 
 function originHostname(origin: string): string | undefined {
@@ -135,12 +142,7 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
  * as a list that rejects every Host. Shared by the binding policy and the app
  * wiring so both agree on what "configured" means.
  */
-export function parseAllowedHostsEnv(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((h) => h.trim())
-    .filter(Boolean);
-}
+export const parseAllowedHostsEnv = splitCsvList;
 
 /**
  * The Host header values this bind accepts. `FILESYSTEM_MCP_ALLOWED_HOSTS` wins
@@ -157,7 +159,7 @@ export function resolveAllowedHosts(
   const configured = parseAllowedHostsEnv(allowedHostsEnv);
   if (configured.length > 0) return configured;
   if (isLoopbackHttpHost(httpHost)) return localhostAllowedHostnames();
-  if (httpHost === '0.0.0.0' || httpHost === '::') return [];
+  if (isWildcardHttpHost(httpHost)) return [];
   return [httpHost];
 }
 
@@ -189,8 +191,8 @@ export function assertHttpHostPolicy(
   allowUnrestricted: boolean,
 ): void {
   if (isLoopbackHttpHost(host)) return;
-  const isWildcard = host === '0.0.0.0' || host === '::';
-  if (!isWildcard) return; // concrete non-loopback: Host validated against the bind host.
+  // concrete non-loopback: Host validated against the bind host.
+  if (!isWildcardHttpHost(host)) return;
   if (allowUnrestricted) return;
   if (allowedHosts.length > 0) return;
   throw new FsError(
@@ -216,8 +218,11 @@ export function assertHttpHostPolicy(
  * and that the credential goes in the Authorization header, instead of a bare
  * challenge plus a 404 on the well-known path.
  */
-export function protectedResourceUrl(req: Request, hostValidated: boolean): URL | null {
-  const configured = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+export function protectedResourceUrl(
+  req: Request,
+  hostValidated: boolean,
+  configured: string | undefined,
+): URL | null {
   if (configured) {
     const parsed = URL.parse(configured);
     if (parsed) return parsed;
@@ -238,8 +243,13 @@ export function protectedResourceUrl(req: Request, hostValidated: boolean): URL 
  * that presented something invalid gets `error="invalid_token"`. Clients use
  * the difference to tell "you must authenticate" from "your token is wrong".
  */
-function buildAuthChallenge(req: Request, hasCredentials: boolean, hostValidated: boolean): string {
-  const resource = protectedResourceUrl(req, hostValidated);
+function buildAuthChallenge(
+  req: Request,
+  hasCredentials: boolean,
+  hostValidated: boolean,
+  publicUrl: string | undefined,
+): string {
+  const resource = protectedResourceUrl(req, hostValidated, publicUrl);
   const params: string[] = [];
   if (resource) {
     params.push(`resource_metadata="${getOAuthProtectedResourceMetadataUrl(resource)}"`);
@@ -267,6 +277,7 @@ function buildAuthChallenge(req: Request, hasCredentials: boolean, hostValidated
 export function bearerAuthMiddleware(
   apiKey: string | undefined,
   hostValidated: boolean,
+  publicUrl?: string,
 ): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!apiKey) {
@@ -295,6 +306,7 @@ export function bearerAuthMiddleware(
         req,
         req.headers.authorization !== undefined,
         hostValidated,
+        publicUrl,
       ),
     });
   };
@@ -310,12 +322,10 @@ export function bearerAuthMiddleware(
  * so a remote origin is reflected end-to-end in Access-Control-Allow-Origin.
  */
 export function computeAllowedOriginHostnames(originsEnv: string | undefined): string[] {
-  return originsEnv
-    ? originsEnv
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-    : localhostAllowedHostnames();
+  // Truthiness, not list length: an all-blank value (" , ") is a configured but
+  // empty allow-list — deny every remote origin — while an unset or "" value
+  // falls back to the loopback defaults.
+  return originsEnv ? splitCsvList(originsEnv) : localhostAllowedHostnames();
 }
 
 /**

@@ -339,6 +339,9 @@ function setupExpressApp(
   const allowedOriginHostnames = computeAllowedOriginHostnames(
     process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'],
   );
+  // Read once here and passed down, like every other env-derived policy input:
+  // http-policy holds no state and reads no env of its own.
+  const publicUrl = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
 
   const app = createMcpExpressApp({
     host: httpHost,
@@ -368,7 +371,7 @@ function setupExpressApp(
 
   if (apiKey && allowedHosts.length > 0) {
     const metadataHandler = (req: Request, res: Response): void => {
-      const resource = protectedResourceUrl(req, true);
+      const resource = protectedResourceUrl(req, true, publicUrl);
       if (!resource) {
         // Unreachable for the unrestricted case (the gate above excludes it),
         // but defend a FILESYSTEM_MCP_PUBLIC_URL parse failure with a bodyless
@@ -396,7 +399,7 @@ function setupExpressApp(
     });
   });
 
-  app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0));
+  app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0, publicUrl));
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     const parsedBody = req.body as unknown;
@@ -461,12 +464,13 @@ function setupExpressApp(
 }
 
 export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
-  const httpHost = process.env['HTTP_HOST'] ?? '127.0.0.1';
-  const apiKey = process.env['API_KEY'];
+  // CLI flag first, then the operator's environment, then the loopback default.
+  const httpHost = options.httpHost ?? process.env['HTTP_HOST'] ?? '127.0.0.1';
+  const apiKey = options.apiKey ?? process.env['API_KEY'];
   assertHttpBindingPolicy(httpHost, apiKey);
   // A multi-instance HTTP fleet needs a shared requestState key; refuse to boot
-  // when API_KEY is set and the key is missing/weak (see input-required.ts).
-  assertFleetRequestStateKey();
+  // when an API key is set and the key is missing/weak (see input-required.ts).
+  assertFleetRequestStateKey(apiKey);
   const allowedHosts = resolveAllowedHosts(httpHost, process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,

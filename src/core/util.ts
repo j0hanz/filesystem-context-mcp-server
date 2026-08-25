@@ -51,6 +51,19 @@ export function parseEnvInt(
   return parsed;
 }
 
+/**
+ * Split a comma-separated config value into trimmed, non-empty entries. Empty
+ * entries are dropped so "," or " " reads as unset rather than as a list of
+ * blanks. Every comma-separated env var this server accepts parses through
+ * here, so they all agree on what "configured" means.
+ */
+export function splitCsvList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export function getInitTimeoutClose(): boolean {
   return parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 }

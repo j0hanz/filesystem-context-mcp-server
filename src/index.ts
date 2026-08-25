@@ -91,6 +91,8 @@ async function main(): Promise<void> {
   let readOnly: boolean;
   let printConfig: boolean;
   let json: boolean;
+  let httpHost: string | undefined;
+  let cliApiKey: string | undefined;
 
   try {
     const parsed = await parseArgs();
@@ -100,6 +102,8 @@ async function main(): Promise<void> {
     readOnly = parsed.readOnly;
     printConfig = parsed.printConfig;
     json = parsed.json;
+    httpHost = parsed.httpHost;
+    cliApiKey = parsed.apiKey;
   } catch (error: unknown) {
     if (error instanceof CliExitError) {
       if (error.message.length > 0) {
@@ -112,7 +116,7 @@ async function main(): Promise<void> {
   }
 
   if (printConfig) {
-    const apiKey = process.env['API_KEY'];
+    const apiKey = cliApiKey ?? process.env['API_KEY'];
     await runPrintConfig({
       allowedDirs,
       allowCwd,
@@ -138,20 +142,20 @@ async function main(): Promise<void> {
     console.error('Read-only mode: mutating tools disabled.');
   }
 
+  const serverOptions = {
+    allowCwd,
+    cliAllowedDirs: allowedDirs,
+    readOnly,
+    ...(httpHost !== undefined ? { httpHost } : {}),
+    ...(cliApiKey !== undefined ? { apiKey: cliApiKey } : {}),
+  };
+
   if (port !== undefined) {
-    activeHttpServer = await startHttpServer(port, {
-      allowCwd,
-      cliAllowedDirs: allowedDirs,
-      readOnly,
-    });
+    activeHttpServer = await startHttpServer(port, serverOptions);
   } else {
     registerShutdownTrigger('end');
     registerShutdownTrigger('close');
-    activeStdioHandle = startServer({
-      allowCwd,
-      cliAllowedDirs: allowedDirs,
-      readOnly,
-    });
+    activeStdioHandle = startServer(serverOptions);
   }
 }
 

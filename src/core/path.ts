@@ -46,6 +46,13 @@ export interface ServerOptions {
   allowCwd?: boolean;
   cliAllowedDirs?: string[];
   readOnly?: boolean;
+  /**
+   * `--http-host` and `--api-key`, handed down from the CLI rather than pushed
+   * through `process.env`. Absent when the flag was not given, in which case
+   * the reader falls back to the operator's own `HTTP_HOST` / `API_KEY`.
+   */
+  httpHost?: string;
+  apiKey?: string;
 }
 
 async function isRootWithin(
