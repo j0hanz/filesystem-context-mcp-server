@@ -18,14 +18,11 @@ Thank you for contributing! Here's how to get started.
 
 ## Running Tests Locally
 
-This project uses a custom task runner for executing checks and tests:
+This project uses a thin task wrapper around the npm scripts and Node test runner:
 
 ```bash
 # Run tests only
 node scripts/tasks.mjs test
-
-# Re-run a failed test with detailed output
-node scripts/tasks.mjs detail
 ```
 
 Tests must pass before your PR is merged.

@@ -128,17 +128,9 @@ describe('MCP Resources', () => {
       assert.strictEqual(entry.mimeType, 'text/plain');
       assert.strictEqual(entry.text, content);
       assert.strictEqual(entry.hash, expectedHash);
-      assert.strictEqual(entry.kind, 'text');
-
-      // Retrieve via getText
-      const retrievedText = store.getText(entry.uri);
-      assert.strictEqual(retrievedText.text, content);
-      assert.strictEqual(retrievedText.hash, expectedHash);
-      assert.strictEqual(retrievedText.mimeType, 'text/plain');
 
       // Retrieve via getEntry
       const retrievedEntry = store.getEntry(entry.uri);
-      assert.strictEqual(retrievedEntry.kind, 'text');
       assert.strictEqual(retrievedEntry.uri, entry.uri);
       assert.strictEqual(retrievedEntry.hash, expectedHash);
     });
@@ -165,22 +157,6 @@ describe('MCP Resources', () => {
       assert.strictEqual(textRead.contents[0].uri, textEntry.uri);
       assert.strictEqual(textRead.contents[0].mimeType, 'text/markdown');
       assert.strictEqual(textRead.contents[0].text, '# Test Summary');
-
-      // Test binary cached result
-      const binaryData = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
-      const blobEntry = store.putBlob({
-        name: 'bin_result',
-        mimeType: 'application/octet-stream',
-        data: binaryData,
-      });
-      const blobUrl = new URL(blobEntry.uri);
-      const blobId = blobUrl.pathname.replace(/^\//, '');
-
-      const blobRead = await resultContract.read(blobUrl, { id: blobId }, dummyContext);
-      assert.strictEqual(blobRead.contents.length, 1);
-      assert.strictEqual(blobRead.contents[0].uri, blobEntry.uri);
-      assert.strictEqual(blobRead.contents[0].mimeType, 'application/octet-stream');
-      assert.strictEqual(blobRead.contents[0].blob, binaryData.toString('base64'));
     });
 
     it('TC-FUNC-060: Missing entry throws NOT_FOUND / ResourceNotFoundError', async () => {
@@ -190,15 +166,6 @@ describe('MCP Resources', () => {
       // Direct store access throws FsError with NOT_FOUND
       assert.throws(
         () => store.getEntry(nonExistentUri),
-        (err: unknown) => {
-          assert(isFsError(err));
-          assert.strictEqual(err.code, ErrorCode.NOT_FOUND);
-          return true;
-        },
-      );
-
-      assert.throws(
-        () => store.getText(nonExistentUri),
         (err: unknown) => {
           assert(isFsError(err));
           assert.strictEqual(err.code, ErrorCode.NOT_FOUND);

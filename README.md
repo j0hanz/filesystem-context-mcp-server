@@ -453,13 +453,12 @@ filesystem-mcp --port 3000
 
 ## Scripts
 
-| Mode                | Command                             | Description                                           |
-| :------------------ | :---------------------------------- | :---------------------------------------------------- |
-| Full check          | `node scripts/tasks.mjs`            | Run build, type check, lint, format, knip, and tests  |
-| Auto-fix + check    | `node scripts/tasks.mjs fix`        | Auto-fix linting/formatting issues and run full check |
-| Static only         | `node scripts/tasks.mjs --quick`    | Run static analysis without tests                     |
-| Tests only          | `node scripts/tasks.mjs test`       | Run all tests                                         |
-| Test failure detail | `node scripts/tasks.mjs detail [n]` | Re-run a failed test file with detailed output        |
+| Mode             | Command                          | Description                                          |
+| :--------------- | :------------------------------- | :--------------------------------------------------- |
+| Full check       | `node scripts/tasks.mjs`         | Run build, type check, lint, format, knip, and tests |
+| Auto-fix + check | `node scripts/tasks.mjs fix`     | Auto-fix formatting/linting and run the full check   |
+| Static only      | `node scripts/tasks.mjs --quick` | Run static analysis without tests                    |
+| Tests only       | `node scripts/tasks.mjs test`    | Run tests; accepts native `node --test` options      |
 
 ## Security
 

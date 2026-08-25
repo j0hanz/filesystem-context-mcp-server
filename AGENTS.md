@@ -8,13 +8,14 @@ over stdio and Streamable HTTP.
 Run checks through the task runner, not the npm scripts:
 
 ```bash
-node scripts/tasks.mjs          # format → [lint, type-check, knip] → [test, rebuild]
-node scripts/tasks.mjs fix      # auto-fix, then validate
+node scripts/tasks.mjs          # full repository check
+node scripts/tasks.mjs fix      # format and lint-fix, then validate
 node scripts/tasks.mjs --quick  # static checks only, no tests
-node scripts/tasks.mjs detail   # source-window detail for the last test failure
+node scripts/tasks.mjs test     # Node test runner; accepts native test flags
 ```
 
-`npm run check` exists for CI parity only.
+The task runner is a thin cross-platform wrapper over the npm scripts and
+Node's built-in test runner.
 
 ## Releases
 

@@ -239,7 +239,6 @@ interface NormalizedGlob {
 }
 
 const GLOB_MAGIC_RE = /[*?[\]{}!]/u;
-const DEFAULT_MAX_HIDDEN_DEPTH = 10;
 const GLOB_BATCH_CONCURRENCY = 64;
 const SEP = '/';
 const DOT_CHAR_CODE = 46;
@@ -287,15 +286,7 @@ function addFirstDotSegment(patterns: Set<string>, prefix: string, remainder: st
   }
 }
 
-function expandHiddenGlobstars(
-  patterns: Set<string>,
-  prefix: string,
-  remainder: string,
-  // The expansion no longer varies by depth: `**/` already spans any directory
-  // depth in fs.glob, so unrolling one walk per depth (the old code did up to
-  // maxDepth — ~200 walks for the search default of 100) was pure overhead.
-  _maxDepth: number,
-): void {
+function expandHiddenGlobstars(patterns: Set<string>, prefix: string, remainder: string): void {
   // Trailing bare globstar — `src/**`, `**` (remainder is exactly `**`, no
   // following segment). The pattern itself already matches every non-dot
   // entry under the prefix; add the two hidden complements fs.glob skips:
@@ -319,15 +310,12 @@ function expandHiddenGlobstars(
   if (addDotFile) patterns.add(`${prefix}**/.${afterGlobstar}`);
 }
 
-export function buildHiddenPatterns(
-  normalizedPattern: string,
-  maxDepth: number,
-): readonly string[] {
+export function buildHiddenPatterns(normalizedPattern: string): readonly string[] {
   const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 
   addFirstDotSegment(patterns, prefix, remainder);
-  expandHiddenGlobstars(patterns, prefix, remainder, maxDepth);
+  expandHiddenGlobstars(patterns, prefix, remainder);
 
   return Array.from(patterns);
 }
@@ -337,7 +325,7 @@ function normalizeGlobOptions(options: GlobEntriesOptions): NormalizedGlob {
   const normalizedPattern = normalizePattern(options.pattern, options.baseNameMatch ?? false);
 
   const patterns = options.includeHidden
-    ? buildHiddenPatterns(normalizedPattern, options.maxDepth ?? DEFAULT_MAX_HIDDEN_DEPTH)
+    ? buildHiddenPatterns(normalizedPattern)
     : [normalizedPattern];
 
   const normalized: NormalizedGlob = {

@@ -444,19 +444,8 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
         }
         throw err;
       }
-      if (entry.kind === 'text') {
-        return {
-          contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
-        };
-      }
       return {
-        contents: [
-          {
-            uri: entry.uri,
-            mimeType: entry.mimeType,
-            blob: entry.data.toString('base64'),
-          },
-        ],
+        contents: [{ uri: entry.uri, mimeType: entry.mimeType, text: entry.text }],
       };
     },
   };

@@ -19,11 +19,6 @@ temp_integration_config.json
 .env.local
 .env.*.local
 
-# Tasks runner history
-.tasks-history.json
-.tasks-last-failure.json
-.tasks-test-hang.json
-
 # Test workspace-cache leftovers
 tmp-workspace-cache-*/
 

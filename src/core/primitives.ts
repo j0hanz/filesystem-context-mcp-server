@@ -1,4 +1,4 @@
-import { platform } from 'node:os';
+import { delimiter } from 'node:path';
 
 /**
  * Minimal shared primitives with no intra-package dependencies.
@@ -27,16 +27,15 @@ export function escapeRegexLiteral(str: string): string {
 export function parseEnvDirList(envVar: string): string[] {
   const val = process.env[envVar];
   if (!val) return [];
-  const sep = process.platform === 'win32' ? ';' : ':';
   return val
-    .split(sep)
+    .split(delimiter)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 }
 
 // ─── Path primitives (moved from path.ts to break the path↔sensitive cycle) ──
 
-export const IS_WINDOWS = platform() === 'win32';
+export const IS_WINDOWS = process.platform === 'win32';
 
 export const isSlash = (code: number): boolean => code === 47 || code === 92;
 

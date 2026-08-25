@@ -6,7 +6,7 @@ import { ErrorCode, FsError } from './errors.js';
 import { Logger } from './observability.js';
 import { MIB } from './util.js';
 
-interface ResourceEntryBase {
+interface ResourceEntry {
   uri: string;
   name: string;
   mimeType: string;
@@ -14,44 +14,15 @@ interface ResourceEntryBase {
   size: number;
   storedAt: string;
   expiresAt: string;
-}
-
-interface TextResourceEntry extends ResourceEntryBase {
   text: string;
 }
 
-interface BlobResourceEntry extends ResourceEntryBase {
-  data: Buffer;
-}
+const MAX_ENTRIES = 64;
+const MAX_TOTAL_BYTES = 25 * MIB;
+const MAX_ENTRY_BYTES = 10 * MIB;
+const ENTRY_TTL_MS = 60 * 1000;
 
-export interface ResourceStoreOptions {
-  maxEntries: number;
-  maxTotalBytes: number;
-  maxEntryBytes: number;
-  entryTtlMs: number;
-}
-
-const DEFAULT_RESOURCE_STORE_OPTIONS: ResourceStoreOptions = {
-  maxEntries: 64,
-  maxTotalBytes: 25 * MIB,
-  maxEntryBytes: 10 * MIB,
-  entryTtlMs: 60 * 1000, // 60 seconds — anti-leak window
-};
-
-type StoredEntry = (TextResourceEntry & { kind: 'text' }) | (BlobResourceEntry & { kind: 'blob' });
-
-function estimateBytes(text: string | Buffer): number {
-  if (Buffer.isBuffer(text)) {
-    return text.length;
-  }
-  return Buffer.byteLength(text, 'utf8');
-}
-
-function computeSha256(data: string | Buffer): string {
-  return hash('sha256', data, 'hex');
-}
-
-function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now()): boolean {
+function isExpired(entry: ResourceEntry, now = Date.now()): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
   if (!Number.isFinite(expiresAt)) {
     return true;
@@ -59,32 +30,11 @@ function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now(
   return expiresAt <= now;
 }
 
-// -----------------------------------------------------------------------------
-// ResourceStore implementation — storage + eviction + TTL in one class
-// -----------------------------------------------------------------------------
-
-function invalidStoreOptionsError(maxEntryBytes: number, maxTotalBytes: number): Error {
-  return new Error(
-    `Invalid store options: maxEntryBytes (${maxEntryBytes}) must not exceed maxTotalBytes (${maxTotalBytes}).`,
-  );
-}
-
 export class ResourceStore {
-  private readonly byUri = new Map<string, StoredEntry>();
+  private readonly byUri = new Map<string, ResourceEntry>();
   private _totalBytes = 0;
-  private readonly options: ResourceStoreOptions;
 
-  constructor(options: Partial<ResourceStoreOptions> = {}) {
-    const resolved = { ...DEFAULT_RESOURCE_STORE_OPTIONS, ...options };
-    if (resolved.maxEntryBytes > resolved.maxTotalBytes) {
-      throw invalidStoreOptionsError(resolved.maxEntryBytes, resolved.maxTotalBytes);
-    }
-    this.options = resolved;
-  }
-
-  // ── low-level storage ────────────────────────────────────────────────────
-
-  private bumpLru(uri: string, entry: StoredEntry): void {
+  private bumpLru(uri: string, entry: ResourceEntry): void {
     if (!this.byUri.has(uri)) {
       return;
     }
@@ -92,7 +42,7 @@ export class ResourceStore {
     this.byUri.set(uri, entry);
   }
 
-  private removeEntry(uri: string): StoredEntry | undefined {
+  private removeEntry(uri: string): ResourceEntry | undefined {
     const existing = this.byUri.get(uri);
     if (!existing) {
       return undefined;
@@ -101,30 +51,6 @@ export class ResourceStore {
     this.byUri.delete(uri);
     return existing;
   }
-
-  private rawPut<E extends StoredEntry>(
-    params: { name: string; mimeType: string; contentHash: string; entryBytes: number },
-    createFn: (base: Omit<TextResourceEntry | BlobResourceEntry, 'text' | 'data'>) => E,
-  ): E {
-    const { contentHash, entryBytes } = params;
-    const uri = `filesystem-mcp://result/${randomUUID()}`;
-    const storedAt = new Date();
-    const entry = createFn({
-      uri,
-      name: params.name,
-      mimeType: params.mimeType,
-      hash: contentHash,
-      size: entryBytes,
-      storedAt: storedAt.toISOString(),
-      expiresAt: new Date(storedAt.getTime() + this.options.entryTtlMs).toISOString(),
-    });
-
-    this.byUri.set(uri, entry);
-    this._totalBytes += entryBytes;
-    return entry;
-  }
-
-  // ── eviction & cache policy ──────────────────────────────────────────────
 
   private evictOldest(): void {
     const first = this.byUri.values().next();
@@ -147,10 +73,10 @@ export class ResourceStore {
   }
 
   private enforceLimits(): void {
-    while (this.byUri.size > this.options.maxEntries) {
+    while (this.byUri.size > MAX_ENTRIES) {
       this.evictOldest();
     }
-    while (this._totalBytes > this.options.maxTotalBytes) {
+    while (this._totalBytes > MAX_TOTAL_BYTES) {
       if (this.byUri.size === 0) {
         Logger.error(
           `[resource-store] enforceLimits invariant violation: totalBytes=${this._totalBytes} but entryCount=0`,
@@ -161,10 +87,7 @@ export class ResourceStore {
     }
   }
 
-  private getExisting(uri: string, expectedKind: 'text'): TextResourceEntry & { kind: 'text' };
-  private getExisting(uri: string, expectedKind: 'blob'): BlobResourceEntry & { kind: 'blob' };
-  private getExisting(uri: string): StoredEntry;
-  private getExisting(uri: string, expectedKind?: 'text' | 'blob'): StoredEntry {
+  private getExisting(uri: string): ResourceEntry {
     const existing = this.byUri.get(uri);
 
     if (!existing) {
@@ -182,80 +105,40 @@ export class ResourceStore {
       );
     }
 
-    if (expectedKind && existing.kind !== expectedKind) {
-      throw new FsError(
-        ErrorCode.NOT_FOUND,
-        `Resource not found: ${uri}. Re-run the tool to regenerate.`,
-      );
-    }
-
     this.bumpLru(uri, existing);
     return existing;
   }
 
   private checkBeforePut(entryBytes: number): void {
     this.pruneExpiredEntries();
-    if (entryBytes > this.options.maxEntryBytes) {
+    if (entryBytes > MAX_ENTRY_BYTES) {
       throw new FsError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
   }
 
-  private enforceAfterPut(entry: StoredEntry): void {
+  putText(params: { name: string; mimeType?: string; text: string }): ResourceEntry {
+    const entryBytes = Buffer.byteLength(params.text, 'utf8');
+    this.checkBeforePut(entryBytes);
+
+    const storedAt = new Date();
+    const entry: ResourceEntry = {
+      uri: `filesystem-mcp://result/${randomUUID()}`,
+      name: params.name,
+      mimeType: params.mimeType ?? 'text/plain',
+      hash: hash('sha256', params.text, 'hex'),
+      size: entryBytes,
+      storedAt: storedAt.toISOString(),
+      expiresAt: new Date(storedAt.getTime() + ENTRY_TTL_MS).toISOString(),
+      text: params.text,
+    };
+    this.byUri.set(entry.uri, entry);
+    this._totalBytes += entryBytes;
     this.enforceLimits();
-    if (!this.byUri.has(entry.uri)) {
-      throw new FsError(ErrorCode.TOO_LARGE, 'Cache full: entry evicted.');
-    }
-  }
-
-  // ── public ResourceStore ─────────────────────────────────────────────────
-
-  putText(params: { name: string; mimeType?: string; text: string }): TextResourceEntry & {
-    kind: 'text';
-  } {
-    const contentHash = computeSha256(params.text);
-    const entryBytes = estimateBytes(params.text);
-    this.checkBeforePut(entryBytes);
-
-    const entry = this.rawPut(
-      { name: params.name, mimeType: params.mimeType ?? 'text/plain', contentHash, entryBytes },
-      (base) => ({ ...base, kind: 'text', text: params.text }),
-    );
-    this.enforceAfterPut(entry);
     return entry;
   }
 
-  getText(uri: string): TextResourceEntry & { kind: 'text' } {
-    return this.getExisting(uri, 'text');
-  }
-
-  putBlob(params: {
-    name: string;
-    mimeType: string;
-    data: Buffer;
-  }): BlobResourceEntry & { kind: 'blob' } {
-    const contentHash = computeSha256(params.data);
-    const entryBytes = estimateBytes(params.data);
-    this.checkBeforePut(entryBytes);
-
-    const entry = this.rawPut(
-      { name: params.name, mimeType: params.mimeType, contentHash, entryBytes },
-      (base) => ({ ...base, kind: 'blob', data: params.data }),
-    );
-    this.enforceAfterPut(entry);
-    return entry;
-  }
-
-  getBlob(uri: string): BlobResourceEntry & { kind: 'blob' } {
-    return this.getExisting(uri, 'blob');
-  }
-
-  getEntry(uri: string): StoredEntry {
+  getEntry(uri: string): ResourceEntry {
     return this.getExisting(uri);
-  }
-
-  clear(): void {
-    this.byUri.clear();
-    this._totalBytes = 0;
   }
 
   /**
