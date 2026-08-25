@@ -1,5 +1,5 @@
 import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/express';
-import { localhostAllowedHostnames } from '@modelcontextprotocol/server';
+import { JSONRPC_VERSION, localhostAllowedHostnames } from '@modelcontextprotocol/server';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -10,6 +10,34 @@ import { ErrorCode, FsError } from './core/errors.js';
 import { Logger } from './core/observability.js';
 
 const MAX_BEARER_TOKEN_LENGTH = 4096;
+
+/**
+ * JSON-RPC's server-defined error range. No SDK enum maps to "Unauthorized" or
+ * "Rate limit exceeded", both of which this module refuses before any handler
+ * has parsed a request.
+ */
+const JSONRPC_SERVER_ERROR = -32000;
+
+/**
+ * The one JSON-RPC error envelope every HTTP refusal goes out in — this
+ * module's pre-handler rejections and `transport.ts`'s. It lives here because
+ * `transport.ts` already imports this module and not the other way round; a
+ * second hand-built literal is how the two drift apart.
+ *
+ * `headers` carries what a particular refusal owes the client on top of
+ * `Content-Type` — `WWW-Authenticate` on a 401, `Retry-After` on a 429.
+ */
+export function sendJsonRpcError(
+  res: Response,
+  status: number,
+  code: number,
+  message: string,
+  id: string | number | null = null,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
+  res.end(JSON.stringify({ jsonrpc: JSONRPC_VERSION, id, error: { code, message } }));
+}
 
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
 
@@ -262,26 +290,13 @@ export function bearerAuthMiddleware(
       next();
       return;
     }
-    res.writeHead(401, {
-      'Content-Type': 'application/json',
+    sendJsonRpcError(res, 401, JSONRPC_SERVER_ERROR, 'Unauthorized', null, {
       'WWW-Authenticate': buildAuthChallenge(
         req,
         req.headers.authorization !== undefined,
         hostValidated,
       ),
     });
-    // -32000 is the JSON-RPC server-defined error range; no SDK enum maps to
-    // "Unauthorized". The 401 body is inlined with the fixed JSON-RPC 2.0 "2.0"
-    // literal so this policy module does not depend on the transport's
-    // JSON-RPC wire-shape helpers (sendJsonRpcError), keeping http-policy
-    // free of server-runtime concerns.
-    res.end(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: null,
-        error: { code: -32000, message: 'Unauthorized' },
-      }),
-    );
   };
 }
 
@@ -389,16 +404,8 @@ export function createRateLimiter(max: number): RequestHandler {
       1,
       Math.ceil((bucket.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000),
     );
-    res.writeHead(429, {
-      'Content-Type': 'application/json',
+    sendJsonRpcError(res, 429, JSONRPC_SERVER_ERROR, 'Rate limit exceeded', null, {
       'Retry-After': String(retryAfterSec),
     });
-    res.end(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: null,
-        error: { code: -32000, message: 'Rate limit exceeded' },
-      }),
-    );
   };
 }

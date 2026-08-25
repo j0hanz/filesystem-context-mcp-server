@@ -8,7 +8,6 @@ import type {
 import {
   createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
-  JSONRPC_VERSION,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 import {
@@ -46,6 +45,7 @@ import {
   protectedResourceUrl,
   resolveAllowedHosts,
   resolveTrustProxySetting,
+  sendJsonRpcError,
 } from './http-policy.js';
 import { attachFileWatcherForUri } from './resources.js';
 import type { FilesystemServerContext, ServerNotifier } from './server.js';
@@ -231,20 +231,6 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   1024,
   256 * MIB,
 );
-
-function sendJsonRpcError(
-  res: Response,
-  status: number,
-  code: number,
-  message: string,
-  id: string | number | null = null,
-): void {
-  res.status(status).json({
-    jsonrpc: JSONRPC_VERSION,
-    id,
-    error: { code, message },
-  });
-}
 
 /** The request id of a parsed JSON-RPC body, for error-envelope echo. */
 function jsonRpcRequestId(parsedBody: unknown): string | number | null {
