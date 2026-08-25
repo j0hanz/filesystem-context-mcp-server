@@ -22,6 +22,7 @@ import {
   failedSummary,
   firstTextBlock,
   type TestClientContext,
+  writeTestFile,
 } from './helpers.js';
 
 describe('P0 Functional Tests - Tools (MCP Client)', () => {
@@ -728,5 +729,44 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       else delete process.env['ROOT_BOUNDARY'];
       await cleanupTestRoot(parentDir);
     }
+  });
+
+  it('TC-FUNC-013r: replace_text replaces all occurrences across globbed files', async () => {
+    const file = await writeTestFile(tmpDir, 'sub/rep.txt', 'foo bar foo\n');
+    const result = await harness.client.callTool({
+      name: 'replace_text',
+      arguments: { path: tmpDir, pattern: '**/*.txt', searchPattern: 'foo', replacement: 'QUX' },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const content = await readFile(file, 'utf-8');
+    assert.strictEqual(content, 'QUX bar QUX\n');
+  });
+
+  it('TC-FUNC-014: find_files returns matched files via callTool', async () => {
+    await writeTestFile(tmpDir, 'findme.txt', 'x');
+    const result = await harness.client.callTool({
+      name: 'find_files',
+      arguments: { pattern: '**/*.txt' },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const sc = result.structuredContent as { ok?: boolean; results?: { path: string }[] };
+    assert.strictEqual(sc.ok, true);
+    assert.ok(sc.results?.some((r) => r.path.endsWith('findme.txt')));
+  });
+
+  it('TC-FUNC-015s: stat returns file metadata via callTool', async () => {
+    const file = await writeTestFile(tmpDir, 'statme.txt', 'hello');
+    const result = await harness.client.callTool({
+      name: 'stat',
+      arguments: { path: file },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const sc = result.structuredContent as {
+      results?: { value?: { type?: string; size?: number } }[];
+    };
+    const value = sc.results?.[0]?.value;
+    assert.ok(value, 'stat must return a value');
+    assert.strictEqual(value.type, 'file');
+    assert.ok(typeof value.size === 'number' && value.size > 0);
   });
 });

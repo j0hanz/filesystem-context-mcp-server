@@ -1,4 +1,8 @@
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import {
+  createMcpExpressApp,
+  hostHeaderValidation,
+  originValidation,
+} from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import type { JSONRPCMessage, McpServerFactory } from '@modelcontextprotocol/server';
 import {
@@ -25,7 +29,11 @@ import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
 import { MIB, parseEnvInt } from './core/util.js';
-import { createWatcherRegistry, type WatcherRegistry } from './core/watcher-registry.js';
+import {
+  createWatcherRegistry,
+  MAX_WATCHERS,
+  type WatcherRegistry,
+} from './core/watcher-registry.js';
 import {
   assertHttpBindingPolicy,
   assertHttpHostPolicy,
@@ -280,8 +288,6 @@ function setupExpressApp(
 
   const app = createMcpExpressApp({
     host: httpHost,
-    ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
-    ...(allowedOriginHostnames.length > 0 ? { allowedOrigins: allowedOriginHostnames } : {}),
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
   });
 
@@ -297,22 +303,26 @@ function setupExpressApp(
   }
 
   app.options('/mcp', corsPreflightHandler(allowedOriginHostnames));
+  // SDK-exported middleware (port-agnostic, 403 JSON-RPC, no-`Origin` passes),
+  // mounted on `/mcp` only — narrower than the deprecated app-wide options,
+  // leaving `/healthz` and `/.well-known/...` unvalidated (deliberate: those
+  // routes are unauthenticated and carry no MCP state).
+  if (allowedHosts.length > 0) app.use('/mcp', hostHeaderValidation(allowedHosts));
+  if (allowedOriginHostnames.length > 0) app.use('/mcp', originValidation(allowedOriginHostnames));
 
   if (apiKey) {
     const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', 120, 1, 100_000);
     app.use('/mcp', createRateLimiter(rpm));
   }
 
-  if (apiKey) {
+  if (apiKey && allowedHosts.length > 0) {
     const metadataHandler = (req: Request, res: Response): void => {
-      const resource = protectedResourceUrl(req, allowedHosts.length > 0);
+      const resource = protectedResourceUrl(req, true);
       if (!resource) {
-        sendJsonRpcError(
-          res,
-          400,
-          ProtocolErrorCode.InvalidRequest,
-          'Cannot derive a resource identifier from the Host header. Set FILESYSTEM_MCP_PUBLIC_URL.',
-        );
+        // Unreachable for the unrestricted case (the gate above excludes it),
+        // but defend a FILESYSTEM_MCP_PUBLIC_URL parse failure with a bodyless
+        // 404 — a generic OAuth client cannot parse a JSON-RPC error envelope.
+        res.status(404).end();
         return;
       }
       res.header('Access-Control-Allow-Origin', '*');
@@ -339,6 +349,23 @@ function setupExpressApp(
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     const parsedBody = req.body as unknown;
+    // Reject an over-cap listen before the ack so the client does not believe
+    // every requested URI is watched when the watcher budget is exhausted.
+    const requestedUris = listenSubscriptionUris(parsedBody);
+    // Pre-check against *remaining* capacity so a registry already near the cap
+    // rejects the batch pre-ack instead of silently dropping URIs. Best-effort:
+    // a concurrent listen can still race past this and be dropped at attach by
+    // `isAtCap` — but that path already logs and the client gets no ack for it.
+    const available = MAX_WATCHERS - sharedRegistry.size();
+    if (requestedUris.length > available) {
+      sendJsonRpcError(
+        res,
+        400,
+        ProtocolErrorCode.InvalidParams,
+        `subscriptions/listen names ${requestedUris.length} URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
+      );
+      return;
+    }
     // Best-effort: fire-and-forget so a watcher error never blocks the request.
     void attachListenWatchers(parsedBody, sharedPathGuard, sharedRegistry, bus)
       .then((attached) => {
@@ -392,6 +419,11 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   );
 
   const bus = new InMemoryServerEventBus();
+  if (apiKey) {
+    Logger.warn(
+      '[HTTP] subscriptions/listen resource_updated events are delivered in-process only (InMemoryServerEventBus). A multi-instance fleet behind a load balancer needs a shared ServerEventBus backend, or events on one instance will not reach listeners on another.',
+    );
+  }
   const sharedRegistry = createWatcherRegistry();
   // One guard for the whole endpoint. The modern leg builds a fresh McpServer
   // per request, so a per-instance guard would discard every accepted access

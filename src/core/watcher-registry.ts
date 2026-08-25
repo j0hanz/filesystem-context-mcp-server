@@ -82,6 +82,9 @@ export function createWatcherRegistry() {
 
     isAtCap: (): boolean => watchers.size >= MAX_WATCHERS,
 
+    /** Live watcher count, for pre-checking a batched listen against remaining capacity. */
+    size: (): number => watchers.size,
+
     /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
     isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
 

@@ -1,4 +1,4 @@
-import { isInputRequiredResult } from '@modelcontextprotocol/server';
+import { createRequestStateCodec, isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -32,6 +32,20 @@ describe('input_required multi-round-trip infrastructure', () => {
     await assert.rejects(async () => {
       await requestStateCodec.verify(tampered);
     });
+  });
+
+  it('2b. requestStateCodec.verify rejects an expired token', async () => {
+    const codec = createRequestStateCodec<{ op: string; paths: string[] }>({
+      key: 'k'.repeat(32),
+      ttlSeconds: 1,
+    });
+    const wire = await codec.mint({ op: 'delete', paths: ['/a'] });
+    await new Promise((r) => setTimeout(r, 2100));
+    await assert.rejects(() => codec.verify(wire));
+  });
+
+  it('2c. requestStateCodec.verify rejects a malformed token', async () => {
+    await assert.rejects(() => requestStateCodec.verify('not-a-valid-state-string'));
   });
 
   it('3. pendingRoundTrip with no requestState mints a fresh input_required', async () => {

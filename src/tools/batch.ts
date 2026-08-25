@@ -231,9 +231,21 @@ export async function runOverPairs<TItem, TPlan extends PairPlan, TResult>(
     if (round !== undefined) return round;
   }
 
+  const total = ready.length;
+  let completed = 0;
+  const tick = (): void => {
+    completed += 1;
+    ctx.onProgress?.({ current: completed, total });
+  };
   const { results: execResults, errors: execErrors } = await processInParallel(
     ready,
-    (plan) => opts.execute(plan, pendingSorted),
+    async (plan) => {
+      try {
+        return await opts.execute(plan, pendingSorted);
+      } finally {
+        tick();
+      }
+    },
     PARALLEL_CONCURRENCY,
     ctx.signal,
   );

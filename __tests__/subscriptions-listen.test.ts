@@ -5,9 +5,10 @@ import {
 } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { type AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
@@ -306,5 +307,86 @@ describe('HTTP recursive directory watch', () => {
 
     await waitFor(() => received !== undefined);
     assert.strictEqual(received, dirUri, 'directory subscriber must be notified of a child change');
+  });
+});
+
+// resourcesListChanged listen filter: an accepted access grant calls
+// notifier.resourcesChanged() -> bus.publish resources_list_changed, and the
+// SDK listen router narrows that notification to subscriptions that opted into
+// `resourcesListChanged`. Modeled on http-shared-guard: HTTP server,
+// elicitation-capable client, ROOT_BOUNDARY=tmpdir() so a grant sticks.
+describe('HTTP resourcesListChanged listen filter', () => {
+  let rootDir: string;
+  let outDir: string;
+  let outFile: string;
+  let httpServer: Server;
+  let client: Client;
+  let sub: McpSubscription | undefined;
+  let savedBoundary: string | undefined;
+
+  before(async () => {
+    rootDir = await createTestRoot();
+    outDir = await mkdtemp(join(tmpdir(), 'fsmcp-listchanged-'));
+    outFile = await writeTestFile(outDir, 'granted.txt', 'initial');
+
+    savedBoundary = process.env['ROOT_BOUNDARY'];
+    process.env['ROOT_BOUNDARY'] = tmpdir();
+    process.env['API_KEY'] = API_KEY;
+    process.env['HTTP_HOST'] = '127.0.0.1';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
+
+    httpServer = await startHttpServer(0, { cliAllowedDirs: [rootDir] });
+    const port = (httpServer.address() as AddressInfo).port;
+    const base = new URL(`http://127.0.0.1:${port}/mcp`);
+
+    const transport = new StreamableHTTPClientTransport(base, {
+      fetch: (u, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', `Bearer ${API_KEY}`);
+        return fetch(u, { ...init, headers });
+      },
+    });
+    client = new Client(
+      { name: 'http-list-changed', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' }, capabilities: { elicitation: { form: {} } } },
+    );
+    client.setRequestHandler('elicitation/create', () => ({
+      action: 'accept' as const,
+      content: { confirm: true },
+    }));
+    await client.connect(transport);
+  });
+
+  after(async () => {
+    await sub?.close().catch(() => {});
+    await client.close();
+    await new Promise<void>((resolve) => httpServer.close(resolve));
+    if (savedBoundary === undefined) delete process.env['ROOT_BOUNDARY'];
+    else process.env['ROOT_BOUNDARY'] = savedBoundary;
+    delete process.env['API_KEY'];
+    delete process.env['HTTP_HOST'];
+    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await cleanupTestRoot(outDir);
+    await cleanupTestRoot(rootDir);
+  });
+
+  it('a resourcesListChanged listen receives notifications/resources/list_changed on grant', async () => {
+    let received = false;
+    client.setNotificationHandler('notifications/resources/list_changed', () => {
+      received = true;
+    });
+    sub = await client.listen({ resourcesListChanged: true });
+    try {
+      // Trigger a grant: read an out-of-root file; the elicitation handler
+      // accepts, applyGrant runs notifier.resourcesChanged() -> bus.publish
+      // resources_list_changed -> the listen router delivers the notification.
+      const r = await client.callTool({ name: 'read', arguments: { path: outFile } });
+      assert.notStrictEqual(r.isError, true, 'granted read must succeed');
+      await waitFor(() => received);
+      assert.strictEqual(received, true, 'list-changed listener must be notified on grant');
+    } finally {
+      await sub.close().catch(() => {});
+      sub = undefined;
+    }
   });
 });
