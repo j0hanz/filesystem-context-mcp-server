@@ -301,7 +301,7 @@ export class PathGuard {
 
   // ponytail: one mutex per PathGuard. If per-session grant throughput ever
   // matters, split into per-grant-dir locks; a single lock is correct for the
-  // stdio + InMemoryEventStore single-process model (decision record 11).
+  // stdio + InMemoryEventStore single-process model.
   #mutex = Promise.resolve();
 
   readonly options: ServerOptions | undefined;

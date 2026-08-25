@@ -1,10 +1,12 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
+import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import { startHttpServer } from '../src/transport.js';
 import { cleanupTestRoot, createTestRoot, firstTextBlock, writeTestFile } from './helpers.js';
@@ -156,6 +158,31 @@ describe('Real HTTP Server integration', () => {
     assert.strictEqual(r.status, 400);
     const body = (await r.json()) as { error?: { code?: number } };
     assert.ok(body.error, '400 must carry a JSON-RPC error object');
+  });
+
+  it('7. subscriptions/listen over remaining watcher capacity -> 400 InvalidParams pre-ack', async () => {
+    const resourceSubscriptions = Array.from(
+      { length: MAX_WATCHERS + 1 },
+      (_, i) => `file:///fake-${i}`,
+    );
+    const r = await fetch(base, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: 'Bearer x-test-key-0123456789',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'subscriptions/listen',
+        params: { notifications: { resourceSubscriptions } },
+      }),
+    });
+    assert.strictEqual(r.status, 400);
+    const body = (await r.json()) as { error?: { code?: number; message?: string } };
+    assert.strictEqual(body.error?.code, ProtocolErrorCode.InvalidParams);
+    assert.ok(body.error?.message?.includes('watcher slots'));
   });
 });
 

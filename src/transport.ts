@@ -39,6 +39,7 @@ import {
   assertHttpHostPolicy,
   bearerAuthMiddleware,
   computeAllowedOriginHostnames,
+  corsOriginMiddleware,
   corsPreflightHandler,
   createRateLimiter,
   protectedResourceUrl,
@@ -297,6 +298,7 @@ function setupExpressApp(
   }
 
   app.options('/mcp', corsPreflightHandler(allowedOriginHostnames));
+  app.use('/mcp', corsOriginMiddleware(allowedOriginHostnames));
 
   if (apiKey) {
     const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', 120, 1, 100_000);

@@ -294,19 +294,42 @@ export function computeAllowedOriginHostnames(originsEnv: string | undefined): s
 }
 
 /**
- * OPTIONS preflight for `/mcp`: reflect a present Origin if it is allowed —
- * localhost, or in the env-derived `FILESYSTEM_MCP_ALLOWED_ORIGINS` set — and
- * avoid emitting a wildcard fallback.
+ * Reflect a present Origin on the response if it is allowed — localhost, or
+ * in the env-derived `FILESYSTEM_MCP_ALLOWED_ORIGINS` set — and avoid
+ * emitting a wildcard fallback. Shared by the OPTIONS preflight and the real
+ * POST response: `createMcpExpressApp`'s `allowedOrigins` only gates which
+ * Origins are accepted, it never sets `Access-Control-Allow-Origin` on the
+ * actual response, so without this a browser client would pass preflight and
+ * then have the POST response body blocked by CORS.
  */
+function reflectAllowedOrigin(
+  req: Request,
+  res: Response,
+  allowedOriginHostnames: readonly string[],
+): void {
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin, allowedOriginHostnames)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    // Key the response by Origin so a CDN/proxy caching one origin's response
+    // cannot replay it for a different origin (cache-poison).
+    res.header('Vary', 'Origin');
+  }
+}
+
+/** Mounted ahead of the `/mcp` handlers so every response — not just the
+ * OPTIONS preflight — carries `Access-Control-Allow-Origin` for an allowed
+ * Origin. */
+export function corsOriginMiddleware(allowedOriginHostnames: readonly string[]): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    reflectAllowedOrigin(req, res, allowedOriginHostnames);
+    next();
+  };
+}
+
+/** OPTIONS preflight for `/mcp`. */
 export function corsPreflightHandler(allowedOriginHostnames: readonly string[]): RequestHandler {
   return (req: Request, res: Response): void => {
-    const origin = req.headers.origin;
-    if (origin && isOriginAllowed(origin, allowedOriginHostnames)) {
-      res.header('Access-Control-Allow-Origin', origin);
-      // Key the response by Origin so a CDN/proxy caching one origin's preflight
-      // cannot replay it for a different origin (cache-poison).
-      res.header('Vary', 'Origin');
-    }
+    reflectAllowedOrigin(req, res, allowedOriginHostnames);
     res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',
