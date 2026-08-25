@@ -26,7 +26,7 @@ import {
   readAcceptedConfirm,
   readAcceptedMultiChoice,
 } from '../core/input-required.js';
-import { Logger } from '../core/observability.js';
+import { isLevelEnabled, Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { isSamePath } from '../core/path.js';
@@ -42,9 +42,9 @@ export interface ToolCtx {
   readonly fs: GuardedFileSystem;
   readonly resourceStore: ResourceStore | undefined;
   /**
-   * Emits a log line to **stderr via `Logger.emit`**, not the MCP
-   * `notifications/message` channel — the `LoggingLevel` vocabulary is reused
-   * as severity only. Use `sendNotification` for a client-visible message.
+   * Emits a log line to stderr via `Logger.emit`, and — when the current call
+   * carries a `sendNotification` sink and `level` clears the `LOG_LEVEL`
+   * gate — as a `notifications/message` on this call's response stream too.
    */
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
   readonly sendNotification?: (notification: Notification) => Promise<void>;
@@ -165,6 +165,19 @@ function buildExecutionCtx(
       const msg = typeof data === 'string' ? data : String(data);
       const prefix = logger ? `[${logger}] ` : '';
       Logger.emit(level, `${prefix}${msg}`);
+      // Request-tied, so it rides this call's response stream — the per-request
+      // HTTP entry cannot deliver a connection-level notification mid-call.
+      // Gated on isLevelEnabled so LOG_LEVEL governs the wire as well as stderr.
+      if (ctx.sendNotification && isLevelEnabled(level)) {
+        void ctx
+          .sendNotification({
+            method: 'notifications/message',
+            params: { level, ...(logger ? { logger } : {}), data: msg },
+          })
+          .catch((err: unknown) => {
+            Logger.debug('log notification not delivered', { error: String(err) });
+          });
+      }
     },
     ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
     onProgress,
@@ -345,7 +358,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       appliedAny = true;
     }
     if (appliedAny) {
-      if (this.toolCtx.notifier?.resourcesChanged) {
+      if (this.toolCtx.notifier) {
         try {
           this.toolCtx.notifier.resourcesChanged();
         } catch (err) {

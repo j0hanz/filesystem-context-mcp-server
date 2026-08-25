@@ -307,7 +307,7 @@ export function corsPreflightHandler(allowedOriginHostnames: readonly string[]):
       // cannot replay it for a different origin (cache-poison).
       res.header('Vary', 'Origin');
     }
-    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',
       'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',

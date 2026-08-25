@@ -77,6 +77,33 @@ describe('Real HTTP Server integration', () => {
     }
   });
 
+  it('externalized tool result is readable back over HTTP', async () => {
+    const transport = new StreamableHTTPClientTransport(base, {
+      fetch: (url, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', 'Bearer x-test-key-0123456789');
+        return fetch(url, { ...init, headers });
+      },
+    });
+    const client = new Client(
+      { name: 'result-roundtrip', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    await client.connect(transport);
+    try {
+      const file = await writeTestFile(tmpDir, 'hashed.txt', 'body');
+      const res = (await client.callTool({ name: 'hash_file', arguments: { path: file } })) as {
+        structuredContent?: { resourceUri?: string };
+      };
+      const uri = res.structuredContent?.resourceUri;
+      assert.ok(uri, 'hash_file must externalize a result uri');
+      const read = await client.readResource({ uri });
+      assert.ok(read.contents.length > 0, 'the externalized result must be readable');
+    } finally {
+      await client.close();
+    }
+  });
+
   it('4. Legacy 2025 initialize request is rejected under pure modern v2', async () => {
     const r = await fetch(base, {
       method: 'POST',

@@ -399,10 +399,7 @@ describe('HTTP Policy & Security', () => {
         'http://localhost:3000',
       );
       assert.strictEqual(resLocalhost.headers['vary'], 'Origin');
-      assert.strictEqual(
-        resLocalhost.headers['access-control-allow-methods'],
-        'GET, POST, DELETE, OPTIONS',
-      );
+      assert.strictEqual(resLocalhost.headers['access-control-allow-methods'], 'POST, OPTIONS');
       assert.strictEqual(
         resLocalhost.headers['access-control-allow-headers'],
         'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',
@@ -432,10 +429,7 @@ describe('HTTP Policy & Security', () => {
       assert.strictEqual(resDisallowed.statusCode, 204);
       assert.strictEqual(resDisallowed.headers['access-control-allow-origin'], undefined);
       assert.strictEqual(resDisallowed.headers['vary'], undefined);
-      assert.strictEqual(
-        resDisallowed.headers['access-control-allow-methods'],
-        'GET, POST, DELETE, OPTIONS',
-      );
+      assert.strictEqual(resDisallowed.headers['access-control-allow-methods'], 'POST, OPTIONS');
 
       // 4. Missing origin header
       const reqNoOrigin = createMockRequest({ headers: {} });

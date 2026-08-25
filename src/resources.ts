@@ -59,6 +59,8 @@ export interface ResourceRegistrationOptions {
   watcherRegistry?: WatcherRegistry;
   /** Modern-leg typed notification publisher. */
   notifier?: ServerNotifier;
+  /** The protocol era this instance serves; omitted where the caller does not know. */
+  era?: 'legacy' | 'modern';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -515,70 +517,76 @@ function registerResourceContracts(
     }
   }
 
-  server.server.setRequestHandler(
-    'resources/subscribe',
-    async (req: { params: SubscribeRequestParams }) => {
-      const requestedResource = resourceUrlFromServerUrl(req.params.uri);
-      let foundMatch = false;
-      for (const contract of resourceContracts) {
-        if (!contract.subscribe) continue;
-        const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
-        if (!configured) continue;
-        if (
-          checkResourceAllowed({
-            requestedResource,
-            configuredResource: configured,
-          })
-        ) {
-          foundMatch = true;
-          const subscribeResult = await contract.subscribe(
-            requestedResource.toString(),
-            (updatedUri) => {
-              if (options.notifier) {
-                options.notifier.resourceUpdated(updatedUri);
-                return;
-              }
-              const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-              // A failed notify means the connection went away; nothing to recover.
-              void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-                Logger.debug('resource update not delivered', {
-                  uri: updatedUri,
-                  error: formatUnknownErrorMessage(err),
+  // `resources/subscribe`/`unsubscribe` are 2025-era-only verbs; a modern
+  // server answers `-32601 Method not found` for them, so registering these
+  // handlers on a modern-era instance would dispatch to code no request can
+  // reach.
+  if (options.era !== 'modern') {
+    server.server.setRequestHandler(
+      'resources/subscribe',
+      async (req: { params: SubscribeRequestParams }) => {
+        const requestedResource = resourceUrlFromServerUrl(req.params.uri);
+        let foundMatch = false;
+        for (const contract of resourceContracts) {
+          if (!contract.subscribe) continue;
+          const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
+          if (!configured) continue;
+          if (
+            checkResourceAllowed({
+              requestedResource,
+              configuredResource: configured,
+            })
+          ) {
+            foundMatch = true;
+            const subscribeResult = await contract.subscribe(
+              requestedResource.toString(),
+              (updatedUri) => {
+                if (options.notifier) {
+                  options.notifier.resourceUpdated(updatedUri);
+                  return;
+                }
+                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+                // A failed notify means the connection went away; nothing to recover.
+                void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
+                  Logger.debug('resource update not delivered', {
+                    uri: updatedUri,
+                    error: formatUnknownErrorMessage(err),
+                  });
                 });
-              });
-            },
-          );
-          if (subscribeResult === false) {
-            throw new ProtocolError(
-              ProtocolErrorCode.InternalError,
-              `Subscription rejected: no watcher attached (watcher limit ${MAX_WATCHERS} reached, or fs.watch failed to start).`,
+              },
             );
+            if (subscribeResult === false) {
+              throw new ProtocolError(
+                ProtocolErrorCode.InternalError,
+                `Subscription rejected: no watcher attached (watcher limit ${MAX_WATCHERS} reached, or fs.watch failed to start).`,
+              );
+            }
+            break;
           }
-          break;
         }
-      }
-      if (!foundMatch) {
-        throw new ResourceNotFoundError(
-          requestedResource.toString(),
-          `Resource not found: ${requestedResource.toString()}`,
-        );
-      }
-      return {};
-    },
-  );
+        if (!foundMatch) {
+          throw new ResourceNotFoundError(
+            requestedResource.toString(),
+            `Resource not found: ${requestedResource.toString()}`,
+          );
+        }
+        return {};
+      },
+    );
 
-  server.server.setRequestHandler(
-    'resources/unsubscribe',
-    (req: { params: UnsubscribeRequestParams }) => {
-      const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
-      for (const contract of resourceContracts) {
-        if (contract.unsubscribe) {
-          contract.unsubscribe(canonical);
+    server.server.setRequestHandler(
+      'resources/unsubscribe',
+      (req: { params: UnsubscribeRequestParams }) => {
+        const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
+        for (const contract of resourceContracts) {
+          if (contract.unsubscribe) {
+            contract.unsubscribe(canonical);
+          }
         }
-      }
-      return {};
-    },
-  );
+        return {};
+      },
+    );
+  }
 
   return resourceContracts;
 }
@@ -590,6 +598,7 @@ export function registerResources(deps: ServerDeps): { dispose(): void } {
     server: deps.server,
     ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
     ...(deps.notifier ? { notifier: deps.notifier } : {}),
+    ...(deps.era ? { era: deps.era } : {}),
     readOnly: deps.readOnly ?? false,
   });
 

@@ -1,4 +1,8 @@
-import type { Implementation, ServerCapabilities } from '@modelcontextprotocol/server';
+import type {
+  Implementation,
+  ServerCapabilities,
+  ServerNotifier,
+} from '@modelcontextprotocol/server';
 import { McpServer } from '@modelcontextprotocol/server';
 
 import packageJson from '../package.json' with { type: 'json' };
@@ -14,10 +18,7 @@ import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
 
-export interface ServerNotifier {
-  readonly resourcesChanged?: () => void;
-  readonly resourceUpdated: (uri: string) => void;
-}
+export type { ServerNotifier };
 
 export interface ServerDeps {
   readonly server: McpServer;
@@ -28,6 +29,8 @@ export interface ServerDeps {
   readonly watcherRegistry?: WatcherRegistry;
   /** Modern-leg typed notification publisher. */
   readonly notifier?: ServerNotifier;
+  /** The protocol era this instance serves; omitted where the caller does not know. */
+  readonly era?: 'legacy' | 'modern';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -90,12 +93,13 @@ export async function createServer(
     pathGuard?: PathGuard;
     /**
      * Store to use instead of constructing one. The HTTP modern leg shares one
-     * store per client session (keyed by mcp-session-id) across the per-request
-     * instances, so a result a tool externalized in one POST survives to the
-     * follow-up resources/read. Omitted on stdio, where the pinned instance owns
-     * its store for the connection.
+     * store across every per-request instance, so a result a tool externalized
+     * in one POST survives to the follow-up resources/read. Omitted on stdio,
+     * where the pinned instance owns its store for the connection.
      */
     resourceStore?: ResourceStore;
+    /** The protocol era this instance serves; omitted where the caller does not know. */
+    era?: 'legacy' | 'modern';
   },
 ): Promise<FilesystemServerContext> {
   const resourceStore = extraDeps?.resourceStore ?? new ResourceStore();
@@ -105,6 +109,7 @@ export async function createServer(
     tools: {},
     prompts: {},
     completions: {},
+    logging: {},
   } satisfies ServerCapabilities;
 
   const cacheScope = process.env['API_KEY'] ? 'private' : 'public';
@@ -161,6 +166,7 @@ export async function createServer(
     ...(options.readOnly ? { readOnly: true } : {}),
     ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
     ...(extraDeps?.notifier ? { notifier: extraDeps.notifier } : {}),
+    ...(extraDeps?.era ? { era: extraDeps.era } : {}),
   };
 
   const resourceDisposable = registerResources(deps);

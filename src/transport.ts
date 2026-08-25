@@ -1,14 +1,13 @@
-import {
-  createMcpExpressApp,
-  hostHeaderValidation,
-  originValidation,
-} from '@modelcontextprotocol/express';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
-import type { JSONRPCMessage, McpServerFactory } from '@modelcontextprotocol/server';
+import type {
+  JSONRPCMessage,
+  McpHttpHandler,
+  McpServerFactory,
+} from '@modelcontextprotocol/server';
 import {
   createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
-  InMemoryServerEventBus,
   JSONRPC_VERSION,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
@@ -77,8 +76,8 @@ export function startServer(options: ServerOptions): StdioServerHandle {
   // Shared with the resource contract so a `resources/subscribe` and a
   // `subscriptions/listen` naming the same URI reuse one watcher.
   const registry = createWatcherRegistry();
-  const factory: McpServerFactory = async () => {
-    const c = await createServer(options, { watcherRegistry: registry });
+  const factory: McpServerFactory = async ({ era }) => {
+    const c = await createServer(options, { watcherRegistry: registry, era });
     activeCtx = c;
     return c.mcp;
   };
@@ -169,40 +168,6 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   256 * MIB,
 );
 
-const SESSION_STORE_SWEEP_MS = 60_000;
-
-/**
- * Create a cache of ResourceStore instances keyed by mcp-session-id, with a
- * background sweep that reclaims stores with no remaining entries. The HTTP
- * modern leg shares one store per client session across the per-request
- * instances, so a result a tool externalized in one POST survives to the
- * follow-up resources/read.
- */
-function createSessionStoreCache() {
-  const stores = new Map<string, ResourceStore>();
-  const sweep = setInterval(() => {
-    for (const [sid, store] of stores) {
-      // keys() prunes expired entries; a store with none left is reclaimable.
-      if (store.keys().length === 0) stores.delete(sid);
-    }
-  }, SESSION_STORE_SWEEP_MS);
-  sweep.unref();
-  return {
-    getOrCreate(sid: string): ResourceStore {
-      let store = stores.get(sid);
-      if (!store) {
-        store = new ResourceStore();
-        stores.set(sid, store);
-      }
-      return store;
-    },
-    destroy(): void {
-      clearInterval(sweep);
-      stores.clear();
-    },
-  };
-}
-
 function sendJsonRpcError(res: Response, status: number, code: number, message: string): void {
   res.status(status).json({
     jsonrpc: JSONRPC_VERSION,
@@ -252,12 +217,12 @@ async function attachListenWatchers(
   parsedBody: unknown,
   pathGuard: PathGuard,
   registry: WatcherRegistry,
-  bus: InMemoryServerEventBus,
+  notifier: ServerNotifier,
 ): Promise<string[]> {
   const uris = listenSubscriptionUris(parsedBody);
   if (uris.length === 0) return [];
   const sink = (uri: string): void => {
-    bus.publish({ kind: 'resource_updated', uri });
+    notifier.resourceUpdated(uri);
   };
   const attached: string[] = [];
   for (const uri of uris) {
@@ -275,33 +240,21 @@ async function attachListenWatchers(
   return attached;
 }
 
-function createServerNotifier(bus: InMemoryServerEventBus): ServerNotifier {
-  return {
-    resourcesChanged: () => {
-      bus.publish({ kind: 'resources_list_changed' });
-    },
-    resourceUpdated: (uri: string) => {
-      bus.publish({ kind: 'resource_updated', uri });
-    },
-  };
-}
-
 function makeHttpModernFactory(
   options: ServerOptions,
-  bus: InMemoryServerEventBus,
+  getNotifier: () => ServerNotifier,
   sharedRegistry: WatcherRegistry,
   sharedPathGuard: PathGuard,
-  sessionStores: ReturnType<typeof createSessionStoreCache>,
+  sharedStore: ResourceStore,
 ): McpServerFactory {
-  const notifier = createServerNotifier(bus);
-  return async ({ requestInfo }) => {
-    const sid = requestInfo?.headers.get('mcp-session-id');
-    const resourceStore = sid ? sessionStores.getOrCreate(sid) : new ResourceStore();
+  return async ({ era }) => {
+    const notifier = getNotifier();
     const c = await createServer(options, {
       watcherRegistry: sharedRegistry,
       notifier,
       pathGuard: sharedPathGuard,
-      ...(sid ? { resourceStore } : {}),
+      resourceStore: sharedStore,
+      era,
     });
     const previousOnClose = c.mcp.server.onclose;
     c.mcp.server.onclose = () => {
@@ -319,7 +272,7 @@ function setupExpressApp(
   modernNodeHandler: (req: Request, res: Response, parsedBody?: unknown) => Promise<void>,
   sharedPathGuard: PathGuard,
   sharedRegistry: WatcherRegistry,
-  bus: InMemoryServerEventBus,
+  notifier: ServerNotifier,
 ): Express {
   const allowedOriginHostnames = computeAllowedOriginHostnames(
     process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'],
@@ -328,6 +281,8 @@ function setupExpressApp(
   const app = createMcpExpressApp({
     host: httpHost,
     jsonLimit: `${MAX_REQUEST_BODY_BYTES}b`,
+    ...(allowedHosts.length > 0 ? { allowedHosts: [...allowedHosts] } : {}),
+    ...(allowedOriginHostnames.length > 0 ? { allowedOrigins: [...allowedOriginHostnames] } : {}),
   });
 
   const trustProxy = resolveTrustProxySetting(process.env['FILESYSTEM_MCP_TRUST_PROXY']);
@@ -342,12 +297,6 @@ function setupExpressApp(
   }
 
   app.options('/mcp', corsPreflightHandler(allowedOriginHostnames));
-  // SDK-exported middleware (port-agnostic, 403 JSON-RPC, no-`Origin` passes),
-  // mounted on `/mcp` only — narrower than the deprecated app-wide options,
-  // leaving `/healthz` and `/.well-known/...` unvalidated (deliberate: those
-  // routes are unauthenticated and carry no MCP state).
-  if (allowedHosts.length > 0) app.use('/mcp', hostHeaderValidation(allowedHosts));
-  if (allowedOriginHostnames.length > 0) app.use('/mcp', originValidation(allowedOriginHostnames));
 
   if (apiKey) {
     const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', 120, 1, 100_000);
@@ -406,7 +355,7 @@ function setupExpressApp(
       return;
     }
     // Best-effort: fire-and-forget so a watcher error never blocks the request.
-    void attachListenWatchers(parsedBody, sharedPathGuard, sharedRegistry, bus)
+    void attachListenWatchers(parsedBody, sharedPathGuard, sharedRegistry, notifier)
       .then((attached) => {
         if (attached.length === 0) return;
         // The listen stream IS this POST's SSE response, so its close is the
@@ -457,14 +406,18 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
   );
 
-  const bus = new InMemoryServerEventBus();
   if (apiKey) {
     Logger.warn(
-      '[HTTP] subscriptions/listen resource_updated events are delivered in-process only (InMemoryServerEventBus). A multi-instance fleet behind a load balancer needs a shared ServerEventBus backend, or events on one instance will not reach listeners on another.',
+      "[HTTP] subscriptions/listen resource_updated events are delivered on the handler's default in-process bus. A multi-instance fleet behind a load balancer needs a shared backend, passed via createMcpHandler's bus option, or events on one instance will not reach listeners on another.",
     );
   }
   const sharedRegistry = createWatcherRegistry();
-  const sessionStores = createSessionStoreCache();
+  // One store for the whole endpoint, same lifetime and same one-credential
+  // trust argument as the shared guard below: a result a tool externalized in
+  // one POST must survive to the follow-up resources/read, and the modern leg
+  // builds a fresh McpServer per request so a per-request store would discard
+  // it immediately.
+  const sharedStore = new ResourceStore();
   // One guard for the whole endpoint. The modern leg builds a fresh McpServer
   // per request, so a per-instance guard would discard every accepted access
   // grant the moment the request ended — re-prompting on each subsequent call
@@ -476,11 +429,16 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   const sharedPathGuard = new PathGuard(options, true);
   await sharedPathGuard.recomputeAllowedDirectories();
 
-  const modernHandler = createMcpHandler(
-    makeHttpModernFactory(options, bus, sharedRegistry, sharedPathGuard, sessionStores),
+  const modernHandler: McpHttpHandler = createMcpHandler(
+    makeHttpModernFactory(
+      options,
+      () => modernHandler.notify,
+      sharedRegistry,
+      sharedPathGuard,
+      sharedStore,
+    ),
     {
       legacy: 'reject',
-      bus,
       onerror: (error: Error) => {
         Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
       },
@@ -495,7 +453,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     modernNodeHandler,
     sharedPathGuard,
     sharedRegistry,
-    bus,
+    modernHandler.notify,
   );
 
   const httpServer = createHttpServer(app);
@@ -515,7 +473,6 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
     sharedRegistry.destroy();
-    sessionStores.destroy();
     modernHandler
       .close()
       .then(() => {
@@ -534,7 +491,6 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
       sharedRegistry.destroy();
-      sessionStores.destroy();
       modernHandler.close().catch((closeErr: unknown) => {
         Logger.error(
           '[HTTP] Error closing handler on startup failure:',
