@@ -417,17 +417,21 @@ function setupExpressApp(
     // Reject an over-cap listen before the ack so the client does not believe
     // every requested URI is watched when the watcher budget is exhausted.
     const requestedUris = listenSubscriptionUris(parsedBody);
+    // Only URIs without a live watcher consume a slot; a re-listen to an
+    // already-watched URI just adds a callback (attachFileWatcherForUri
+    // short-circuits on hasWatcher), so it must not count against capacity.
+    const newUris = requestedUris.filter((uri) => !sharedRegistry.hasWatcher(uri));
     // Pre-check against *remaining* capacity so a registry already near the cap
     // rejects the batch pre-ack instead of silently dropping URIs. Best-effort:
     // a concurrent listen can still race past this and be dropped at attach by
     // `isAtCap` — but that path already logs and the client gets no ack for it.
     const available = MAX_WATCHERS - sharedRegistry.size();
-    if (requestedUris.length > available) {
+    if (newUris.length > available) {
       sendJsonRpcError(
         res,
         400,
         ProtocolErrorCode.InvalidParams,
-        `subscriptions/listen names ${requestedUris.length} URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
+        `subscriptions/listen names ${newUris.length} not-yet-watched URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
         jsonRpcRequestId(parsedBody),
       );
       return;

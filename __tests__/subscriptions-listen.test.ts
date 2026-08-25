@@ -14,6 +14,7 @@ import { after, before, describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
+import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
 import { listenSubscriptionUris, startHttpServer } from '../src/transport.js';
 import { cleanupTestRoot, createTestRoot, waitFor, writeTestFile } from './helpers.js';
 
@@ -388,5 +389,86 @@ describe('HTTP resourcesListChanged listen filter', () => {
       await sub.close().catch(() => {});
       sub = undefined;
     }
+  });
+});
+
+// Capacity pre-check overcount (Plan 002): the pre-check used to count every
+// requested URI as needing a new slot, including URIs already watched.
+// MAX_WATCHERS is a module-level constant read at import time, so it cannot
+// be clamped per-test via env var — instead this drives the real default cap
+// to its boundary: one URI is already watched, then a single batch mixes
+// that URI with just enough new (fake, unvalidatable) URIs to exactly fill
+// the remaining slots. The old code counted the already-watched URI too and
+// rejected the batch with 400; the fix excludes it and must accept.
+describe('HTTP duplicate listen does not consume capacity', () => {
+  let tmpDir: string;
+  let httpServer: Server;
+  let base: URL;
+  let client: Client;
+  let sub: McpSubscription | undefined;
+
+  before(async () => {
+    tmpDir = await createTestRoot();
+    await writeTestFile(tmpDir, 'duplisten.txt', 'initial');
+    process.env['API_KEY'] = API_KEY;
+    process.env['HTTP_HOST'] = '127.0.0.1';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
+    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
+    const port = (httpServer.address() as AddressInfo).port;
+    base = new URL(`http://127.0.0.1:${port}/mcp`);
+    const transport = new StreamableHTTPClientTransport(base, {
+      fetch: (u, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', `Bearer ${API_KEY}`);
+        return fetch(u, { ...init, headers });
+      },
+    });
+    client = new Client(
+      { name: 'http-dup-listen', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    await client.connect(transport);
+  });
+
+  after(async () => {
+    try {
+      await sub?.close();
+    } catch {
+      /* teardown */
+    }
+    await client.close();
+    await new Promise<void>((resolve) => httpServer.close(resolve));
+    delete process.env['API_KEY'];
+    delete process.env['HTTP_HOST'];
+    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await cleanupTestRoot(tmpDir);
+  });
+
+  it('a batch mixing an already-watched URI with capacity-filling new URIs is accepted', async () => {
+    const filePath = join(tmpDir, 'duplisten.txt');
+    const uri = buildFileResourceUri(filePath);
+    let received: string | undefined;
+    client.setNotificationHandler('notifications/resources/updated', (n) => {
+      received = (n.params as { uri: string }).uri;
+    });
+
+    // Establish the watcher for `uri` first, and prove — via a real
+    // delivered notification, not a fixed wait — that it is actually live in
+    // the registry (attachListenWatchers runs async after the SSE response
+    // is already sent, so `.listen()` resolving does not itself guarantee
+    // the watcher has attached yet).
+    sub = await client.listen({ resourceSubscriptions: [uri] });
+    await writeFile(filePath, 'first-change');
+    await waitFor(() => received !== undefined);
+    assert.strictEqual(received, uri, 'the real watcher must be live before the batch check');
+
+    // `uri` now occupies exactly one slot. Fill every remaining slot with
+    // new, non-existent URIs and include `uri` again in the same batch. A
+    // second `.listen()` on the same (already-initialized) client reuses its
+    // session/protocol-version handshake, unlike a bare fetch, so the only
+    // thing under test is the capacity pre-check.
+    const fakeUris = Array.from({ length: MAX_WATCHERS - 1 }, (_, i) => `file:///fake-dup-${i}`);
+    const sub2 = await client.listen({ resourceSubscriptions: [uri, ...fakeUris] });
+    await sub2.close();
   });
 });
