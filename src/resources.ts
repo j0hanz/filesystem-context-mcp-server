@@ -1,6 +1,5 @@
 import type {
   CacheHint,
-  McpServer,
   ReadResourceResult,
   Resource,
   ResourceUpdatedNotificationParams,
@@ -54,7 +53,6 @@ import type { ServerDeps, ServerNotifier } from './server.js';
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
   pathGuard?: PathGuard;
-  server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
   readOnly: boolean;
   /**
@@ -486,11 +484,9 @@ function wrapRead(contract: ResourceContract) {
   };
 }
 
-function registerResourceContracts(
-  server: McpServer,
-  options: ResourceRegistrationOptions,
-): ResourceContract[] {
-  const resourceContracts = getResourceContracts({ ...options, server });
+export function registerResources(deps: ServerDeps): { dispose(): void } {
+  const server = deps.server;
+  const resourceContracts = getResourceContracts({ ...deps, readOnly: deps.readOnly ?? false });
 
   for (const contract of resourceContracts) {
     const config = {
@@ -531,7 +527,7 @@ function registerResourceContracts(
   // server answers `-32601 Method not found` for them, so registering these
   // handlers on a modern-era instance would dispatch to code no request can
   // reach.
-  if (options.era !== 'modern') {
+  if (deps.era !== 'modern') {
     server.server.setRequestHandler(
       'resources/subscribe',
       async (req: { params: SubscribeRequestParams }) => {
@@ -551,8 +547,8 @@ function registerResourceContracts(
             const subscribeResult = await contract.subscribe(
               requestedResource.toString(),
               (updatedUri) => {
-                if (options.notifier) {
-                  options.notifier.resourceUpdated(updatedUri);
+                if (deps.notifier) {
+                  deps.notifier.resourceUpdated(updatedUri);
                   return;
                 }
                 const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
@@ -598,23 +594,9 @@ function registerResourceContracts(
     );
   }
 
-  return resourceContracts;
-}
-
-export function registerResources(deps: ServerDeps): { dispose(): void } {
-  const contracts = registerResourceContracts(deps.server, {
-    resourceStore: deps.resourceStore,
-    pathGuard: deps.pathGuard,
-    server: deps.server,
-    ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
-    ...(deps.notifier ? { notifier: deps.notifier } : {}),
-    ...(deps.era ? { era: deps.era } : {}),
-    readOnly: deps.readOnly ?? false,
-  });
-
   return {
     dispose(): void {
-      for (const contract of contracts) {
+      for (const contract of resourceContracts) {
         if (contract.destroy) {
           contract.destroy();
         }
