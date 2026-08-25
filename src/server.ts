@@ -88,9 +88,17 @@ export async function createServer(
      * stdio, where the instance is pinned for the connection and owns its guard.
      */
     pathGuard?: PathGuard;
+    /**
+     * Store to use instead of constructing one. The HTTP modern leg shares one
+     * store per client session (keyed by mcp-session-id) across the per-request
+     * instances, so a result a tool externalized in one POST survives to the
+     * follow-up resources/read. Omitted on stdio, where the pinned instance owns
+     * its store for the connection.
+     */
+    resourceStore?: ResourceStore;
   },
 ): Promise<FilesystemServerContext> {
-  const resourceStore = new ResourceStore();
+  const resourceStore = extraDeps?.resourceStore ?? new ResourceStore();
 
   const capabilities = {
     resources: { subscribe: true, listChanged: true },
