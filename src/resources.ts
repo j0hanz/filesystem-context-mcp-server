@@ -259,14 +259,10 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
           try {
             const { stats } = await guardedFs.stat(rootDir);
             lastModified = new Date(stats.mtimeMs).toISOString();
-          } catch (err) {
-            // ENOENT: root vanished mid-list. Anything else (EACCES, EBUSY):
-            // root exists but is unreadable. Either way omit lastModified and
-            // keep the entry — list() must not throw for one bad root.
-            const code = (err as NodeJS.ErrnoException | undefined)?.code;
-            if (code && code !== 'ENOENT') {
-              /* unreadable root: best-effort, no log channel in list() */
-            }
+          } catch {
+            // ENOENT: root vanished mid-list. Anything else (EACCES, EBUSY): root
+            // exists but is unreadable. Either way omit lastModified and keep the
+            // entry — list() must not throw for one bad root.
           }
         }
         resources.push({
@@ -433,7 +429,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
       if (typeof id !== 'string' || id.length === 0) {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
-          'Cached result expired. Re-run the tool to regenerate.',
+          'Malformed result URI: missing {id}. Use the exact resourceUri returned by the tool.',
         );
       }
 
