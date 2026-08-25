@@ -303,7 +303,7 @@ async function attachListenWatchers(
   const attached: string[] = [];
   for (const uri of uris) {
     try {
-      if (await attachFileWatcherForUri(registry, pathGuard, uri, sink)) {
+      if ((await attachFileWatcherForUri(registry, pathGuard, uri, sink)).ok) {
         attached.push(uri);
       }
     } catch (err: unknown) {

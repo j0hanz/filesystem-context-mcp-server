@@ -170,18 +170,30 @@ function warnWatcherCap(uri: string): void {
   Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
 }
 
+export interface WatcherAttachResult {
+  /** True only when a watcher is live for this uri and `notify` is registered. */
+  ok: boolean;
+  reason?: 'stale' | 'capped' | 'bad-uri' | 'invalid-path' | 'attach-failed';
+  /** Only for `invalid-path`: what `validateExistingPath` threw. */
+  error?: unknown;
+}
+
 /**
- * Best-effort filesystem-watcher attachment for the modern (per-request) HTTP
- * leg. Mirrors `createFilesystemResource.subscribe`'s attach sequence but never
- * throws: a bad or unreachable URI is skipped (returns `false`) rather than
- * rejected, since the trigger is a client's `subscriptions/listen` filter, not a
- * `resources/subscribe` call that owes the caller a precise error. Idempotent
- * per URI — a second call for an already-watched URI re-registers the notify
- * callback (one watcher per URI).
+ * The one attach ladder both watcher entry points run: `resources/subscribe`
+ * (2025 era) and the `subscriptions/listen` filter (modern era, HTTP and
+ * stdio). Never throws — it reports the outcome and lets each caller decide
+ * what that is worth: subscribe owes its caller a precise error, listen skips a
+ * bad or unreachable URI silently. Idempotent per URI — a second call for an
+ * already-watched URI re-registers the notify callback (one watcher per URI).
  *
- * Lifetime is the caller's to manage, and the two legs differ. HTTP releases per
+ * `markSubscribe` is the one branch that differs: only `resources/subscribe`
+ * declares desired state (what `isStale` aborts against). The listen path must
+ * not, or a rejected attach past that point strands a `'subscribing'` entry
+ * nothing settles.
+ *
+ * Lifetime is the caller's to manage, and the legs differ. HTTP releases per
  * stream: the listen stream is the POST's own SSE response, so `transport.ts`
- * calls `registry.remove` for each URI this returned `true` for when that
+ * calls `registry.remove` for each URI this returned `ok` for when that
  * response closes (the registry ref-counts by URI, so a watcher another stream
  * still holds survives). Stdio has no per-stream close hook on the SDK's listen
  * router, so its watchers live for the connection and are freed by the shared
@@ -193,35 +205,43 @@ export async function attachFileWatcherForUri(
   pathGuard: PathGuard,
   uri: string,
   notify: (uri: string) => void,
-): Promise<boolean> {
+  markSubscribe = false,
+): Promise<WatcherAttachResult> {
   if (registry.hasWatcher(uri)) {
+    // A watcher already tracks this uri; just (re)register the callback so its
+    // change events reach the new subscriber. No validation or cap work is
+    // needed for an already-live watcher.
     registry.addCallback(uri, notify);
-    return true;
+    return { ok: true };
   }
+  // A cap hit before validation and one found after the await are the same
+  // condition, and both are reported the same way.
   if (registry.isAtCap()) {
     warnWatcherCap(uri);
-    return false;
+    return { ok: false, reason: 'capped' };
   }
 
+  if (markSubscribe) registry.startSubscribe(uri);
+
   const filePath = extractPath(uri);
-  if (filePath === undefined) return false;
+  if (!filePath) return { ok: false, reason: 'bad-uri' };
 
   let resolved: string;
   try {
     resolved = await pathGuard.validateExistingPath(filePath);
-  } catch {
-    return false;
+  } catch (error: unknown) {
+    return { ok: false, reason: 'invalid-path', error };
   }
 
   // Re-check what the await could have changed.
-  if (registry.isStale(uri)) return false;
+  if (registry.isStale(uri)) return { ok: false, reason: 'stale' };
   if (registry.hasWatcher(uri)) {
     registry.addCallback(uri, notify);
-    return true;
+    return { ok: true };
   }
   if (registry.isAtCap()) {
     warnWatcherCap(uri);
-    return false;
+    return { ok: false, reason: 'capped' };
   }
 
   registry.addCallback(uri, notify);
@@ -229,9 +249,9 @@ export async function attachFileWatcherForUri(
     // fs.watch threw (inotify exhaustion, or a race deleted the path): roll back
     // so no dangling callback is left believing a watcher exists.
     registry.remove(uri);
-    return false;
+    return { ok: false, reason: 'attach-failed' };
   }
-  return true;
+  return { ok: true };
 }
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
@@ -318,33 +338,14 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     async subscribe(uri, notify) {
       if (!options.pathGuard) return;
 
-      if (registry.hasWatcher(uri)) {
-        // A watcher already tracks this uri; just (re)register the callback so
-        // its change events reach the new subscriber. No validation or cap
-        // work is needed for an already-live watcher.
-        registry.addCallback(uri, notify);
-        return;
-      }
-      // A cap hit before validation is reported to the caller as an outright
-      // rejection. A cap hit found after the validation await is the same
-      // condition, so it is also rejected — returning undefined here would let
-      // the handler report success with no watcher attached.
-      if (registry.isAtCap()) {
-        warnWatcherCap(uri);
-        return false;
-      }
+      const result = await attachFileWatcherForUri(registry, options.pathGuard, uri, notify, true);
+      if (result.ok) return undefined;
 
-      registry.startSubscribe(uri);
-
-      const filePath = extractPath(uri);
-      if (!filePath) {
+      if (result.reason === 'bad-uri') {
         throw new ResourceNotFoundError(uri, `Cannot subscribe: not a filesystem URI`);
       }
-
-      let resolved: string;
-      try {
-        resolved = await options.pathGuard.validateExistingPath(filePath);
-      } catch (err: unknown) {
+      if (result.reason === 'invalid-path') {
+        const err = result.error;
         if (isNotFoundish(err)) {
           throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
         }
@@ -353,28 +354,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
         );
         throw err;
       }
-
-      // Re-check what the await could have changed.
-      if (registry.isStale(uri)) return;
-      if (registry.hasWatcher(uri)) {
-        registry.addCallback(uri, notify);
-        return;
-      }
-      if (registry.isAtCap()) {
-        warnWatcherCap(uri);
-        return false;
-      }
-
-      registry.addCallback(uri, notify);
-      if (!registry.attach(uri, resolved)) {
-        // fs.watch threw synchronously (e.g. inotify exhaustion, or a race
-        // deleted the path): roll back the callback we just registered and
-        // reject, so the caller is not left believing it is subscribed while
-        // no watcher exists.
-        registry.remove(uri);
-        return false;
-      }
-      return undefined;
+      // Unsubscribed (or the registry destroyed) mid-await: the caller already
+      // asked for this to stop, so there is nothing to reject.
+      if (result.reason === 'stale') return undefined;
+      // capped / attach-failed: `false` tells the handler to reject, since
+      // undefined would report success with no watcher attached.
+      return false;
     },
 
     unsubscribe(uri) {
