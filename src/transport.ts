@@ -28,6 +28,7 @@ import { assertFleetRequestStateKey } from './core/input-required.js';
 import { Logger } from './core/observability.js';
 import { PathGuard } from './core/path.js';
 import type { ServerOptions } from './core/path.js';
+import { ResourceStore } from './core/store.js';
 import { MIB, parseEnvInt } from './core/util.js';
 import {
   createWatcherRegistry,
@@ -168,6 +169,49 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   256 * MIB,
 );
 
+const SESSION_STORE_SWEEP_MS = 60_000;
+
+/**
+ * Per-session ResourceStore cache for the HTTP modern leg. The per-request
+ * factory would otherwise hand each POST a fresh empty store, so a result a
+ * tool externalized in one request would be gone by the follow-up
+ * resources/read. Keyed by the client's mcp-session-id so one client's result
+ * list is not visible to another (the result resource's list() returns
+ * store.keys()). A request with no session id (initialize, or a non-SDK client)
+ * gets a throwaway per-request store instead — preserving isolation rather
+ * than keying every idless request to the same shared store.
+ *
+ * ponytail: createMcpHandler exposes no per-session close hook on the modern
+ * leg, so empty stores are reaped by sweep (each store self-evicts entries at
+ * 60s TTL; a store with no live entries is dropped). Bounded by the number of
+ * recently-active sessions. If a per-session close hook lands, key teardown
+ * off that instead.
+ */
+function createSessionStoreCache() {
+  const stores = new Map<string, ResourceStore>();
+  const sweep = setInterval(() => {
+    for (const [sid, store] of stores) {
+      // keys() prunes expired entries; a store with none left is reclaimable.
+      if (store.keys().length === 0) stores.delete(sid);
+    }
+  }, SESSION_STORE_SWEEP_MS);
+  sweep.unref();
+  return {
+    getOrCreate(sid: string): ResourceStore {
+      let store = stores.get(sid);
+      if (!store) {
+        store = new ResourceStore();
+        stores.set(sid, store);
+      }
+      return store;
+    },
+    destroy(): void {
+      clearInterval(sweep);
+      stores.clear();
+    },
+  };
+}
+
 function sendJsonRpcError(res: Response, status: number, code: number, message: string): void {
   res.status(status).json({
     jsonrpc: JSONRPC_VERSION,
@@ -256,13 +300,22 @@ function makeHttpModernFactory(
   bus: InMemoryServerEventBus,
   sharedRegistry: WatcherRegistry,
   sharedPathGuard: PathGuard,
+  sessionStores: ReturnType<typeof createSessionStoreCache>,
 ): McpServerFactory {
   const notifier = createServerNotifier(bus);
-  return async () => {
+  return async ({ requestInfo }) => {
+    // requestInfo is the inbound web Request (HTTP only); the client sends
+    // mcp-session-id on every POST after initialize. No id (initialize, or a
+    // non-SDK client) falls back to a per-request store — result resources
+    // are already unreachable for that case, and a shared idless store would
+    // leak entries across clients.
+    const sid = requestInfo?.headers.get('mcp-session-id');
+    const resourceStore = sid ? sessionStores.getOrCreate(sid) : new ResourceStore();
     const c = await createServer(options, {
       watcherRegistry: sharedRegistry,
       notifier,
       pathGuard: sharedPathGuard,
+      ...(sid ? { resourceStore } : {}),
     });
     const previousOnClose = c.mcp.server.onclose;
     c.mcp.server.onclose = () => {
@@ -425,6 +478,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     );
   }
   const sharedRegistry = createWatcherRegistry();
+  const sessionStores = createSessionStoreCache();
   // One guard for the whole endpoint. The modern leg builds a fresh McpServer
   // per request, so a per-instance guard would discard every accepted access
   // grant the moment the request ended — re-prompting on each subsequent call
@@ -437,7 +491,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   await sharedPathGuard.recomputeAllowedDirectories();
 
   const modernHandler = createMcpHandler(
-    makeHttpModernFactory(options, bus, sharedRegistry, sharedPathGuard),
+    makeHttpModernFactory(options, bus, sharedRegistry, sharedPathGuard, sessionStores),
     {
       legacy: 'reject',
       bus,
@@ -475,6 +529,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
     sharedRegistry.destroy();
+    sessionStores.destroy();
     modernHandler
       .close()
       .then(() => {
@@ -493,6 +548,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
       sharedRegistry.destroy();
+      sessionStores.destroy();
       modernHandler.close().catch((closeErr: unknown) => {
         Logger.error(
           '[HTTP] Error closing handler on startup failure:',
