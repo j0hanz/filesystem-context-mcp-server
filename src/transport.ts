@@ -19,6 +19,7 @@ import {
 
 import type { Server } from 'node:http';
 import { createServer as createHttpServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 
 import type { Express, NextFunction, Request, Response } from 'express';
 
@@ -72,6 +73,56 @@ import { createServer } from './server.js';
  * exposes no per-stream close hook the way an HTTP SSE response does. Bounded by
  * MAX_WATCHERS, and a stdio connection has exactly one client.
  */
+/**
+ * Seed the guard's allowed roots from the client's declared workspace roots.
+ * Legacy-era only: push-style `roots/list` is deprecated (SEP-2577) and throws
+ * on a 2026-07-28 connection, where clients pass paths as tool arguments and
+ * the access-grant round-trip covers out-of-root paths instead. Every root
+ * still passes `applyGrant`'s boundary and unsafe-path guards, so a client
+ * cannot root-declare its way into $HOME or past ROOT_BOUNDARY — a refused
+ * root is skipped and its paths fail closed at validateAccess like any other.
+ */
+export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise<number> {
+  let roots: readonly { uri: string }[];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- legacy-era-only; the modern era never reaches the hooks that call this.
+    ({ roots } = await ctx.mcp.server.listRoots());
+  } catch (err: unknown) {
+    // Client without the roots capability (strict-capabilities throw), or the
+    // request failed — either way there is nothing to seed.
+    Logger.debug('[Stdio] roots/list unavailable', { error: formatUnknownErrorMessage(err) });
+    return 0;
+  }
+  let granted = 0;
+  for (const root of roots) {
+    let dir: string;
+    try {
+      dir = fileURLToPath(root.uri);
+    } catch {
+      continue; // not a file:// root
+    }
+    try {
+      if (await ctx.pathGuard.applyGrant(dir)) granted += 1;
+      else Logger.debug('[Stdio] client root refused by grant policy', { dir });
+    } catch (err: unknown) {
+      Logger.debug('[Stdio] client root grant failed', {
+        dir,
+        error: formatUnknownErrorMessage(err),
+      });
+    }
+  }
+  if (granted > 0) {
+    Logger.info(`[Stdio] allowed ${granted} client-declared workspace root(s)`);
+    // Allowed roots are listed as resources; tell the client the list grew.
+    void ctx.mcp.server.sendResourceListChanged().catch((err: unknown) => {
+      Logger.debug('[Stdio] resource list_changed not delivered', {
+        error: formatUnknownErrorMessage(err),
+      });
+    });
+  }
+  return granted;
+}
+
 export function startServer(options: ServerOptions): StdioServerHandle {
   let activeCtx: FilesystemServerContext | undefined;
   // Shared with the resource contract so a `resources/subscribe` and a
@@ -80,6 +131,18 @@ export function startServer(options: ServerOptions): StdioServerHandle {
   const factory: McpServerFactory = async ({ era }) => {
     const c = await createServer(options, { watcherRegistry: registry, era });
     activeCtx = c;
+    if (era === 'legacy') {
+      // Fires when the client's `notifications/initialized` lands. Safe to own:
+      // the SDK's only touchpoint is its own initialized handler reading it.
+      c.mcp.server.oninitialized = () => {
+        void seedRootsFromClient(c);
+      };
+      // Re-list and grant anything new. Grants are session-additive (R8): a
+      // root the client withdrew is not revoked mid-session.
+      c.mcp.server.setNotificationHandler('notifications/roots/list_changed', () => {
+        void seedRootsFromClient(c);
+      });
+    }
     return c.mcp;
   };
 
@@ -169,12 +232,24 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   256 * MIB,
 );
 
-function sendJsonRpcError(res: Response, status: number, code: number, message: string): void {
+function sendJsonRpcError(
+  res: Response,
+  status: number,
+  code: number,
+  message: string,
+  id: string | number | null = null,
+): void {
   res.status(status).json({
     jsonrpc: JSONRPC_VERSION,
-    id: null,
+    id,
     error: { code, message },
   });
+}
+
+/** The request id of a parsed JSON-RPC body, for error-envelope echo. */
+function jsonRpcRequestId(parsedBody: unknown): string | number | null {
+  const id = (parsedBody as { id?: unknown } | null | undefined)?.id;
+  return typeof id === 'string' || typeof id === 'number' ? id : null;
 }
 
 function errorHandlerMiddleware(
@@ -353,6 +428,7 @@ function setupExpressApp(
         400,
         ProtocolErrorCode.InvalidParams,
         `subscriptions/listen names ${requestedUris.length} URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
+        jsonRpcRequestId(parsedBody),
       );
       return;
     }

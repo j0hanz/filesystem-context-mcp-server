@@ -16,7 +16,7 @@ import { lstat } from 'node:fs/promises';
 
 import * as z from 'zod/v4';
 
-import { formatUnknownErrorMessage, hasErrorShape } from './core/errors.js';
+import { formatUnknownErrorMessage, fsErrorCode, hasErrorShape } from './core/errors.js';
 import { buildFileResourceUri } from './core/file-uri.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -119,7 +119,7 @@ async function wrapHandler<T>(contract: PromptContract, fn: () => Promise<T> | T
       promptName: contract.name,
       error,
     });
-    const protocolError = new ProtocolError(ProtocolErrorCode.InvalidParams, message);
+    const protocolError = new ProtocolError(fsErrorCode(error), message);
     protocolError.cause = error;
     throw protocolError;
   }

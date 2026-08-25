@@ -1,3 +1,5 @@
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
+
 import * as z from 'zod/v4';
 
 export const ErrorCode = {
@@ -302,6 +304,11 @@ export function isFsError(error: unknown): error is FsError {
   if (p === null || typeof p !== 'object') return false;
   const c = p as Record<string, unknown>;
   return typeof c['code'] === 'string' && typeof c['message'] === 'string';
+}
+
+/** FsError traces to a caller-supplied argument; anything else is server-side. */
+export function fsErrorCode(error: unknown): ProtocolErrorCode {
+  return isFsError(error) ? ProtocolErrorCode.InvalidParams : ProtocolErrorCode.InternalError;
 }
 
 /**

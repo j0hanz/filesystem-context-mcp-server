@@ -22,7 +22,13 @@ import {
 import { basename } from 'node:path';
 
 import type { FsError } from './core/errors.js';
-import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, isFsError } from './core/errors.js';
+import {
+  ErrorCode,
+  formatUnknownErrorMessage,
+  fsErrorCode,
+  hasErrorShape,
+  isFsError,
+} from './core/errors.js';
 import {
   buildFileResourceUri,
   extractPath,
@@ -490,7 +496,11 @@ function wrapRead(contract: ResourceContract) {
       if (isNotFoundish(error)) {
         throw new ResourceNotFoundError(uri.toString(), error.message);
       }
-      throw new ProtocolError(ProtocolErrorCode.InvalidRequest, formatUnknownErrorMessage(error));
+      // A remaining FsError (NOT_FILE, TOO_LARGE, ...) traces to the
+      // caller-supplied URI; anything else is a server-side failure and must
+      // not be blamed on the request.
+      const msg = isFsError(error) ? error.message : formatUnknownErrorMessage(error);
+      throw new ProtocolError(fsErrorCode(error), msg);
     }
   };
 }
