@@ -10,7 +10,6 @@ import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js
 import { detectMimeFromContent } from '../core/mime.js';
 import { countLines } from '../core/read.js';
 import {
-  completablePath,
   defaultFalseBoolean,
   FileKind,
   IsoDateTime,
@@ -194,10 +193,6 @@ export const PATCH = defineTool({
     'Rejects multi-file diffs and diffs whose hunk context does not match the file. ' +
     'Set dryRun=true to preview the result without writing.',
   input: PatchInputSchema,
-  buildInput: (guard) =>
-    PatchInputSchema.extend({
-      path: completablePath(guard, 'path', 'File to apply the diff to'),
-    }),
   output: PatchOutputSchema,
   annotations: {
     readOnlyHint: false,

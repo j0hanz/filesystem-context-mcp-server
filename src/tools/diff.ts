@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 import { createTwoFilesPatch, diffLines } from 'diff';
 
-import { completablePath, NonNegInt, PositiveInt, RequiredPath } from '../core/schema.js';
+import { NonNegInt, PositiveInt, RequiredPath } from '../core/schema.js';
 import { putJsonResource } from '../core/store.js';
 import { defineTool, type ToolCtx } from './define.js';
 import { loadEditableFile } from './edit.js';
@@ -103,11 +103,6 @@ export const DIFF = defineTool({
     'Compare two files and return a unified diff with line counts. ' +
     'Use after an edit dry-run to compare against another file, or to inspect changes between two paths.',
   input: DiffInputSchema,
-  buildInput: (guard) =>
-    DiffInputSchema.extend({
-      a: completablePath(guard, 'a', 'First file to compare'),
-      b: completablePath(guard, 'b', 'Second file to compare'),
-    }),
   output: DiffOutputSchema,
   annotations: {
     readOnlyHint: true,

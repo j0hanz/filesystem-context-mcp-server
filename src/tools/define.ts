@@ -93,7 +93,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly title: string;
   readonly description: string;
   readonly input: I;
-  readonly buildInput?: (guard: PathGuard) => I;
   readonly output: O;
   readonly annotations: DeclaredAnnotations;
   readonly timeoutMs?: number;
@@ -445,27 +444,26 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     io: 'output',
   }) as Record<string, unknown>;
 
-  const outputSchemaWithJson = withJsonSchema(def.output, outputJsonSchema, 'output');
+  const annotations = { ...def.annotations, title: def.title };
+  // Nothing here depends on `deps`, so it is built once per tool definition
+  // rather than once per `register` — the HTTP leg registers every tool afresh
+  // on each request.
+  const toolDefShape = {
+    title: def.title,
+    description: def.description,
+    inputSchema: withJsonSchema(def.input, inputJsonSchema, 'input'),
+    outputSchema: withJsonSchema(def.output, outputJsonSchema, 'output'),
+    annotations,
+  };
 
   const tool: DefinedTool = {
     name: def.name,
-    annotations: { ...def.annotations, title: def.title },
+    annotations,
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
 
     register(deps: ToolDeps): RegisteredTool {
-      const resolvedInput = def.buildInput ? def.buildInput(deps.pathGuard) : def.input;
-      const toolDefShape = {
-        title: def.title,
-        description: def.description,
-        inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
-        outputSchema: outputSchemaWithJson,
-        annotations: { ...def.annotations, title: def.title },
-      };
-
-      const serverCtxHandler = createServerToolHandler(def, deps);
-
-      return deps.server.registerTool(def.name, toolDefShape, serverCtxHandler);
+      return deps.server.registerTool(def.name, toolDefShape, createServerToolHandler(def, deps));
     },
   };
 

@@ -11,7 +11,6 @@ import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
 import {
-  completableOptionalPath,
   FileInfoSchema,
   NonNegInt,
   OperationSummarySchema,
@@ -26,14 +25,7 @@ import { runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
-export function createStatInputSchema(pathSchema?: z.ZodType) {
-  return singleOrBatchPathsInput({
-    extra: {},
-    pathSchema,
-  });
-}
-
-const StatInputSchema = createStatInputSchema();
+const StatInputSchema = singleOrBatchPathsInput({ extra: {} });
 
 const StatPerPathSchema = z.strictObject({
   path: z.string().describe('The requested path'),
@@ -203,14 +195,6 @@ export const GET_FILE_INFO = defineTool({
     'Use tokenEstimate (size / 4) to pre-screen read cost before calling read. ' +
     'Single path: pass path. Batch mode: pass paths[].',
   input: StatInputSchema,
-  buildInput: (guard) =>
-    createStatInputSchema(
-      completableOptionalPath(
-        guard,
-        'path',
-        'Single file path; mutually exclusive with paths and files',
-      ),
-    ),
   output: StatOutputSchema,
   annotations: {
     readOnlyHint: true,

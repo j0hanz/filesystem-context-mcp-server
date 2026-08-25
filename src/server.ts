@@ -80,6 +80,14 @@ export async function createServer(
     watcherRegistry?: WatcherRegistry;
     /** Modern-leg typed notification publisher. */
     notifier?: ServerNotifier;
+    /**
+     * Guard to use instead of constructing one. The HTTP leg builds a single
+     * guard for the whole endpoint and passes it to every per-request instance,
+     * so an accepted access grant survives the request that accepted it (R8) and
+     * the listen-watcher path validates against the same allowed set. Omitted on
+     * stdio, where the instance is pinned for the connection and owns its guard.
+     */
+    pathGuard?: PathGuard;
   },
 ): Promise<FilesystemServerContext> {
   const resourceStore = new ResourceStore();
@@ -129,8 +137,14 @@ export async function createServer(
     return Promise.resolve();
   };
 
-  const pathGuard = new PathGuard(options, true);
-  await pathGuard.recomputeAllowedDirectories();
+  const pathGuard = extraDeps?.pathGuard ?? new PathGuard(options, true);
+  // Recompute once per guard, keyed on the guard's own state rather than on
+  // whether it was injected — an injected-but-uninitialized guard would
+  // otherwise deny every path. Not unconditional: the HTTP leg shares one guard
+  // across a fresh instance per request, and a repeat recompute would both redo
+  // the root resolution per request and race a concurrent `applyGrant`, which
+  // commits under a mutation lock this call does not take.
+  if (!pathGuard.isInitialized()) await pathGuard.recomputeAllowedDirectories();
 
   const deps: ServerDeps = {
     server,

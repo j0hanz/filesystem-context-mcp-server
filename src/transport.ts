@@ -1,6 +1,6 @@
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import { toNodeHandler } from '@modelcontextprotocol/node';
-import type { McpServerFactory } from '@modelcontextprotocol/server';
+import type { JSONRPCMessage, McpServerFactory } from '@modelcontextprotocol/server';
 import {
   createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
@@ -8,7 +8,11 @@ import {
   JSONRPC_VERSION,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
-import { serveStdio, type StdioServerHandle } from '@modelcontextprotocol/server/stdio';
+import {
+  serveStdio,
+  type StdioServerHandle,
+  StdioServerTransport,
+} from '@modelcontextprotocol/server/stdio';
 
 import type { Server } from 'node:http';
 import { createServer as createHttpServer } from 'node:http';
@@ -44,30 +48,96 @@ import { createServer } from './server.js';
 /**
  * Serve filesystem-mcp over stdio using modern protocol revision 2026-07-28.
  *
- * Known SDK gap: on stdio, `subscriptions/listen` with `resourceSubscriptions`
- * is acknowledged and stamped with a `subscriptionId` by the SDK's
- * `StdioListenRouter`, but no filesystem watcher is attached (the SDK exposes
- * no listen-filter hook on stdio), so subscribed resources never emit updates.
- * Clients that need live updates on stdio must use `resources/subscribe`, which
- * attaches a watcher directly. The HTTP leg does not have this gap.
+ * The SDK's `StdioListenRouter` acknowledges `subscriptions/listen` and routes
+ * the pinned instance's outbound change notifications onto the matching
+ * streams, but it exposes no listen-filter hook, so nothing attaches the
+ * filesystem watcher that would produce those notifications. `serveStdio`'s
+ * `transport` option is the seam: the entry installs its own `onmessage`
+ * synchronously before starting the wire, so wrapping that callback afterwards
+ * gives the same view of the inbound `resourceSubscriptions` filter the HTTP leg
+ * reads off `req.body`. The watcher's notify sink calls `sendResourceUpdated` on
+ * the pinned instance, which the router then delivers to the listening stream.
+ *
+ * ponytail: stdio watchers live for the connection and are freed by
+ * `registry.destroy()` at close, not when one listen stream ends — the router
+ * exposes no per-stream close hook the way an HTTP SSE response does. Bounded by
+ * MAX_WATCHERS, and a stdio connection has exactly one client.
  */
 export function startServer(options: ServerOptions): StdioServerHandle {
   let activeCtx: FilesystemServerContext | undefined;
+  // Shared with the resource contract so a `resources/subscribe` and a
+  // `subscriptions/listen` naming the same URI reuse one watcher.
+  const registry = createWatcherRegistry();
   const factory: McpServerFactory = async () => {
-    const c = await createServer(options);
+    const c = await createServer(options, { watcherRegistry: registry });
     activeCtx = c;
     return c.mcp;
   };
 
+  const wire = new StdioServerTransport();
   const handle = serveStdio(factory, {
     legacy: 'serve',
+    transport: wire,
     onerror: (error: unknown) => {
       Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
     },
   });
 
+  // One sink for the whole connection. `addCallback` de-duplicates by function
+  // identity, so re-using this closure makes a repeat `subscriptions/listen` on
+  // an already-watched URI a no-op; a fresh closure per listen would instead
+  // stack a callback every time, double-notifying and growing an
+  // `activeCallbacks` set that MAX_WATCHERS does not bound (it caps watchers,
+  // not callbacks). Reads `activeCtx` when it fires rather than capturing it, so
+  // it never pins a disposed instance.
+  const sink = (uri: string): void => {
+    // A failed notify means the connection went away; nothing to recover.
+    void activeCtx?.mcp.server.sendResourceUpdated({ uri }).catch((err: unknown) => {
+      Logger.debug('[Stdio] resource update not delivered', {
+        uri,
+        error: formatUnknownErrorMessage(err),
+      });
+    });
+  };
+
+  const attachForListen = (message: JSONRPCMessage): void => {
+    const uris = listenSubscriptionUris(message);
+    if (uris.length === 0) return;
+    const ctx = activeCtx;
+    if (!ctx) return;
+    for (const uri of uris) {
+      void attachFileWatcherForUri(registry, ctx.pathGuard, uri, sink).catch((err: unknown) => {
+        Logger.warn(
+          `[Stdio] listen watcher attach failed for ${uri}:`,
+          formatUnknownErrorMessage(err),
+        );
+      });
+    }
+  };
+
+  // Intercept through an accessor, not a one-shot reassignment: `serveStdio`
+  // installs the SDK's own `onmessage` and may reinstall it later (reconnect,
+  // legacy branch swap). A plain wrapper would be overwritten by that, silently
+  // dropping the tap and leaving every listen subscription watcher-less with no
+  // error. The setter re-wraps instead, so whatever the SDK assigns stays
+  // downstream of `attachForListen`.
+  let sdkOnMessage = wire.onmessage;
+  const tap = (message: JSONRPCMessage): void => {
+    attachForListen(message);
+    sdkOnMessage?.(message);
+  };
+  Object.defineProperty(wire, 'onmessage', {
+    configurable: true,
+    enumerable: true,
+    get: () => tap,
+    set: (next: typeof sdkOnMessage) => {
+      sdkOnMessage = next;
+    },
+  });
+
   return {
     close: async () => {
+      registry.destroy();
       try {
         activeCtx?.disposeRuntimeState();
       } catch {
@@ -115,31 +185,43 @@ function errorHandlerMiddleware(
   next(err);
 }
 
+/** The `resourceSubscriptions` URIs of a `subscriptions/listen` body, de-duplicated. */
+export function listenSubscriptionUris(parsedBody: unknown): string[] {
+  if (typeof parsedBody !== 'object' || parsedBody === null) return [];
+  const body = parsedBody as {
+    method?: unknown;
+    params?: { notifications?: { resourceSubscriptions?: unknown } };
+  };
+  if (body.method !== 'subscriptions/listen') return [];
+  const uris = body.params?.notifications?.resourceSubscriptions;
+  if (!Array.isArray(uris)) return [];
+  // De-duplicate: one attach must yield one ref-count, or the release below
+  // decrements further than it incremented and tears down a live watcher.
+  return [...new Set(uris.filter((uri): uri is string => typeof uri === 'string'))];
+}
+
 /**
  * Attach filesystem watchers for the URIs named in a `subscriptions/listen`
- * filter.
+ * filter. Returns the URIs that actually got a watcher, so the caller can
+ * release exactly those when the stream ends.
  */
 async function attachListenWatchers(
   parsedBody: unknown,
   pathGuard: PathGuard,
   registry: WatcherRegistry,
   bus: InMemoryServerEventBus,
-): Promise<void> {
-  if (typeof parsedBody !== 'object' || parsedBody === null) return;
-  const body = parsedBody as {
-    method?: unknown;
-    params?: { notifications?: { resourceSubscriptions?: unknown } };
-  };
-  if (body.method !== 'subscriptions/listen') return;
-  const uris = body.params?.notifications?.resourceSubscriptions;
-  if (!Array.isArray(uris)) return;
+): Promise<string[]> {
+  const uris = listenSubscriptionUris(parsedBody);
+  if (uris.length === 0) return [];
   const sink = (uri: string): void => {
     bus.publish({ kind: 'resource_updated', uri });
   };
+  const attached: string[] = [];
   for (const uri of uris) {
-    if (typeof uri !== 'string') continue;
     try {
-      await attachFileWatcherForUri(registry, pathGuard, uri, sink);
+      if (await attachFileWatcherForUri(registry, pathGuard, uri, sink)) {
+        attached.push(uri);
+      }
     } catch (err: unknown) {
       Logger.warn(
         `[HTTP] listen watcher attach failed for ${uri}:`,
@@ -147,6 +229,7 @@ async function attachListenWatchers(
       );
     }
   }
+  return attached;
 }
 
 function createServerNotifier(bus: InMemoryServerEventBus): ServerNotifier {
@@ -164,12 +247,14 @@ function makeHttpModernFactory(
   options: ServerOptions,
   bus: InMemoryServerEventBus,
   sharedRegistry: WatcherRegistry,
+  sharedPathGuard: PathGuard,
 ): McpServerFactory {
   const notifier = createServerNotifier(bus);
   return async () => {
     const c = await createServer(options, {
       watcherRegistry: sharedRegistry,
       notifier,
+      pathGuard: sharedPathGuard,
     });
     const previousOnClose = c.mcp.server.onclose;
     c.mcp.server.onclose = () => {
@@ -185,7 +270,7 @@ function setupExpressApp(
   apiKey: string | undefined,
   allowedHosts: string[],
   modernNodeHandler: (req: Request, res: Response, parsedBody?: unknown) => Promise<void>,
-  watcherPathGuard: PathGuard,
+  sharedPathGuard: PathGuard,
   sharedRegistry: WatcherRegistry,
   bus: InMemoryServerEventBus,
 ): Express {
@@ -255,11 +340,22 @@ function setupExpressApp(
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     const parsedBody = req.body as unknown;
     // Best-effort: fire-and-forget so a watcher error never blocks the request.
-    void attachListenWatchers(parsedBody, watcherPathGuard, sharedRegistry, bus).catch(
-      (err: unknown) => {
+    void attachListenWatchers(parsedBody, sharedPathGuard, sharedRegistry, bus)
+      .then((attached) => {
+        if (attached.length === 0) return;
+        // The listen stream IS this POST's SSE response, so its close is the
+        // teardown hook the SDK handler does not expose. `remove` ref-counts by
+        // URI, so a watcher another stream also holds survives. The attach is
+        // async, so the response may already be gone — release now if so.
+        const release = (): void => {
+          for (const uri of attached) sharedRegistry.remove(uri);
+        };
+        if (res.writableEnded || res.destroyed) release();
+        else res.once('close', release);
+      })
+      .catch((err: unknown) => {
         Logger.warn('[HTTP] listen watcher attach error:', formatUnknownErrorMessage(err));
-      },
-    );
+      });
     modernNodeHandler(req, res, parsedBody).catch(next);
   });
 
@@ -297,16 +393,27 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   const bus = new InMemoryServerEventBus();
   const sharedRegistry = createWatcherRegistry();
-  const watcherPathGuard = new PathGuard(options, true);
-  await watcherPathGuard.recomputeAllowedDirectories();
+  // One guard for the whole endpoint. The modern leg builds a fresh McpServer
+  // per request, so a per-instance guard would discard every accepted access
+  // grant the moment the request ended — re-prompting on each subsequent call
+  // and leaving the listen-watcher path validating against a stale allowed set.
+  // Grant scope is therefore the endpoint, not the connection: with API_KEY set
+  // every caller presents the same key (one auth context by construction), and
+  // without it the bind is loopback-only. Split into per-auth-context guards if
+  // this ever serves more than one credential.
+  const sharedPathGuard = new PathGuard(options, true);
+  await sharedPathGuard.recomputeAllowedDirectories();
 
-  const modernHandler = createMcpHandler(makeHttpModernFactory(options, bus, sharedRegistry), {
-    legacy: 'reject',
-    bus,
-    onerror: (error: Error) => {
-      Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
+  const modernHandler = createMcpHandler(
+    makeHttpModernFactory(options, bus, sharedRegistry, sharedPathGuard),
+    {
+      legacy: 'reject',
+      bus,
+      onerror: (error: Error) => {
+        Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
+      },
     },
-  });
+  );
   const modernNodeHandler = toNodeHandler(modernHandler);
 
   const app = setupExpressApp(
@@ -314,7 +421,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
     apiKey,
     allowedHosts,
     modernNodeHandler,
-    watcherPathGuard,
+    sharedPathGuard,
     sharedRegistry,
     bus,
   );

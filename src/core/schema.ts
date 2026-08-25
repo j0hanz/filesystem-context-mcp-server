@@ -1,11 +1,7 @@
-import { completable } from '@modelcontextprotocol/server';
-
 import * as z from 'zod/v4';
 
 import { isSafeGlobSyntax } from './glob.js';
 import { MIME_KINDS } from './mime.js';
-import { PathCompleter } from './path-completer.js';
-import type { PathGuard } from './path.js';
 import { ENTRY_TYPES } from './primitives.js';
 import { MAX_SEARCH_DEPTH } from './util.js';
 
@@ -101,26 +97,6 @@ const PathBase = z
 
 export const OptionalPath = PathBase.optional();
 export const RequiredPath = PathBase;
-
-export function completablePath(
-  guard: PathGuard,
-  argumentName = 'path',
-  description?: string,
-): ReturnType<typeof completable<typeof RequiredPath>> {
-  const completer = new PathCompleter(guard);
-  const base = description !== undefined ? RequiredPath.describe(description) : RequiredPath;
-  return completable(base, (value, ctx) =>
-    completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
-  );
-}
-
-export function completableOptionalPath(
-  guard: PathGuard,
-  argumentName = 'path',
-  description?: string,
-) {
-  return completablePath(guard, argumentName, description).optional();
-}
 
 export const SafeGlobPattern = z
   .string()
@@ -379,7 +355,6 @@ export function singleOrBatchPathsInput<
   extra: TExtra;
   perFile?: TPerFile;
   maxBatch?: number;
-  pathSchema?: z.ZodType | undefined;
 }): z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>> {
   const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
   const perFileShape = opts.perFile;
@@ -394,13 +369,11 @@ export function singleOrBatchPathsInput<
           .max(maxBatch)
           .describe(`Per-file entries (batch mode; max ${String(maxBatch)})`);
 
-  const pathField =
-    opts.pathSchema ??
-    RequiredPath.optional().describe('Single file path; mutually exclusive with paths and files');
-
   const shape: z.ZodRawShape = {
     ...opts.extra,
-    path: pathField,
+    path: RequiredPath.optional().describe(
+      'Single file path; mutually exclusive with paths and files',
+    ),
     paths: z
       .array(RequiredPath)
       .min(1)

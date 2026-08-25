@@ -8,6 +8,7 @@ import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
@@ -22,6 +23,14 @@ export async function createTestRoot(): Promise<string> {
 /** Remove a test root directory. */
 export async function cleanupTestRoot(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
+}
+
+/** Poll until `condition` holds or `timeoutMs` elapses; for debounced notifications. */
+export async function waitFor(condition: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await setTimeout(20);
+  }
 }
 
 /** Spreadable `readOnly` flag — the one owner of the `--read-only` gate in test setup. */

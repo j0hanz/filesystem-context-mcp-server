@@ -156,10 +156,14 @@ function warnWatcherCap(uri: string): void {
  * per URI — a second call for an already-watched URI re-registers the notify
  * callback (one watcher per URI).
  *
- * ponytail: watchers persist for the server lifetime and are freed at shutdown
- * (the shared registry's `destroy()`), not removed when a listen stream closes.
- * Bounded by MAX_WATCHERS. Add per-stream refcounting only if distinct-URI churn
- * across clients exhausts the cap.
+ * Lifetime is the caller's to manage, and the two legs differ. HTTP releases per
+ * stream: the listen stream is the POST's own SSE response, so `transport.ts`
+ * calls `registry.remove` for each URI this returned `true` for when that
+ * response closes (the registry ref-counts by URI, so a watcher another stream
+ * still holds survives). Stdio has no per-stream close hook on the SDK's listen
+ * router, so its watchers live for the connection and are freed by the shared
+ * registry's `destroy()` at close; that is bounded by MAX_WATCHERS, and a stdio
+ * connection has exactly one client.
  */
 export async function attachFileWatcherForUri(
   registry: WatcherRegistry,
@@ -535,11 +539,12 @@ function registerResourceContracts(
                 return;
               }
               const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+              // A failed notify means the connection went away; nothing to recover.
               void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-                const msg = formatUnknownErrorMessage(err);
-                if (!msg.includes('closed') && !msg.includes('Transport')) {
-                  Logger.warn(`Failed to send resource update for ${updatedUri}: ${msg}`);
-                }
+                Logger.debug('resource update not delivered', {
+                  uri: updatedUri,
+                  error: formatUnknownErrorMessage(err),
+                });
               });
             },
           );

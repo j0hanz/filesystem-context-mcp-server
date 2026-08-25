@@ -110,10 +110,8 @@ export function createWatcherRegistry() {
         // `fs.watch` async errors arrive via the 'error' event below, not as a
         // sync throw, so no recursive-fallback try/catch is needed here — the
         // outer catch handles sync throws (inotify exhaustion, path-race).
-        // ponytail: `{ recursive: true }` is honored only on macOS and Windows
-        // (libuv limitation); on Linux it is ignored, so only direct-child
-        // changes fire for a directory subscription. Add a per-child watch
-        // fan-out on Linux only if nested-directory subscriptions are needed.
+        // `{ recursive: true }` is honored on macOS, Windows, and — since Node
+        // 20.13 — Linux; `engines.node` is >=24, so all three are covered.
         const recursive = statSync(resolvedPath).isDirectory();
         const watcher = watch(resolvedPath, recursive ? { recursive: true } : undefined, () => {
           notifyAll(uri);

@@ -13,7 +13,6 @@ import { detectMimeFromContent, detectMimeType } from '../core/mime.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import { readFileWithStats } from '../core/read.js';
 import {
-  completableOptionalPath,
   ContinuationSchema,
   createReadRangeFields,
   defaultFalseBoolean,
@@ -46,56 +45,51 @@ const readRangeFields = createReadRangeFields({
   endLine: 'End line (1-indexed)',
 });
 
-export function createReadFileInputSchema(pathSchema?: z.ZodType) {
-  return singleOrBatchPathsInput({
-    extra: {
-      includeHash: defaultFalseBoolean(
-        'Include SHA-256 hash of the returned content in the response',
+const ReadFileInputSchema = singleOrBatchPathsInput({
+  extra: {
+    includeHash: defaultFalseBoolean(
+      'Include SHA-256 hash of the returned content in the response',
+    ),
+    ...readRangeFields,
+    offset: z
+      .uint32()
+      .optional()
+      .describe(
+        'Byte offset at which to start reading (single-file mode only; mutually exclusive with head/tail/startLine/endLine)',
       ),
-      ...readRangeFields,
-      offset: z
-        .uint32()
-        .optional()
-        .describe(
-          'Byte offset at which to start reading (single-file mode only; mutually exclusive with head/tail/startLine/endLine)',
-        ),
-      length: z
-        .uint32()
-        .min(1)
-        .optional()
-        .describe(
-          'Number of bytes to read starting at offset (single-file mode only; reads to EOF when omitted)',
-        ),
+    length: z
+      .uint32()
+      .min(1)
+      .optional()
+      .describe(
+        'Number of bytes to read starting at offset (single-file mode only; reads to EOF when omitted)',
+      ),
+  },
+}).superRefine((value, ctx) => {
+  const hasPaths = value.paths !== undefined;
+
+  validateReadRange(
+    {
+      head: value.head,
+      tail: value.tail,
+      startLine: value.startLine,
+      endLine: value.endLine,
+      offset: value.offset,
+      length: value.length,
     },
-    pathSchema,
-  }).superRefine((value, ctx) => {
-    const hasPaths = value.paths !== undefined;
+    ctx,
+  );
 
-    validateReadRange(
-      {
-        head: value.head,
-        tail: value.tail,
-        startLine: value.startLine,
-        endLine: value.endLine,
-        offset: value.offset,
-        length: value.length,
-      },
-      ctx,
-    );
-
-    // Batch mode: offset/length are single-file-only.
-    if (hasPaths && (value.offset !== undefined || value.length !== undefined)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['offset'],
-        message: "'offset' and 'length' are not supported in batch mode",
-        input: value,
-      });
-    }
-  });
-}
-
-const ReadFileInputSchema = createReadFileInputSchema();
+  // Batch mode: offset/length are single-file-only.
+  if (hasPaths && (value.offset !== undefined || value.length !== undefined)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['offset'],
+      message: "'offset' and 'length' are not supported in batch mode",
+      input: value,
+    });
+  }
+});
 
 const ReadPerPathValueSchema = z.strictObject({
   content: z.string().optional().describe('File text content'),
@@ -418,14 +412,6 @@ export const READ_FILE = defineTool({
     'Byte-range reads: offset/length (single-file only; mutually exclusive with line params). ' +
     'Batch mode: pass paths[] instead of path; line/byte params are shared across all files.',
   input: ReadFileInputSchema,
-  buildInput: (guard) =>
-    createReadFileInputSchema(
-      completableOptionalPath(
-        guard,
-        'path',
-        'Single file path; mutually exclusive with paths and files',
-      ),
-    ),
   output: ReadFileOutputSchema,
   annotations: {
     readOnlyHint: true,

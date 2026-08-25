@@ -10,12 +10,7 @@ import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js
 import { destExists } from '../core/fs.js';
 import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
 import { isPathInsideDirectory, isSamePath } from '../core/path.js';
-import {
-  completablePath,
-  defaultFalseBoolean,
-  PerFileErrorSchema,
-  RequiredPath,
-} from '../core/schema.js';
+import { defaultFalseBoolean, PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
@@ -315,29 +310,6 @@ export const COPY_FILES = defineTool({
     'Supports recursive directory copying with timestamp and symlink preservation. ' +
     'Destination parent directories are created automatically.',
   input: CopyInputSchema,
-  buildInput: (guard) =>
-    CopyInputSchema.extend({
-      copies: z
-        .array(
-          z.strictObject({
-            source: completablePath(
-              guard,
-              'source',
-              'Absolute path of the file or directory to copy',
-            ),
-            destination: completablePath(
-              guard,
-              'destination',
-              'Absolute destination path; parent directories are created automatically',
-            ),
-          }),
-        )
-        .min(1)
-        .max(100)
-        .describe(
-          'List of copy operations to perform (max 100); each requires source and destination',
-        ),
-    }),
   output: CopyOutputSchema,
   annotations: {
     readOnlyHint: false,

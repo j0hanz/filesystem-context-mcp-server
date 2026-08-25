@@ -13,8 +13,18 @@ import { after, before, describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
-import { startHttpServer } from '../src/transport.js';
-import { cleanupTestRoot, createTestRoot, writeTestFile } from './helpers.js';
+import { listenSubscriptionUris, startHttpServer } from '../src/transport.js';
+import { cleanupTestRoot, createTestRoot, waitFor, writeTestFile } from './helpers.js';
+
+describe('listenSubscriptionUris', () => {
+  it('de-duplicates repeated URIs so attach and release stay balanced', () => {
+    const body = {
+      method: 'subscriptions/listen',
+      params: { notifications: { resourceSubscriptions: ['a://1', 'a://2', 'a://1'] } },
+    };
+    assert.deepStrictEqual(listenSubscriptionUris(body), ['a://1', 'a://2']);
+  });
+});
 
 // Per-connection subscription gating (verify-first). Two HTTP clients over one
 // real HTTP server (one shared bus/registry): A opens a subscriptions/listen
@@ -98,17 +108,11 @@ describe('HTTP per-connection subscription gating (cross-talk)', () => {
     await writeFile(filePath, 'changed');
 
     // Poll for the debounced notification on A (50ms debounce).
-    const deadline = Date.now() + 3000;
-    while (!receivedA && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => receivedA !== undefined);
     assert.strictEqual(receivedA, uri, 'subscriber A must receive the update');
 
     // Give B a short window to prove it stays silent — it never subscribed.
-    const silentDeadline = Date.now() + 400;
-    while (!receivedB && Date.now() < silentDeadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => receivedB !== undefined, 400);
     assert.strictEqual(
       receivedB,
       undefined,
@@ -197,10 +201,7 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
 
     await writeFile(filePath, 'changed');
 
-    const deadline = Date.now() + 3000;
-    while ((!receivedA || !receivedB) && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => receivedA !== undefined && receivedB !== undefined);
     assert.strictEqual(receivedA, uri, 'subscriber A must receive the update');
     assert.strictEqual(receivedB, uri, 'subscriber B must receive the update');
   });
@@ -226,10 +227,7 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
     subA = undefined;
     await writeFile(filePath, 'after-unsub');
 
-    const deadline = Date.now() + 3000;
-    while (!receivedB && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => receivedB !== undefined);
     assert.strictEqual(
       receivedB,
       uri,
@@ -306,10 +304,7 @@ describe('HTTP recursive directory watch', () => {
     const childPath = join(tmpDir, 'child.txt');
     await writeFile(childPath, 'new child');
 
-    const deadline = Date.now() + 3000;
-    while (!received && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => received !== undefined);
     assert.strictEqual(received, dirUri, 'directory subscriber must be notified of a child change');
   });
 });
