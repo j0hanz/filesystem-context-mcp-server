@@ -668,9 +668,6 @@ export const SEARCH_AND_REPLACE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: {
-    taskSupport: 'optional',
-  },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => {

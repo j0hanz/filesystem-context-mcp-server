@@ -375,11 +375,35 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
   return {
     name: 'filesystem-mcp-result',
     title: 'Cached Tool Result',
-    description: 'Ephemeral cached tool output. Not listed via resources/list.',
+    description:
+      'Ephemeral cached tool output. Listed via resources/list; entries expire after the cache TTL.',
     mimeType: 'text/plain',
     uriTemplate: 'filesystem-mcp://result/{id}',
     annotations: { audience: ['assistant'], priority: 0.3 },
     cacheHint: { cacheScope: 'private', ttlMs: 60_000 },
+    list() {
+      const store = options.resourceStore;
+      const uris = store.keys(); // prunes expired first
+      const resources: Resource[] = [];
+      for (const uri of uris) {
+        try {
+          const entry = store.getEntry(uri);
+          resources.push({
+            uri: entry.uri,
+            name: entry.name,
+            mimeType: entry.mimeType,
+            size: entry.size,
+          });
+        } catch (err) {
+          // An entry may expire between keys() and getEntry; skip it.
+          if (isFsError(err) && err.code === ErrorCode.NOT_FOUND) continue;
+          throw err;
+        }
+      }
+      // Recent-first: keys() returns insertion order, so the newest is last.
+      resources.reverse();
+      return { resources };
+    },
     read(uri, variables) {
       const { id } = variables;
       if (typeof id !== 'string' || id.length === 0) {

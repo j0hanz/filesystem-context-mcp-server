@@ -9,9 +9,11 @@ import {
   buildInputRequired,
   choiceInput,
   confirmInput,
+  multiSelectInput,
   pendingRoundTrip,
   readAcceptedChoice,
   readAcceptedConfirm,
+  readAcceptedMultiChoice,
   requestStateCodec,
 } from '../src/core/input-required.js';
 
@@ -181,6 +183,64 @@ describe('input_required multi-round-trip infrastructure', () => {
   it('15. readAcceptedChoice missing-key -> undefined', () => {
     assert.strictEqual(
       readAcceptedChoice({ other: { action: 'accept', content: { choice: 'skip' } } }, 'confirm_0'),
+      undefined,
+    );
+  });
+
+  const grantChoices = [
+    { value: '/dir/a', title: '/dir/a' },
+    { value: '/dir/b', title: '/dir/b' },
+  ];
+
+  it('16. buildInputRequired with multiSelectInput returns InputRequiredResult', async () => {
+    const r = await buildInputRequired({ op: 'grant', paths: ['/dir/a', '/dir/b'] }, [
+      multiSelectInput('grant', 'Grant access to these directories?', grantChoices),
+    ]);
+    assert.strictEqual(isInputRequiredResult(r), true);
+    assert.ok(r.inputRequests['grant'] !== undefined);
+    assert.strictEqual(typeof r.requestState, 'string');
+  });
+
+  it('17. readAcceptedMultiChoice accept-array -> array', () => {
+    assert.deepStrictEqual(
+      readAcceptedMultiChoice(
+        { grant: { action: 'accept', content: { choice: ['/dir/a'] } } },
+        'grant',
+      ),
+      ['/dir/a'],
+    );
+  });
+
+  it('18. readAcceptedMultiChoice decline -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedMultiChoice({ grant: { action: 'decline' } }, 'grant'),
+      undefined,
+    );
+  });
+
+  it('19. readAcceptedMultiChoice accept-with-non-array-choice -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedMultiChoice(
+        { grant: { action: 'accept', content: { choice: '/dir/a' } } },
+        'grant',
+      ),
+      undefined,
+    );
+  });
+
+  it('20. readAcceptedMultiChoice accept-with-empty-content -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedMultiChoice({ grant: { action: 'accept', content: {} } }, 'grant'),
+      undefined,
+    );
+  });
+
+  it('21. readAcceptedMultiChoice missing-key -> undefined', () => {
+    assert.strictEqual(
+      readAcceptedMultiChoice(
+        { other: { action: 'accept', content: { choice: ['/dir/a'] } } },
+        'grant',
+      ),
       undefined,
     );
   });

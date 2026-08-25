@@ -49,8 +49,14 @@ export interface PendingInput {
    * instead of a boolean `confirm`. Each entry is a `{ value, title }` pair.
    */
   readonly choices?: readonly { value: string; title: string }[];
-  /** Preselected enum value (only meaningful with `choices`). */
+  /** Preselected enum value (only meaningful with single-select `choices`). */
   readonly defaultValue?: string;
+  /**
+   * When set with `choices`, the form offers a multi-select enum: `choice` is
+   * a string array (`MultiSelectEnumSchema` shape) and the caller reads the
+   * accepted set with `readAcceptedMultiChoice`. Single-select otherwise.
+   */
+  readonly multi?: boolean;
 }
 
 /**
@@ -133,6 +139,25 @@ export function choiceInput(
 }
 
 /**
+ * Build a multi-select enum confirmation input. Like `choiceInput` but the
+ * form renders `choice` as a string array (`MultiSelectEnumSchema` shape), so
+ * the client may accept a subset; the caller reads the accepted set with
+ * `readAcceptedMultiChoice`.
+ */
+export function multiSelectInput(
+  key: string,
+  message: string,
+  choices: readonly { value: string; title: string }[],
+): PendingInput {
+  return {
+    key,
+    message,
+    choices,
+    multi: true,
+  };
+}
+
+/**
  * Build an `input_required` result carrying one boolean confirmation per pending
  * item, plus the integrity-protected `requestState` sealing the operation kind
  * and sorted target paths. `mint` is async (HMAC + base64url).
@@ -144,17 +169,32 @@ export async function buildInputRequired(
   const inputRequests: Record<string, InputRequest> = {};
   for (const input of inputs) {
     const requestedSchema = input.choices
-      ? {
-          type: 'object' as const,
-          properties: {
-            choice: {
-              type: 'string' as const,
-              oneOf: input.choices.map((c) => ({ const: c.value, title: c.title })),
-              ...(input.defaultValue !== undefined ? { default: input.defaultValue } : {}),
+      ? input.multi
+        ? {
+            // Multi-select enum (matches MultiSelectEnumSchema): `choice` is a
+            // string array; the client may accept a subset of the offered dirs.
+            type: 'object' as const,
+            properties: {
+              choice: {
+                type: 'array' as const,
+                items: {
+                  anyOf: input.choices.map((c) => ({ const: c.value, title: c.title })),
+                },
+              },
             },
-          },
-          required: ['choice'],
-        }
+            required: ['choice'],
+          }
+        : {
+            type: 'object' as const,
+            properties: {
+              choice: {
+                type: 'string' as const,
+                oneOf: input.choices.map((c) => ({ const: c.value, title: c.title })),
+                ...(input.defaultValue !== undefined ? { default: input.defaultValue } : {}),
+              },
+            },
+            required: ['choice'],
+          }
       : {
           type: 'object' as const,
           properties: { confirm: { type: 'boolean' as const, title: 'Confirm' } },
@@ -255,6 +295,31 @@ export function readAcceptedChoice(
   const content = acceptedContent<{ choice?: string }>(responses, key);
   const choice = content?.choice;
   return typeof choice === 'string' ? choice : undefined;
+}
+
+/**
+ * Read one pending item's multi-select enum selection from a retried request's
+ * `inputResponses`. Returns the accepted `value`s only when the client
+ * explicitly accepted AND `choice` is a string array of strings; every other
+ * outcome (decline, cancel, missing key, accept-without-choice, non-array
+ * `choice`, non-string elements) returns `undefined`, which the caller reports
+ * as `CANCELLED` — same contract as the single-select reader.
+ *
+ * As with `readAcceptedChoice`, the returned values are NOT validated against
+ * the offered `choices`; callers must compare against the expected set before
+ * acting.
+ */
+export function readAcceptedMultiChoice(
+  responses: Record<string, unknown> | undefined,
+  key: string,
+): string[] | undefined {
+  const view = inputResponse(responses, key);
+  if (view.kind !== 'elicit' || view.action !== 'accept') return undefined;
+  const content = acceptedContent<{ choice?: unknown }>(responses, key);
+  const choice = content?.choice;
+  if (!Array.isArray(choice)) return undefined;
+  if (!choice.every((el) => typeof el === 'string')) return undefined;
+  return choice;
 }
 
 /**

@@ -371,9 +371,6 @@ export const DELETE_FILE = defineTool({
     destructiveHint: true,
     openWorldHint: false,
   },
-  execution: {
-    taskSupport: 'optional',
-  },
   defaultErrorCode: ErrorCode.UNKNOWN,
   progress: (args) => ({
     label: 'Delete',

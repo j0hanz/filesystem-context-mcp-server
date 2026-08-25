@@ -130,7 +130,7 @@ async function main(): Promise<void> {
     }
   } else {
     console.error(
-      `No directories specified via CLI. Will use MCP Roots${allowCwd ? ' or current working directory' : ''}.`,
+      `No directories specified via CLI. Use the list_roots tool to discover accessible paths.`,
     );
   }
 

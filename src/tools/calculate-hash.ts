@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, FsError, rethrowIfAborted } from '../core/errors.js';
+import { ErrorCode, FsError, isFsError, rethrowIfAborted } from '../core/errors.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import {
   globEntries,
@@ -216,7 +216,7 @@ async function hashDirectory(
     const failedPath = filteredPaths[first.index]?.relativePath ?? dirPath;
     const alsoFailed = errors.length > 1 ? ` (and ${errors.length - 1} more)` : '';
     throw new FsError(
-      first.error instanceof FsError ? first.error.code : ErrorCode.IO_ERROR,
+      isFsError(first.error) ? first.error.code : ErrorCode.IO_ERROR,
       `Failed to hash ${failedPath}: ${first.error.message}${alsoFailed}`,
       failedPath,
       { failedFiles: errors.length },
@@ -329,9 +329,6 @@ export const CALCULATE_HASH = defineTool({
     idempotentHint: true,
     destructiveHint: false,
     openWorldHint: false,
-  },
-  execution: {
-    taskSupport: 'optional',
   },
   timeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
   defaultErrorCode: ErrorCode.UNKNOWN,

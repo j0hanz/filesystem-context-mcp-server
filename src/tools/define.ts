@@ -11,7 +11,6 @@ import type {
   StandardSchemaWithJSON,
   Tool,
   ToolAnnotations,
-  ToolExecution,
 } from '@modelcontextprotocol/server';
 import { isInputRequiredResult } from '@modelcontextprotocol/server';
 
@@ -21,10 +20,17 @@ import { ErrorCode, formatUnknownErrorMessage, Problem } from '../core/errors.js
 import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
-import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/input-required.js';
+import {
+  confirmInput,
+  multiSelectInput,
+  pendingRoundTrip,
+  readAcceptedConfirm,
+  readAcceptedMultiChoice,
+} from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
+import { isSamePath } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import type { ServerNotifier } from '../server.js';
 import type { ProgressSink } from './progress.js';
@@ -36,6 +42,11 @@ export interface ToolCtx {
   readonly _meta?: RequestMeta | undefined;
   readonly fs: GuardedFileSystem;
   readonly resourceStore: ResourceStore | undefined;
+  /**
+   * Emits a log line to **stderr via `Logger.emit`**, not the MCP
+   * `notifications/message` channel — the `LoggingLevel` vocabulary is reused
+   * as severity only. Use `sendNotification` for a client-visible message.
+   */
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
   readonly sendNotification?: (notification: Notification) => Promise<void>;
   readonly onProgress?: (params: { current: number; total?: number }) => void;
@@ -85,7 +96,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
   readonly buildInput?: (guard: PathGuard) => I;
   readonly output: O;
   readonly annotations: DeclaredAnnotations;
-  readonly execution?: ToolExecution;
   readonly timeoutMs?: number;
   readonly progress?: (args: z.infer<I>) => ProgressCtx;
   readonly progressDone?: (args: z.infer<I>, result: z.infer<O>) => Partial<ProgressCtx>;
@@ -108,7 +118,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 export interface DefinedTool {
   readonly name: string;
   readonly annotations: DeclaredAnnotations;
-  readonly execution?: ToolExecution;
   readonly inputSchema: Tool['inputSchema'];
   readonly outputSchema: Record<string, unknown>;
 
@@ -297,23 +306,47 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const grantDirs = await this.toolCtx.fs.pathGuard.precheckAccess(paths);
     if (grantDirs.length === 0) return undefined;
 
+    // One grant dir: a single boolean confirm. Multiple: one multi-select
+    // elicitation so the client picks the subset to allow in one round-trip
+    // (N dirs → 1 round-trip, not N). `pendingRoundTrip` still binds
+    // `paths: grantDirs` sorted, so R9 path-binding is unaffected.
+    const multi = grantDirs.length > 1;
     const round = await pendingRoundTrip({
       op: 'grant',
       pending: grantDirs,
       requestState: this.toolCtx.requestState,
       buildInputs: (dirs) =>
-        dirs.map((dir, i) => confirmInput(`confirm_${i}`, `Grant filesystem access to "${dir}"?`)),
+        multi
+          ? [
+              multiSelectInput(
+                'grant',
+                'Grant filesystem access to these directories? Select the ones to allow.',
+                dirs.map((d) => ({ value: d, title: d })),
+              ),
+            ]
+          : dirs.map((dir, i) =>
+              confirmInput(`confirm_${i}`, `Grant filesystem access to "${dir}"?`),
+            ),
     });
     if (round !== undefined) return round;
     // Apply accepted grants for the session (R8). Declined/missing dirs are
     // skipped here; their paths fail with ACCESS_DENIED during the operation.
     let appliedAny = false;
-    for (let i = 0; i < grantDirs.length; i++) {
-      const dir = grantDirs[i];
-      if (dir && readAcceptedConfirm(this.toolCtx.inputResponses, `confirm_${i}`)) {
-        await this.toolCtx.fs.pathGuard.applyGrant(dir);
-        appliedAny = true;
-      }
+    // `readAcceptedMultiChoice` does NOT validate against the offered choices
+    // (attacker-controlled inputResponses on re-entry). Only grant dirs that
+    // were actually offered by precheckAccess — a value outside grantDirs is
+    // ignored and fails closed in validateAccess. The single-select path reads
+    // `confirm_${i}` for `grantDirs[i]`, so the isSamePath filter is a no-op
+    // there; it only bites for the multi-select array.
+    const accepted = multi
+      ? (readAcceptedMultiChoice(this.toolCtx.inputResponses, 'grant') ?? [])
+      : grantDirs.filter((_dir, i) =>
+          readAcceptedConfirm(this.toolCtx.inputResponses, `confirm_${i}`),
+        );
+    for (const dir of accepted) {
+      if (!grantDirs.some((g) => isSamePath(g, dir))) continue;
+      await this.toolCtx.fs.pathGuard.applyGrant(dir);
+      appliedAny = true;
     }
     if (appliedAny) {
       if (this.toolCtx.notifier?.resourcesChanged) {
@@ -417,7 +450,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   const tool: DefinedTool = {
     name: def.name,
     annotations: { ...def.annotations, title: def.title },
-    ...(def.execution !== undefined ? { execution: def.execution } : {}),
     inputSchema: inputJsonSchema as Tool['inputSchema'],
     outputSchema: outputJsonSchema,
 
@@ -429,7 +461,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
         inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
         outputSchema: outputSchemaWithJson,
         annotations: { ...def.annotations, title: def.title },
-        ...(def.execution !== undefined ? { execution: def.execution } : {}),
       };
 
       const serverCtxHandler = createServerToolHandler(def, deps);

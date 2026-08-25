@@ -14,7 +14,7 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
   name: 'list_roots',
   title: 'Workspace Roots',
   description:
-    'List the allowed workspace root directories. Call this first to discover what paths are accessible; all other tools are scoped to these roots. Allowed directories are configured via CLI arguments, the FS_ALLOWED_DIRS environment variable, --allow-cwd, or the MCP Roots protocol.',
+    'List the allowed workspace root directories. Call this first to discover what paths are accessible; all other tools are scoped to these roots. Allowed directories are configured via CLI arguments, the FS_ALLOWED_DIRS environment variable, or --allow-cwd.',
   input: RootsInputSchema,
   output: RootsOutputSchema,
   annotations: {
@@ -29,7 +29,7 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
     const text =
       dirs.length > 0
         ? dirs.join('\n')
-        : 'No allowed directories. Please configure allowed directories using CLI arguments, the FS_ALLOWED_DIRS environment variable, --allow-cwd, or the MCP Roots protocol.';
+        : 'No allowed directories. Please configure allowed directories using CLI arguments, the FS_ALLOWED_DIRS environment variable, or --allow-cwd.';
     return Promise.resolve({ structured, text });
   },
 

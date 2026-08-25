@@ -733,7 +733,7 @@ export class PathGuard {
     if (roots.length === 0) {
       throw new FsError(
         ErrorCode.ACCESS_DENIED,
-        'No roots configured. Use roots tool, --allow-cwd, or MCP Roots protocol.',
+        'No roots configured. Use the roots tool or --allow-cwd.',
       );
     }
     if (roots.length > 1) {

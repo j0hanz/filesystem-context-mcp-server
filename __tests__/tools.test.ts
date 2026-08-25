@@ -308,15 +308,6 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
   });
 
-  it('TC-FUNC-057: long-running tools declare execution taskSupport metadata', () => {
-    const taskTools = ['search_text', 'find_files', 'replace_text', 'hash_file', 'copy', 'delete'];
-    for (const name of taskTools) {
-      const tool = ALL_TOOLS.find((t) => t.name === name);
-      assert.ok(tool, `${name} tool should be defined`);
-      assert.deepStrictEqual(tool.execution, { taskSupport: 'optional' });
-    }
-  });
-
   it('TC-FUNC-058: list tool declares idempotentHint', () => {
     const listTool = ALL_TOOLS.find((t) => t.name === 'list');
     assert.ok(listTool, 'list tool should be defined');
@@ -613,6 +604,129 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       await assert.rejects(() => access(dir));
     } finally {
       await eh.close();
+    }
+  });
+
+  it('TC-FUNC-070: multi-select grant accepts a subset of dirs (#14)', async () => {
+    const parentDir = await createTestRoot();
+    const rootDir = join(parentDir, 'root');
+    const outsideA = join(parentDir, 'outsideA');
+    const outsideB = join(parentDir, 'outsideB');
+    await mkdir(rootDir, { recursive: true });
+    await mkdir(outsideA, { recursive: true });
+    await mkdir(outsideB, { recursive: true });
+    const srcA = join(outsideA, 'a.txt');
+    const srcB = join(outsideB, 'b.txt');
+    await writeFile(srcA, 'A content');
+    await writeFile(srcB, 'B content');
+
+    const prevBoundary = process.env['ROOT_BOUNDARY'];
+    process.env['ROOT_BOUNDARY'] = parentDir;
+    try {
+      // Two out-of-root source dirs => one multi-select grant round. Accept
+      // only the FIRST offered dir (a subset of one); the other stays denied.
+      const eh = await createElicitationClientPair([rootDir], async (req: unknown) => {
+        const env = req as { params?: { requestedSchema?: unknown } };
+        const schema = env.params?.requestedSchema as
+          | {
+              properties?: { choice?: { items?: { anyOf?: { const?: string }[] } } };
+            }
+          | undefined;
+        const offered = schema?.properties?.choice?.items?.anyOf ?? [];
+        const first = offered[0]?.const;
+        return {
+          action: 'accept' as const,
+          content: { choice: first ? [first] : [] },
+        };
+      });
+      try {
+        const result = await eh.client.callTool({
+          name: 'copy',
+          arguments: {
+            copies: [
+              { source: srcA, destination: join(rootDir, 'a_copy.txt') },
+              { source: srcB, destination: join(rootDir, 'b_copy.txt') },
+            ],
+          },
+        });
+        assert.notStrictEqual(result.isError, true);
+        const s = result.structuredContent as {
+          copies?: { from?: string; to?: string }[];
+          failures?: { source?: string; error?: { code?: string } }[];
+        };
+        // The accepted dir's copy succeeded; the declined dir's failed closed.
+        assert.strictEqual(s.copies?.length, 1, 'exactly one copy (the accepted dir) succeeds');
+        assert.strictEqual(s.failures?.length, 1, 'exactly one failure (the declined dir)');
+        assert.strictEqual(s.failures?.[0]?.error?.code, 'ACCESS_DENIED');
+      } finally {
+        await eh.close();
+      }
+    } finally {
+      if (prevBoundary !== undefined) process.env['ROOT_BOUNDARY'] = prevBoundary;
+      else delete process.env['ROOT_BOUNDARY'];
+      await cleanupTestRoot(parentDir);
+    }
+  });
+
+  it('TC-FUNC-071: multi-select grant ignores a non-offered dir (consent scope)', async () => {
+    const parentDir = await createTestRoot();
+    const rootDir = join(parentDir, 'root');
+    const outsideA = join(parentDir, 'outsideA');
+    const outsideB = join(parentDir, 'outsideB');
+    const secretDir = join(parentDir, 'secret'); // within boundary, never offered
+    await mkdir(rootDir, { recursive: true });
+    await mkdir(outsideA, { recursive: true });
+    await mkdir(outsideB, { recursive: true });
+    await mkdir(secretDir, { recursive: true });
+    const srcA = join(outsideA, 'a.txt');
+    const srcB = join(outsideB, 'b.txt');
+    await writeFile(srcA, 'A content');
+    await writeFile(srcB, 'B content');
+    await writeFile(join(secretDir, 'secret.txt'), 'secret');
+
+    const prevBoundary = process.env['ROOT_BOUNDARY'];
+    process.env['ROOT_BOUNDARY'] = parentDir;
+    try {
+      // Malicious client: accept the offered outsideA AND a non-offered
+      // secretDir. Only outsideA/outsideB were in precheckAccess's grantDirs
+      // (two dirs => multi-select branch); secretDir must be filtered out and
+      // stay ungranted.
+      const eh = await createElicitationClientPair([rootDir], async () => ({
+        action: 'accept' as const,
+        content: { choice: [outsideA, secretDir] },
+      }));
+      try {
+        const result = await eh.client.callTool({
+          name: 'copy',
+          arguments: {
+            copies: [
+              { source: srcA, destination: join(rootDir, 'a_copy.txt') },
+              { source: srcB, destination: join(rootDir, 'b_copy.txt') },
+            ],
+          },
+        });
+        assert.notStrictEqual(result.isError, true);
+        const s = result.structuredContent as { copies?: unknown[] };
+        assert.strictEqual(s.copies?.length, 1, 'offered accepted dir is granted');
+
+        // secretDir was never offered -> not granted -> read fails ACCESS_DENIED.
+        const readRes = await eh.client.callTool({
+          name: 'read',
+          arguments: { path: join(secretDir, 'secret.txt') },
+        });
+        const rs = readRes.structuredContent as {
+          results?: { error?: { code?: string } }[];
+          summary?: { failed?: number };
+        };
+        assert.strictEqual(rs.summary?.failed, 1);
+        assert.strictEqual(rs.results?.[0]?.error?.code, 'ACCESS_DENIED');
+      } finally {
+        await eh.close();
+      }
+    } finally {
+      if (prevBoundary !== undefined) process.env['ROOT_BOUNDARY'] = prevBoundary;
+      else delete process.env['ROOT_BOUNDARY'];
+      await cleanupTestRoot(parentDir);
     }
   });
 });
