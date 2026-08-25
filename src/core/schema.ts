@@ -5,7 +5,8 @@ import { MIME_KINDS } from './mime.js';
 import { ENTRY_TYPES } from './primitives.js';
 import { MAX_SEARCH_DEPTH } from './util.js';
 
-// Runtime: full ISO-8601 UTC; format pattern stripped by post-processor on the wire.
+// Runtime: full ISO-8601 UTC; emits the standard `date-time` format on the wire
+// (no AJV warning — it is a known format, unlike sha256_hex / base64url).
 export const IsoDateTime = z.iso.datetime().meta({
   id: 'IsoDateTime',
   title: 'ISO Date-Time',

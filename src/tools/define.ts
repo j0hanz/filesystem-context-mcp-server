@@ -9,7 +9,6 @@ import type {
   RequestStateAccessor,
   ServerContext,
   StandardSchemaWithJSON,
-  Tool,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
 import { isInputRequiredResult } from '@modelcontextprotocol/server';
@@ -117,8 +116,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
 export interface DefinedTool {
   readonly name: string;
   readonly annotations: DeclaredAnnotations;
-  readonly inputSchema: Tool['inputSchema'];
-  readonly outputSchema: Record<string, unknown>;
 
   register(deps: ToolDeps): RegisteredTool;
 }
@@ -459,8 +456,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   const tool: DefinedTool = {
     name: def.name,
     annotations,
-    inputSchema: inputJsonSchema as Tool['inputSchema'],
-    outputSchema: outputJsonSchema,
 
     register(deps: ToolDeps): RegisteredTool {
       return deps.server.registerTool(def.name, toolDefShape, createServerToolHandler(def, deps));
