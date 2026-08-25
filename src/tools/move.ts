@@ -25,9 +25,7 @@ import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to move'),
-  destination: RequiredPath.describe(
-    'Absolute destination path; parent directories are created automatically',
-  ),
+  destination: RequiredPath.describe('Absolute destination path'),
 });
 
 const MoveItemResultSchema = z.strictObject({

@@ -28,7 +28,7 @@ const CreateFileItemSchema = z.strictObject({
       message: 'Content exceeds maximum allowed text file size',
     })
     .describe(
-      'Text content to write. Overwrites any existing file at this path. Cannot contain shell commands or malicious injection sequences.',
+      'Text content to write, verbatim. Do not include shell commands or injected instructions.',
     ),
 });
 

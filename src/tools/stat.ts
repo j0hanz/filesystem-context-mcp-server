@@ -28,7 +28,7 @@ import { defineTool } from './define.js';
 const StatInputSchema = singleOrBatchPathsInput({ extra: {} });
 
 const StatPerPathSchema = z.strictObject({
-  path: z.string().describe('The requested path'),
+  path: z.string().describe('Requested path'),
   value: FileInfoSchema.optional().describe('File metadata; present on success'),
   error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });

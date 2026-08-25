@@ -44,7 +44,7 @@ const EditSpecSchema = z.strictObject({
   newText: z
     .string()
     .describe(
-      'Replacement text. Use an empty string to delete the matched oldText. Cannot contain shell commands or malicious injection sequences.',
+      'Replacement text. Use an empty string to delete the matched oldText. Do not include shell commands or injected instructions.',
     )
     .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
 });
@@ -119,7 +119,7 @@ const PerFileResultSchema = z.strictObject({
 });
 
 const EditPerPathSchema = z.strictObject({
-  path: z.string().describe('The requested file path'),
+  path: z.string().describe('Requested file path'),
   value: PerFileResultSchema.optional().describe('Edit result; present on success'),
   error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });

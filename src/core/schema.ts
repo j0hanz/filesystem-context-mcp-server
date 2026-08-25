@@ -89,7 +89,7 @@ const PathBase = z
     }
   })
   .describe(
-    'Absolute or relative path within an allowed workspace root. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.',
+    'Absolute or relative path within an allowed workspace root. No "..", shell metacharacters, or blank input.',
   )
   .meta({
     suggestion: 'Path must be inside an allowed root. Call list_roots to see allowed directories.',
@@ -140,7 +140,7 @@ export const SafeGlobPattern = z
     }
   })
   .describe(
-    'A strictly relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js"). Cannot start with a slash, must not be empty or whitespace-only, and must not contain directory traversal sequences like ".." or shell metacharacters.',
+    'Relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js"). No leading slash, "..", shell metacharacters, or blank input.',
   )
   .meta({
     id: 'SafeGlobPattern',
@@ -203,8 +203,8 @@ export const PathFailureSchema = z.strictObject({
  */
 export function pairFailureSchema(verb: 'copied' | 'moved', noun: 'copy' | 'move') {
   return z.strictObject({
-    source: z.string().describe(`The source path that could not be ${verb}`),
-    destination: z.string().describe(`The intended destination path for the failed ${noun}`),
+    source: z.string().describe(`Source path that could not be ${verb}`),
+    destination: z.string().describe(`Intended destination path for the failed ${noun}`),
     error: PerFileErrorSchema,
   });
 }
@@ -468,9 +468,9 @@ const base64urlCursor = z.string().regex(/^[A-Za-z0-9_-]+$/);
 export const CursorSchema = base64urlCursor
   .optional()
   .describe(
-    'Opaque pagination cursor from a prior response; pass unchanged to fetch the next page. ' +
-      'list cursors are stateless offsets and never expire; find_files cursors re-run the full query per page ' +
-      'and expire after ~5 min or server restart, so matches may shift (duplicate or skip) if files change between page requests.',
+    'Opaque pagination cursor from a prior response; pass unchanged for the next page. ' +
+      'list cursors are stateless offsets and never expire; find_files cursors re-run the query per page, ' +
+      'expire after ~5 min or a server restart, and may duplicate or skip matches if files change between pages.',
   );
 
 export const NextCursorSchema = base64urlCursor

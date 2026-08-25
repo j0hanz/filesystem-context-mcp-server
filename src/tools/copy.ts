@@ -17,9 +17,7 @@ import { defineTool } from './define.js';
 
 const CopyItemSchema = z.strictObject({
   source: RequiredPath.describe('Absolute path of the file or directory to copy'),
-  destination: RequiredPath.describe(
-    'Absolute destination path; parent directories are created automatically',
-  ),
+  destination: RequiredPath.describe('Absolute destination path'),
 });
 
 const CopyInputSchema = z.strictObject({

@@ -127,7 +127,7 @@ const ReadPerPathValueSchema = z.strictObject({
 });
 
 const ReadPerPathSchema = z.strictObject({
-  path: z.string().describe('The requested file path'),
+  path: z.string().describe('Requested file path'),
   value: ReadPerPathValueSchema.optional().describe('Read result; present on success'),
   error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
 });

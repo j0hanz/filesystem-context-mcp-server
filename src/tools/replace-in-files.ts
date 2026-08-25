@@ -66,7 +66,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .max(10000)
     .describe(
-      'Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches. Cannot contain shell commands or malicious injection sequences.',
+      'Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches. Do not include shell commands or injected instructions.',
     )
     .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
@@ -132,7 +132,7 @@ const SearchAndReplaceOutputSchema = z.strictObject({
     .optional()
     .describe('True when the diff was cut due to the size limit'),
   stoppedReason: StoppedReasonSchema.describe(
-    'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or the request was cancelled. Absent when every matching file was enumerated. Files already dispatched still complete, so this marks the sweep incomplete, not the writes partial.',
+    'Why enumeration stopped early: maxResults = match cap reached, maxFiles = file cap reached, timeout = time limit hit or cancelled. Absent when every matching file was enumerated. Marks the sweep incomplete, not the writes; files already dispatched still complete.',
   ),
 });
 

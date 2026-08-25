@@ -36,9 +36,7 @@ const HashInputSchema = z.strictObject({
     })
     .optional()
     .default(['sha256'])
-    .describe(
-      'Hash algorithms to compute (default: [sha256]); specify multiple to compute several hashes in one call',
-    ),
+    .describe('Hash algorithms to compute (default: [sha256]).'),
 });
 
 // z.partialRecord: keys are optional but MUST be from the enum; rejects unknown keys.

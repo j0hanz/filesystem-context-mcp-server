@@ -237,9 +237,9 @@ const ListOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full entry list in the resource store. Only present when total entries exceed the hard cap ' +
-        '(the same cap that bounds pagination); below it, page through the remaining entries with nextCursor. ' +
-        'The stored list is itself capped at the hard limit and marked truncated if total entries exceed it.',
+      'URI to the full entry list in the resource store, present only when total entries exceed the hard cap ' +
+        '(the same cap that bounds pagination; page via nextCursor below it). The stored list is itself ' +
+        'capped at that limit and marked truncated if exceeded.',
     ),
   nextCursor: NextCursorSchema,
 });

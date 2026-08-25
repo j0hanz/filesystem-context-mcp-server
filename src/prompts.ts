@@ -59,9 +59,7 @@ function pathArg(
 ): ReturnType<typeof completable<z.ZodString>> {
   const completer = new PathCompleter(guard);
   return completable(
-    RequiredPath.describe(
-      `${description}. Must not contain directory traversal sequences (e.g. "..") or shell metacharacters, and cannot be empty or whitespace-only.`,
-    ),
+    RequiredPath.describe(`${description}. No "..", shell metacharacters, or blank input.`),
     (value, ctx) => completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
   );
 }
@@ -80,9 +78,7 @@ function topicArg(
       .refine((val) => !SHELL_METACHAR_RE.test(val), {
         message: 'Topic contains prohibited characters (newlines or shell metacharacters)',
       })
-      .describe(
-        `${description} Must not contain shell metacharacters and cannot be empty or whitespace-only.`,
-      ),
+      .describe(`${description} No shell metacharacters or blank input.`),
     (value) => {
       const lower = value.toLowerCase();
       return lower ? topics.filter((t) => t.startsWith(lower)) : [...topics];
@@ -245,7 +241,7 @@ const FIND_IN_TREE: PromptEntry = {
               message: 'Query contains prohibited characters (newlines or shell metacharacters)',
             })
             .describe(
-              'Search term. Glob pattern for name mode or RE2 regex pattern for content/both modes. Cannot be empty or whitespace-only, and must not contain shell metacharacters.',
+              'Search term: glob pattern (name mode) or RE2 regex (content/both). No blank input or shell metacharacters.',
             ),
           root: pathArg(
             options.pathGuard,
@@ -318,9 +314,7 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
             .number()
             .pipe(z.int32().min(1).max(6))
             .default(3)
-            .describe(
-              'Maximum tree depth for directory listing (1 = top-level only, 6 = deep; default 3).',
-            ),
+            .describe('Directory listing depth, 1-6 (default 3).'),
         }),
       },
       async ({ path: rawPath, depth }: { path: string; depth: number }): Promise<GetPromptResult> =>

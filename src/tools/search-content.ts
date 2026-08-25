@@ -122,7 +122,7 @@ const GrepOutputSchema = z.strictObject({
     )
     .describe('Flat list of matches sorted by file path then line number'),
   totalMatches: NonNegInt.optional().describe(
-    'Total number of matching lines found: one per entry in matches, not per occurrence. A line with several occurrences counts once here; see that entry matchCount for its occurrence count.',
+    "Total matching lines, one per entry in matches (not per occurrence); see that entry's matchCount for occurrences on a line.",
   ),
   filesMatched: NonNegInt.optional().describe('Number of files containing at least one match'),
   filesScanned: NonNegInt.optional().describe('Total number of files examined'),
