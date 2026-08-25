@@ -1,4 +1,4 @@
-import { ProtocolErrorCode } from '@modelcontextprotocol/server';
+import { ProtocolErrorCode, ResourceNotFoundError } from '@modelcontextprotocol/server';
 import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -464,6 +464,19 @@ describe('MCP Resources', () => {
       assert.strictEqual(result.contents.length, 1);
       assert.strictEqual(result.contents[0].uri, uri);
       assert.strictEqual((result.contents[0] as { text: string }).text, 'client resource read');
+    });
+
+    it('client.readResource() on a missing workspace file rejects as resource-not-found', async () => {
+      const uri = buildFileResourceUri(join(clientTmpDir, 'does-not-exist.txt'));
+      await assert.rejects(harness.client.readResource({ uri }), (err: unknown) => {
+        // The SDK reconstructs ResourceNotFoundError client-side from the wire
+        // code plus `data.uri`; its wire code is -32602 (spec MUST for
+        // 2026-07-28), with -32002 accepted only for backwards compatibility.
+        assert.ok(ResourceNotFoundError.isInstance(err), 'expected ResourceNotFoundError');
+        assert.strictEqual(err.code, ProtocolErrorCode.InvalidParams);
+        assert.strictEqual(err.uri, uri);
+        return true;
+      });
     });
 
     it('advertises resources.subscribe and resources.listChanged capabilities', async () => {

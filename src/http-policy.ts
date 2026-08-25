@@ -228,6 +228,13 @@ function buildAuthChallenge(req: Request, hasCredentials: boolean, hostValidated
  * No key set = open access (loopback dev mode). `apiKey` is captured once per
  * app setup (passed in from startHttpServer) so the middleware and
  * assertHttpBindingPolicy share one source of truth.
+ *
+ * `requireBearerAuth` + `verifyAccessToken` from `@modelcontextprotocol/express`
+ * is the tool for verifier-backed tokens; this middleware stays hand-rolled
+ * because the credential is a static operator key with no verifier, the 401 body
+ * must stay a JSON-RPC envelope, and the RFC 6750 bare-vs-`invalid_token`
+ * challenge split is implemented here. Adopt `requireBearerAuth` if this ever
+ * verifies issued tokens.
  */
 export function bearerAuthMiddleware(
   apiKey: string | undefined,
@@ -243,6 +250,9 @@ export function bearerAuthMiddleware(
       // Forward the validated caller to the SDK pipeline: toNodeHandler reads
       // req.auth and passes it as the handler's pass-through authInfo, which the
       // per-request factory receives and tool handlers read as ctx.http.authInfo.
+      // `expiresAt` is deliberately omitted: a static API key has no expiry and
+      // there is no `exp` claim or introspection response to read one from.
+      // Populate it from the token if this ever moves to issued tokens.
       const presented = authHeader.slice('Bearer '.length).trim();
       (req as Request & { auth?: AuthInfo }).auth = {
         token: presented,

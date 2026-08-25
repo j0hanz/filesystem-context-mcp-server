@@ -21,6 +21,7 @@ import {
 
 import { basename } from 'node:path';
 
+import type { FsError } from './core/errors.js';
 import { ErrorCode, formatUnknownErrorMessage, hasErrorShape, isFsError } from './core/errors.js';
 import {
   buildFileResourceUri,
@@ -61,6 +62,20 @@ export interface ResourceRegistrationOptions {
   notifier?: ServerNotifier;
   /** The protocol era this instance serves; omitted where the caller does not know. */
   era?: 'legacy' | 'modern';
+}
+
+/**
+ * A filesystem failure that reads as not-found on the resource wire, for both
+ * `resources/read` and `resources/subscribe`. ACCESS_DENIED folds in
+ * deliberately: masking whether an out-of-root or denylisted path exists is the
+ * security-correct answer, and the `FsError` message still carries the real
+ * cause to the client.
+ */
+function isNotFoundish(error: unknown): error is FsError {
+  return (
+    isFsError(error) &&
+    (error.code === ErrorCode.NOT_FOUND || error.code === ErrorCode.ACCESS_DENIED)
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -328,10 +343,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       try {
         resolved = await options.pathGuard.validateExistingPath(filePath);
       } catch (err: unknown) {
-        if (
-          isFsError(err) &&
-          (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.ACCESS_DENIED)
-        ) {
+        if (isNotFoundish(err)) {
           throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
         }
         Logger.warn(
@@ -471,6 +483,13 @@ function wrapRead(contract: ResourceContract) {
       return await contract.read(uri, variables, ctx);
     } catch (error) {
       if (hasErrorShape(error, 'ProtocolError')) throw error;
+      // A missing or out-of-root path is a not-found, not a malformed request.
+      // The SDK puts ResourceNotFoundError on the wire as -32602 with
+      // `data.uri`, which is what clients match on; -32002 is the older code
+      // they also accept, and this SDK never emits it.
+      if (isNotFoundish(error)) {
+        throw new ResourceNotFoundError(uri.toString(), error.message);
+      }
       throw new ProtocolError(ProtocolErrorCode.InvalidRequest, formatUnknownErrorMessage(error));
     }
   };

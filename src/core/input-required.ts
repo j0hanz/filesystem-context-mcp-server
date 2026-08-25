@@ -16,10 +16,11 @@ import {
   acceptedContent,
   createRequestStateCodec,
   inputRequired,
-  inputResponse,
 } from '@modelcontextprotocol/server';
 
 import { randomBytes } from 'node:crypto';
+
+import * as z from 'zod/v4';
 
 import { ErrorCode, FsError } from './errors.js';
 import { Logger } from './observability.js';
@@ -257,6 +258,14 @@ export async function pendingRoundTrip(
   return undefined;
 }
 
+// Response shapes handed to the SDK's schema-aware `acceptedContent` overload:
+// it returns `undefined` for a missing key, a decline/cancel, a non-elicit
+// response, AND a payload that fails validation — one call covers every refusal
+// case the readers below used to hand-check.
+const ConfirmContent = z.object({ confirm: z.boolean() });
+const ChoiceContent = z.object({ choice: z.string() });
+const MultiChoiceContent = z.object({ choice: z.array(z.string()) });
+
 /**
  * Read one pending item's boolean confirmation from a retried request's
  * `inputResponses`. Returns `true` only when the client explicitly accepted AND
@@ -268,10 +277,7 @@ export function readAcceptedConfirm(
   responses: Record<string, unknown> | undefined,
   key: string,
 ): boolean {
-  const view = inputResponse(responses, key);
-  if (view.kind !== 'elicit' || view.action !== 'accept') return false;
-  const content = acceptedContent<{ confirm?: boolean }>(responses, key);
-  return content?.confirm === true;
+  return acceptedContent(responses, key, ConfirmContent)?.confirm === true;
 }
 
 /**
@@ -281,20 +287,17 @@ export function readAcceptedConfirm(
  * cancel, missing key, accept-without-choice) returns `undefined`, which the
  * caller reports as `CANCELLED` — same contract as the boolean reader.
  *
- * The returned value is NOT validated against the `choices` offered in the
- * request schema. Callers must compare against the expected values (e.g.
- * `choice === 'overwrite'`) before acting — never echo the string back into a
- * path or trust it as an enum member.
+ * The shape is SDK-validated, but the returned value is NOT checked for
+ * membership in the `choices` offered in the request schema. Callers must
+ * compare against the expected values (e.g. `choice === 'overwrite'`) before
+ * acting — never echo the string back into a path or trust it as an enum
+ * member.
  */
 export function readAcceptedChoice(
   responses: Record<string, unknown> | undefined,
   key: string,
 ): string | undefined {
-  const view = inputResponse(responses, key);
-  if (view.kind !== 'elicit' || view.action !== 'accept') return undefined;
-  const content = acceptedContent<{ choice?: string }>(responses, key);
-  const choice = content?.choice;
-  return typeof choice === 'string' ? choice : undefined;
+  return acceptedContent(responses, key, ChoiceContent)?.choice;
 }
 
 /**
@@ -305,21 +308,15 @@ export function readAcceptedChoice(
  * `choice`, non-string elements) returns `undefined`, which the caller reports
  * as `CANCELLED` — same contract as the single-select reader.
  *
- * As with `readAcceptedChoice`, the returned values are NOT validated against
- * the offered `choices`; callers must compare against the expected set before
- * acting.
+ * As with `readAcceptedChoice`, the returned values are NOT checked for
+ * membership in the offered `choices`; callers must compare against the
+ * expected set before acting.
  */
 export function readAcceptedMultiChoice(
   responses: Record<string, unknown> | undefined,
   key: string,
 ): string[] | undefined {
-  const view = inputResponse(responses, key);
-  if (view.kind !== 'elicit' || view.action !== 'accept') return undefined;
-  const content = acceptedContent<{ choice?: unknown }>(responses, key);
-  const choice = content?.choice;
-  if (!Array.isArray(choice)) return undefined;
-  if (!choice.every((el) => typeof el === 'string')) return undefined;
-  return choice;
+  return acceptedContent(responses, key, MultiChoiceContent)?.choice;
 }
 
 /**

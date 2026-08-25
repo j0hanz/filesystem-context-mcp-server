@@ -207,6 +207,7 @@ export class McpProgressSink implements ProgressSink {
   private readonly token: string | number;
   private readonly notify: (n: Notification) => Promise<void>;
   readonly #pending = new Set<Promise<void>>();
+  #lastProgress = -1;
 
   constructor(
     toolName: string,
@@ -225,6 +226,18 @@ export class McpProgressSink implements ProgressSink {
       current = total ?? current;
       total = current;
     }
+    if (event.kind !== 'tick') {
+      // A terminal frame carries the outcome message, so it must reach the
+      // wire. It repeats the cursor whenever the session has no `total` (there
+      // is nothing higher to report), and the spec requires progress to
+      // increase per token — so advance past the last value instead of dropping
+      // the frame.
+      current = Math.max(current, this.#lastProgress + 1);
+      if (total !== undefined && total < current) total = current;
+    }
+    // Spec: progress must increase on every notification for the same token.
+    if (current <= this.#lastProgress) return;
+    this.#lastProgress = current;
     const notificationParams: ProgressNotificationParams = {
       progressToken: this.token,
       progress: current,

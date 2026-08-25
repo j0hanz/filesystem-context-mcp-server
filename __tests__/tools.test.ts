@@ -151,6 +151,23 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(allTools.length, ALL_REGISTERED_TOOL_NAMES.length);
   });
 
+  it('tools/list publishes draft-2020-12 JSON Schema (withJsonSchema pin)', async () => {
+    const pinHarness = await createTestClientPair([tmpDir]);
+    try {
+      const { tools } = await pinHarness.client.listTools();
+      assert.ok(tools.length > 0);
+      for (const tool of tools) {
+        assert.strictEqual(
+          (tool.inputSchema as { $schema?: string }).$schema,
+          'https://json-schema.org/draft/2020-12/schema',
+          `${tool.name} must publish the precomputed draft-2020-12 schema`,
+        );
+      }
+    } finally {
+      await pinHarness.close();
+    }
+  });
+
   it('TC-FUNC-013: Edit via MCP tool call', async () => {
     const file = join(tmpDir, 'edit.txt');
     await writeFile(file, 'original content');
