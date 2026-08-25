@@ -36,6 +36,22 @@ export function createWatcherRegistry() {
   const debounceTimers = new Map<string, NodeJS.Timeout>();
   let destroyed = false;
 
+  // 'unsubscribed' exists only to abort a subscribe that is mid-await
+  // (isStale). If no subscribe is in flight, keep no entry at all: a lingering
+  // 'unsubscribed' would permanently block the modern attach path (which never
+  // calls startSubscribe) and leak one map entry per URI ever watched. This
+  // must be idempotent: remove()'s teardown branch calls this directly and
+  // then unconditionally calls dropWatcher (which also calls this) for the
+  // same uri — the second call must not clobber what the first one set.
+  const settleDesiredState = (uri: string): void => {
+    const current = desiredState.get(uri);
+    if (current === 'subscribing') {
+      desiredState.set(uri, 'unsubscribed');
+    } else if (current !== 'unsubscribed') {
+      desiredState.delete(uri);
+    }
+  };
+
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
@@ -48,7 +64,7 @@ export function createWatcherRegistry() {
     watchers.delete(uri);
     activeCallbacks.delete(uri);
     subscriberCounts.delete(uri);
-    desiredState.set(uri, 'unsubscribed');
+    settleDesiredState(uri);
   };
 
   const notifyAll = (uri: string): void => {
@@ -142,7 +158,7 @@ export function createWatcherRegistry() {
         return;
       }
       subscriberCounts.delete(uri);
-      desiredState.set(uri, 'unsubscribed');
+      settleDesiredState(uri);
       activeCallbacks.delete(uri);
       const timer = debounceTimers.get(uri);
       if (timer) {

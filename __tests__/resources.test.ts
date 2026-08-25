@@ -327,7 +327,7 @@ describe('MCP Resources', () => {
       registry.destroy();
     });
 
-    it('TC-FUNC-064: WatcherRegistry - remove watcher and desired state', async () => {
+    it('TC-FUNC-064: WatcherRegistry - remove tears down watcher and leaves no stale state', async () => {
       const registry = createWatcherRegistry();
       const testFile = await writeTestFile(tmpDir, 'remove_test.txt', 'content');
       const testUri = buildFileResourceUri(testFile);
@@ -338,7 +338,7 @@ describe('MCP Resources', () => {
 
       registry.remove(testUri);
       assert.strictEqual(registry.hasWatcher(testUri), false);
-      assert.strictEqual(registry.isStale(testUri), true);
+      assert.strictEqual(registry.isStale(testUri), false);
 
       registry.destroy();
     });
@@ -375,7 +375,7 @@ describe('MCP Resources', () => {
       assert.strictEqual(registry.isStale('filesystem-mcp://file/nonexistent'), true);
     });
 
-    it('TC-FUNC-067: WatcherRegistry - re-subscription clears stale state', async () => {
+    it('TC-FUNC-067: WatcherRegistry - remove during in-flight subscribe marks stale; settled remove does not', async () => {
       const registry = createWatcherRegistry();
       const file = await writeTestFile(tmpDir, 'resub.txt', 'content');
       const uri = buildFileResourceUri(file);
@@ -386,12 +386,25 @@ describe('MCP Resources', () => {
       registry.attach(uri, file);
 
       registry.remove(uri);
-      assert.strictEqual(registry.isStale(uri), true);
+      assert.strictEqual(registry.isStale(uri), false);
 
       registry.startSubscribe(uri);
       assert.strictEqual(registry.isStale(uri), false);
       registry.addCallback(uri, () => {});
       assert.strictEqual(registry.isStale(uri), false);
+
+      // in-flight abort: a subscribe that never settles (no addCallback yet)
+      // must leave the stale marker a mid-await subscriber checks — using a
+      // fresh uri so this doesn't inherit ref-count/watcher state from above.
+      const abortFile = await writeTestFile(tmpDir, 'resub_abort.txt', 'content');
+      const abortUri = buildFileResourceUri(abortFile);
+      registry.startSubscribe(abortUri);
+      registry.remove(abortUri);
+      assert.strictEqual(registry.isStale(abortUri), true);
+
+      // and a fresh startSubscribe clears it again
+      registry.startSubscribe(abortUri);
+      assert.strictEqual(registry.isStale(abortUri), false);
 
       registry.destroy();
     });

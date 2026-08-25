@@ -472,3 +472,72 @@ describe('HTTP duplicate listen does not consume capacity', () => {
     await sub2.close();
   });
 });
+
+// Regression: `remove(uri)`'s final-teardown branch used to permanently set
+// desiredState to 'unsubscribed' on the watched URI. A later
+// subscriptions/listen for the same URI never called startSubscribe (the
+// modern attach path), so isStale(uri) stayed true forever and the watcher
+// silently never attached again. The fix clears the entry on settled
+// teardown instead of poisoning it.
+describe('HTTP re-listen after full release', () => {
+  let tmpDir: string;
+  let httpServer: Server;
+  let base: URL;
+  let client: Client;
+  let sub: McpSubscription | undefined;
+
+  before(async () => {
+    tmpDir = await createTestRoot();
+    await writeTestFile(tmpDir, 'relisten.txt', 'initial');
+    process.env['API_KEY'] = API_KEY;
+    process.env['HTTP_HOST'] = '127.0.0.1';
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
+    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
+    const port = (httpServer.address() as AddressInfo).port;
+    base = new URL(`http://127.0.0.1:${port}/mcp`);
+    const transport = new StreamableHTTPClientTransport(base, {
+      fetch: (u, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set('Authorization', `Bearer ${API_KEY}`);
+        return fetch(u, { ...init, headers });
+      },
+    });
+    client = new Client(
+      { name: 'http-relisten', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    await client.connect(transport);
+  });
+
+  after(async () => {
+    try {
+      await sub?.close();
+    } catch {
+      /* teardown */
+    }
+    await client.close();
+    await new Promise<void>((resolve) => httpServer.close(resolve));
+    delete process.env['API_KEY'];
+    delete process.env['HTTP_HOST'];
+    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await cleanupTestRoot(tmpDir);
+  });
+
+  it('a URI whose last listener left can be listened to again', async () => {
+    const filePath = join(tmpDir, 'relisten.txt');
+    const uri = buildFileResourceUri(filePath);
+
+    const first = await client.listen({ resourceSubscriptions: [uri] });
+    await first.close();
+    await setTimeout(100);
+
+    let received: string | undefined;
+    client.setNotificationHandler('notifications/resources/updated', (n) => {
+      received = (n.params as { uri: string }).uri;
+    });
+    sub = await client.listen({ resourceSubscriptions: [uri] });
+    await writeFile(filePath, 'changed-after-relisten');
+    await waitFor(() => received !== undefined);
+    assert.strictEqual(received, uri, 're-listen after release must receive updates');
+  });
+});
