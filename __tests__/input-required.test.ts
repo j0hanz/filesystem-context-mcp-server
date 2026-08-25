@@ -261,41 +261,48 @@ describe('input_required multi-round-trip infrastructure', () => {
 });
 
 describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
-  const envKeys = ['API_KEY', 'FILESYSTEM_MCP_REQUEST_STATE_KEY'] as const;
-  const saved: Record<string, string | undefined> = {};
+  // The API key is an argument now, not an env read: `startHttpServer` passes
+  // the value the CLI resolved. Only the request-state key still comes from the
+  // process, so only it is saved and restored here.
+  const STATE_KEY = 'FILESYSTEM_MCP_REQUEST_STATE_KEY';
+  let saved: string | undefined;
 
   beforeEach(() => {
-    for (const k of envKeys) saved[k] = process.env[k];
+    saved = process.env[STATE_KEY];
   });
 
   afterEach(() => {
-    for (const k of envKeys) {
-      if (saved[k] === undefined) Reflect.deleteProperty(process.env, k);
-      else process.env[k] = saved[k];
+    if (saved === undefined) Reflect.deleteProperty(process.env, STATE_KEY);
+    else process.env[STATE_KEY] = saved;
+  });
+
+  it('throws when an api key is set and the request state key is missing', () => {
+    Reflect.deleteProperty(process.env, STATE_KEY);
+    assert.throws(() => assertFleetRequestStateKey('sekret'), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
+  });
+
+  it('throws when an api key is set and the request state key is <32 bytes', () => {
+    process.env[STATE_KEY] = 'short';
+    assert.throws(() => assertFleetRequestStateKey('sekret'), />=32 bytes/);
+  });
+
+  it('is a no-op when no api key is set (stdio / public HTTP)', () => {
+    Reflect.deleteProperty(process.env, STATE_KEY);
+    assert.doesNotThrow(() => assertFleetRequestStateKey(undefined));
+  });
+
+  it('is a no-op when an api key is set and the request state key is >=32 bytes', () => {
+    process.env[STATE_KEY] = 'a'.repeat(32);
+    assert.doesNotThrow(() => assertFleetRequestStateKey('sekret'));
+  });
+
+  it('ignores API_KEY in the environment — the argument is the only source', () => {
+    process.env['API_KEY'] = 'sekret';
+    Reflect.deleteProperty(process.env, STATE_KEY);
+    try {
+      assert.doesNotThrow(() => assertFleetRequestStateKey(undefined));
+    } finally {
+      Reflect.deleteProperty(process.env, 'API_KEY');
     }
-  });
-
-  it('throws when API_KEY set and request state key is missing', () => {
-    process.env['API_KEY'] = 'sekret';
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-    assert.throws(() => assertFleetRequestStateKey(), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
-  });
-
-  it('throws when API_KEY set and request state key is <32 bytes', () => {
-    process.env['API_KEY'] = 'sekret';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'short';
-    assert.throws(() => assertFleetRequestStateKey(), />=32 bytes/);
-  });
-
-  it('is a no-op when API_KEY is unset (stdio / public HTTP)', () => {
-    delete process.env['API_KEY'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-    assert.doesNotThrow(() => assertFleetRequestStateKey());
-  });
-
-  it('is a no-op when API_KEY set and request state key is >=32 bytes', () => {
-    process.env['API_KEY'] = 'sekret';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'a'.repeat(32);
-    assert.doesNotThrow(() => assertFleetRequestStateKey());
   });
 });

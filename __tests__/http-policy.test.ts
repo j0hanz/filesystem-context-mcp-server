@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import type { Request, Response } from 'express';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
+import { splitCsvList } from '../src/core/util.js';
 import {
   assertHttpBindingPolicy,
   assertHttpHostPolicy,
@@ -14,7 +15,6 @@ import {
   isAllowedLocalhostOrigin,
   isLoopbackHttpHost,
   isOriginAllowed,
-  parseAllowedHostsEnv,
   resolveAllowedHosts,
   resolveTrustProxySetting,
   validateBearerAuthorization,
@@ -26,7 +26,9 @@ interface MockResponse {
   body?: string;
   ended: boolean;
   header(name: string, value: string): MockResponse;
+  set(headers: Record<string, string>): MockResponse;
   status(code: number): MockResponse;
+  json(body: unknown): MockResponse;
   writeHead(code: number, headers?: Record<string, string>): MockResponse;
   end(chunk?: string): MockResponse;
 }
@@ -41,8 +43,22 @@ function createMockResponse(): Response & MockResponse {
       this.headers[name.toLowerCase()] = value;
       return this;
     },
+    set(headers: Record<string, string>) {
+      for (const [k, v] of Object.entries(headers)) {
+        this.headers[k.toLowerCase()] = v;
+      }
+      return this;
+    },
     status(code: number) {
       this.statusCode = code;
+      return this;
+    },
+    // Express sets the JSON content type and serializes; the mock records what
+    // the assertions read back, so `res.body` stays the JSON string either way.
+    json(body: unknown) {
+      this.headers['content-type'] = 'application/json; charset=utf-8';
+      this.body = JSON.stringify(body);
+      this.ended = true;
       return this;
     },
     writeHead(code: number, headers?: Record<string, string>) {
@@ -214,7 +230,8 @@ describe('HTTP Policy & Security', () => {
       });
       assert.strictEqual(badNext, false);
       assert.strictEqual(badRes.statusCode, 401);
-      assert.strictEqual(badRes.headers['content-type'], 'application/json');
+      // `res.json` adds the charset; every refusal this server sends carries it.
+      assert.strictEqual(badRes.headers['content-type'], 'application/json; charset=utf-8');
       assert.ok(badRes.headers['www-authenticate'], 'WWW-Authenticate header should be present');
       const body = JSON.parse(badRes.body ?? '{}');
       assert.strictEqual(body.jsonrpc, '2.0');
@@ -567,7 +584,7 @@ describe('HTTP Policy & Security', () => {
       assert.strictEqual(blockedRes.statusCode, 429, 'Status code should be 429');
       assert.strictEqual(
         blockedRes.headers['content-type'],
-        'application/json',
+        'application/json; charset=utf-8',
         'Content-Type should be application/json',
       );
       assert.ok(blockedRes.headers['retry-after'], 'Retry-After header should be present');
@@ -628,7 +645,7 @@ describe('HTTP Policy & Security', () => {
     });
   });
 
-  describe('Utility functions (isLoopbackHttpHost, parseAllowedHostsEnv, resolveTrustProxySetting)', () => {
+  describe('Utility functions (isLoopbackHttpHost, splitCsvList, resolveTrustProxySetting)', () => {
     it('isLoopbackHttpHost identifies loopback hosts correctly', () => {
       assert.strictEqual(isLoopbackHttpHost('127.0.0.1'), true);
       assert.strictEqual(isLoopbackHttpHost('localhost'), true);
@@ -640,16 +657,12 @@ describe('HTTP Policy & Security', () => {
       assert.strictEqual(isLoopbackHttpHost('192.168.1.1'), false);
     });
 
-    it('parseAllowedHostsEnv trims and filters empty items', () => {
-      assert.deepStrictEqual(parseAllowedHostsEnv('host1, host2, host3'), [
-        'host1',
-        'host2',
-        'host3',
-      ]);
-      assert.deepStrictEqual(parseAllowedHostsEnv('host1, , host2'), ['host1', 'host2']);
-      assert.deepStrictEqual(parseAllowedHostsEnv(''), []);
-      assert.deepStrictEqual(parseAllowedHostsEnv(undefined), []);
-      assert.deepStrictEqual(parseAllowedHostsEnv(' , '), []);
+    it('splitCsvList trims and filters empty items', () => {
+      assert.deepStrictEqual(splitCsvList('host1, host2, host3'), ['host1', 'host2', 'host3']);
+      assert.deepStrictEqual(splitCsvList('host1, , host2'), ['host1', 'host2']);
+      assert.deepStrictEqual(splitCsvList(''), []);
+      assert.deepStrictEqual(splitCsvList(undefined), []);
+      assert.deepStrictEqual(splitCsvList(' , '), []);
     });
 
     it('resolveTrustProxySetting parses integer hops or passes through string expressions', () => {

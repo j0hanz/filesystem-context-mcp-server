@@ -25,8 +25,10 @@ const JSONRPC_SERVER_ERROR = -32000;
  * `transport.ts` already imports this module and not the other way round; a
  * second hand-built literal is how the two drift apart.
  *
- * `headers` carries what a particular refusal owes the client on top of
- * `Content-Type` — `WWW-Authenticate` on a 401, `Retry-After` on a 429.
+ * `headers` carries what a particular refusal owes the client on top of the
+ * JSON content type — `WWW-Authenticate` on a 401, `Retry-After` on a 429.
+ * Goes out through `res.json` so every refusal keeps the `charset=utf-8` and
+ * `Content-Length` a hand-rolled `writeHead`/`end` pair drops.
  */
 export function sendJsonRpcError(
   res: Response,
@@ -36,8 +38,7 @@ export function sendJsonRpcError(
   id: string | number | null = null,
   headers: Record<string, string> = {},
 ): void {
-  res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
-  res.end(JSON.stringify({ jsonrpc: JSONRPC_VERSION, id, error: { code, message } }));
+  res.status(status).set(headers).json({ jsonrpc: JSONRPC_VERSION, id, error: { code, message } });
 }
 
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;
@@ -137,14 +138,6 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
 }
 
 /**
- * Splits `FILESYSTEM_MCP_ALLOWED_HOSTS` into trimmed, non-empty hostnames.
- * Empty entries are dropped so a value of "," or " " reads as unset rather than
- * as a list that rejects every Host. Shared by the binding policy and the app
- * wiring so both agree on what "configured" means.
- */
-export const parseAllowedHostsEnv = splitCsvList;
-
-/**
  * The Host header values this bind accepts. `FILESYSTEM_MCP_ALLOWED_HOSTS` wins
  * when set; otherwise a loopback bind takes the whole localhost hostname set (a
  * client dialing http://localhost:<port> sends `Host: localhost`, which a bare
@@ -156,7 +149,7 @@ export function resolveAllowedHosts(
   httpHost: string,
   allowedHostsEnv: string | undefined,
 ): string[] {
-  const configured = parseAllowedHostsEnv(allowedHostsEnv);
+  const configured = splitCsvList(allowedHostsEnv);
   if (configured.length > 0) return configured;
   if (isLoopbackHttpHost(httpHost)) return localhostAllowedHostnames();
   if (isWildcardHttpHost(httpHost)) return [];

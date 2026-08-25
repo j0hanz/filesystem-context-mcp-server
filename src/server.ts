@@ -100,6 +100,13 @@ export async function createServer(
     resourceStore?: ResourceStore;
     /** The protocol era this instance serves; omitted where the caller does not know. */
     era?: 'legacy' | 'modern';
+    /**
+     * The resolved HTTP credential, from `--api-key` or `API_KEY`. Lives here
+     * rather than on `ServerOptions` because that object is `PathGuard`'s
+     * constructor argument and is exposed on its public `options` field — a
+     * bearer secret has no business being reachable from a tool handler.
+     */
+    apiKey?: string;
   },
 ): Promise<FilesystemServerContext> {
   const resourceStore = extraDeps?.resourceStore ?? new ResourceStore();
@@ -111,7 +118,7 @@ export async function createServer(
     completions: {},
   } satisfies ServerCapabilities;
 
-  const cacheScope = (options.apiKey ?? process.env['API_KEY']) ? 'private' : 'public';
+  const cacheScope = extraDeps?.apiKey ? 'private' : 'public';
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,

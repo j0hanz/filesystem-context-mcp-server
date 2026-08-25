@@ -108,6 +108,20 @@ export function createWatcherRegistry() {
       desiredState.set(uri, 'subscribing');
     },
 
+    /**
+     * A subscribe that declared intent and then failed — bad URI, unvalidatable
+     * path, cap, fs.watch refusal — drops the entry entirely. Not
+     * `settleDesiredState`: that maps 'subscribing' onto 'unsubscribed' to abort
+     * an attach still mid-await, and a *finished* failure leaving 'unsubscribed'
+     * behind would make `isStale` true forever, so the modern attach path (which
+     * never calls `startSubscribe`) could never watch this uri again. Only
+     * clears its own 'subscribing' — a concurrent unsubscribe that already set
+     * 'unsubscribed' still wins.
+     */
+    cancelSubscribe(uri: string): void {
+      if (desiredState.get(uri) === 'subscribing') desiredState.delete(uri);
+    },
+
     addCallback(uri: string, notify: (uri: string) => void): void {
       let callbacks = activeCallbacks.get(uri);
       if (!callbacks) {

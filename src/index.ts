@@ -116,7 +116,7 @@ async function main(): Promise<void> {
   }
 
   if (printConfig) {
-    const apiKey = cliApiKey ?? process.env['API_KEY'];
+    const apiKey = cliApiKey;
     await runPrintConfig({
       allowedDirs,
       allowCwd,
@@ -142,20 +142,18 @@ async function main(): Promise<void> {
     console.error('Read-only mode: mutating tools disabled.');
   }
 
-  const serverOptions = {
-    allowCwd,
-    cliAllowedDirs: allowedDirs,
-    readOnly,
+  const serverOptions = { allowCwd, cliAllowedDirs: allowedDirs, readOnly };
+  const runtimeConfig = {
     ...(httpHost !== undefined ? { httpHost } : {}),
     ...(cliApiKey !== undefined ? { apiKey: cliApiKey } : {}),
   };
 
   if (port !== undefined) {
-    activeHttpServer = await startHttpServer(port, serverOptions);
+    activeHttpServer = await startHttpServer(port, serverOptions, runtimeConfig);
   } else {
     registerShutdownTrigger('end');
     registerShutdownTrigger('close');
-    activeStdioHandle = startServer(serverOptions);
+    activeStdioHandle = startServer(serverOptions, runtimeConfig);
   }
 }
 

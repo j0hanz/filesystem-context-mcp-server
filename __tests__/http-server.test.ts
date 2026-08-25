@@ -1,16 +1,20 @@
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
+import type { Server } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
+import { startHttpServer } from '../src/transport.js';
 import {
   bootHttpTest,
   cleanupTestRoot,
   createTestRoot,
   firstTextBlock,
   type HttpTestContext,
+  TEST_API_KEY,
   writeTestFile,
 } from './helpers.js';
 
@@ -84,7 +88,7 @@ describe('Real HTTP Server integration', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: 'Bearer x-test-key-0123456789',
+        Authorization: `Bearer ${TEST_API_KEY}`,
         accept: 'application/json, text/event-stream',
       },
       body: JSON.stringify({
@@ -110,7 +114,7 @@ describe('Real HTTP Server integration', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: 'Bearer x-test-key-0123456789',
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: tooBig,
     });
@@ -124,7 +128,7 @@ describe('Real HTTP Server integration', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: 'Bearer x-test-key-0123456789',
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: '{not json',
     });
@@ -142,7 +146,7 @@ describe('Real HTTP Server integration', () => {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: 'Bearer x-test-key-0123456789',
+        Authorization: `Bearer ${TEST_API_KEY}`,
         accept: 'application/json, text/event-stream',
       },
       body: JSON.stringify({
@@ -156,6 +160,67 @@ describe('Real HTTP Server integration', () => {
     const body = (await r.json()) as { error?: { code?: number; message?: string } };
     assert.strictEqual(body.error?.code, ProtocolErrorCode.InvalidParams);
     assert.ok(body.error?.message?.includes('watcher slots'));
+  });
+});
+
+// The bearer credential reaches the server as `RuntimeConfig.apiKey`, never
+// through `process.env`. These two prove the option is what the bind policy and
+// the auth middleware actually read: with API_KEY deleted from the environment
+// the option alone still demands a bearer, and with the option omitted an
+// exported API_KEY no longer turns auth on.
+describe('the api key travels as config, not env', () => {
+  let tmpDir: string;
+  let httpServer: Server;
+  let savedApiKey: string | undefined;
+  let savedStateKey: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await createTestRoot();
+    savedApiKey = process.env['API_KEY'];
+    savedStateKey = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    Reflect.deleteProperty(process.env, 'API_KEY');
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'a'.repeat(32);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => httpServer.close(resolve));
+    if (savedApiKey === undefined) Reflect.deleteProperty(process.env, 'API_KEY');
+    else process.env['API_KEY'] = savedApiKey;
+    if (savedStateKey === undefined) {
+      Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_REQUEST_STATE_KEY');
+    } else process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = savedStateKey;
+    await cleanupTestRoot(tmpDir);
+  });
+
+  it('the apiKey option demands a bearer with API_KEY absent from the environment', async () => {
+    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] }, { apiKey: TEST_API_KEY });
+    const port = (httpServer.address() as AddressInfo).port;
+    const url = new URL(`http://127.0.0.1:${port}/mcp`);
+
+    const anon = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.strictEqual(anon.status, 401, 'the option alone must switch auth on');
+    assert.match(
+      anon.headers.get('www-authenticate') ?? '',
+      /^Bearer /,
+      'the 401 must carry an RFC 6750 challenge',
+    );
+  });
+
+  it('an exported API_KEY does not switch auth on when the option is omitted', async () => {
+    process.env['API_KEY'] = TEST_API_KEY;
+    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
+    const port = (httpServer.address() as AddressInfo).port;
+
+    const anon = await fetch(new URL(`http://127.0.0.1:${port}/mcp`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.notStrictEqual(anon.status, 401, 'env is read at the CLI boundary, not here');
   });
 });
 
@@ -178,7 +243,7 @@ describe('rate limiting', () => {
   it('third authenticated POST within the window is rejected with 429', async () => {
     const headers = {
       'content-type': 'application/json',
-      Authorization: 'Bearer x-test-key-0123456789',
+      Authorization: `Bearer ${TEST_API_KEY}`,
     };
     // Lightweight bodies that the handler resolves quickly (legacy initialize
     // returns 400) so the limiter — which runs before the handler — counts

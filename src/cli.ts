@@ -371,12 +371,15 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    // `--http-host` and `--api-key` are returned to the caller and handed to
-    // the server as options. The rest still travel by env because their readers
-    // are deep in core (path, sensitive, observability) and read the operator's
-    // environment anyway.
-    const httpHost = typeof vals['http-host'] === 'string' ? vals['http-host'] : undefined;
-    const apiKey = typeof vals['api-key'] === 'string' ? vals['api-key'] : undefined;
+    // `--http-host` and `--api-key` are returned to the caller and handed to the
+    // server as config. This is the ONE place the flag-beats-env rule is
+    // written: every consumer downstream reads the resolved value and knows
+    // nothing about where it came from. The rest of the flags still travel by
+    // env because their readers are deep in core (path, sensitive,
+    // observability) and read the operator's environment anyway.
+    const httpHost =
+      typeof vals['http-host'] === 'string' ? vals['http-host'] : process.env['HTTP_HOST'];
+    const apiKey = typeof vals['api-key'] === 'string' ? vals['api-key'] : process.env['API_KEY'];
     if (typeof vals['log-level'] === 'string') process.env['LOG_LEVEL'] = vals['log-level'];
     if (typeof vals['max-file-size'] === 'string')
       process.env['MAX_FILE_SIZE'] = vals['max-file-size'];

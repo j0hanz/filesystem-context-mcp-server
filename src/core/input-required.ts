@@ -95,7 +95,7 @@ function resolveRequestStateKey(): Uint8Array {
  * (stdio / public HTTP) or when the env key is already strong. Called from
  * `startHttpServer`, never at module load.
  */
-export function assertFleetRequestStateKey(apiKey = process.env['API_KEY']): void {
+export function assertFleetRequestStateKey(apiKey: string | undefined): void {
   if (!apiKey) return;
   const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
   if (!env || Buffer.from(env, 'utf8').length < 32) {

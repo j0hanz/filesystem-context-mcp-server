@@ -123,13 +123,30 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
   return granted;
 }
 
-export function startServer(options: ServerOptions): StdioServerHandle {
+/**
+ * Runtime inputs the CLI resolves once (flag, else the operator's env var) and
+ * hands the transport. Separate from `ServerOptions` because that object is
+ * `PathGuard`'s constructor argument: the filesystem guard has no use for a
+ * bind address and no business holding a bearer secret.
+ */
+export interface RuntimeConfig {
+  /** `--http-host` or `HTTP_HOST`. The HTTP bind defaults to loopback without it. */
+  httpHost?: string;
+  /** `--api-key` or `API_KEY`. Unset means open access (loopback dev mode). */
+  apiKey?: string;
+}
+
+export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
   let activeCtx: FilesystemServerContext | undefined;
   // Shared with the resource contract so a `resources/subscribe` and a
   // `subscriptions/listen` naming the same URI reuse one watcher.
   const registry = createWatcherRegistry();
   const factory: McpServerFactory = async ({ era }) => {
-    const c = await createServer(options, { watcherRegistry: registry, era });
+    const c = await createServer(options, {
+      watcherRegistry: registry,
+      era,
+      ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
+    });
     activeCtx = c;
     if (era === 'legacy') {
       // Fires when the client's `notifications/initialized` lands. Safe to own:
@@ -308,6 +325,7 @@ function makeHttpModernFactory(
   sharedRegistry: WatcherRegistry,
   sharedPathGuard: PathGuard,
   sharedStore: ResourceStore,
+  apiKey: string | undefined,
 ): McpServerFactory {
   return async ({ era }) => {
     const notifier = getNotifier();
@@ -317,6 +335,7 @@ function makeHttpModernFactory(
       pathGuard: sharedPathGuard,
       resourceStore: sharedStore,
       era,
+      ...(apiKey !== undefined ? { apiKey } : {}),
     });
     const previousOnClose = c.mcp.server.onclose;
     c.mcp.server.onclose = () => {
@@ -463,10 +482,13 @@ function setupExpressApp(
   return app;
 }
 
-export async function startHttpServer(port: number, options: ServerOptions): Promise<Server> {
-  // CLI flag first, then the operator's environment, then the loopback default.
-  const httpHost = options.httpHost ?? process.env['HTTP_HOST'] ?? '127.0.0.1';
-  const apiKey = options.apiKey ?? process.env['API_KEY'];
+export async function startHttpServer(
+  port: number,
+  options: ServerOptions,
+  config: RuntimeConfig = {},
+): Promise<Server> {
+  const httpHost = config.httpHost ?? '127.0.0.1';
+  const { apiKey } = config;
   assertHttpBindingPolicy(httpHost, apiKey);
   // A multi-instance HTTP fleet needs a shared requestState key; refuse to boot
   // when an API key is set and the key is missing/weak (see input-required.ts).
@@ -508,6 +530,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
       sharedRegistry,
       sharedPathGuard,
       sharedStore,
+      apiKey,
     ),
     {
       legacy: 'reject',

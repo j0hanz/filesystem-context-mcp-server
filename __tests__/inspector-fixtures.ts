@@ -59,24 +59,24 @@ export function getStdioServerCommand(): string[] {
   return [process.execPath, '--import', 'tsx', join(repoRoot, 'src/index.ts')];
 }
 
-let savedApiKey: string | undefined;
-
 /**
- * Helper to launch in-process HTTP server for HTTP inspector tests.
+ * Helper to launch in-process HTTP server for HTTP inspector tests. The API key
+ * goes in as config, so two servers can run at once without fighting over one
+ * process-wide env slot.
  */
 export async function startInspectorHttp(
   port: number,
   allowedDirs: string[],
   options: { readOnly?: boolean; apiKey?: string } = {},
 ): Promise<Server> {
-  savedApiKey = process.env['API_KEY'];
-  if (options.apiKey !== undefined) {
-    process.env['API_KEY'] = options.apiKey;
-  }
-  return startHttpServer(port, {
-    cliAllowedDirs: allowedDirs,
-    ...(options.readOnly ? { readOnly: true } : {}),
-  });
+  return startHttpServer(
+    port,
+    {
+      cliAllowedDirs: allowedDirs,
+      ...(options.readOnly ? { readOnly: true } : {}),
+    },
+    { ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}) },
+  );
 }
 
 /**
@@ -88,14 +88,9 @@ export function getInspectorHttpPort(server: Server): number {
 }
 
 /**
- * Helper to close HTTP server and restore environment.
+ * Helper to close an HTTP server started by `startInspectorHttp`.
  */
 export async function stopInspectorHttp(server: Server): Promise<void> {
-  if (savedApiKey !== undefined) {
-    process.env['API_KEY'] = savedApiKey;
-  } else {
-    delete process.env['API_KEY'];
-  }
   await new Promise<void>((resolve) => {
     server.close(() => {
       resolve();

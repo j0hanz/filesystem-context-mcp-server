@@ -180,10 +180,13 @@ export async function createTestHttpHarness(
 
 export const TEST_API_KEY = 'x-test-key-0123456789';
 
-/** The env a real HTTP server needs to boot in a test: bearer, host, state key. */
+/**
+ * The one input a real HTTP server still needs from the process: the fleet
+ * request-state key, which has no CLI flag. The bearer key rides
+ * `RuntimeConfig.apiKey`, and the bind host defaults to loopback in
+ * `startHttpServer` — neither belongs in the environment any more.
+ */
 const HTTP_TEST_ENV: Record<string, string> = {
-  API_KEY: TEST_API_KEY,
-  HTTP_HOST: '127.0.0.1',
   FILESYSTEM_MCP_REQUEST_STATE_KEY: 'a'.repeat(32),
 };
 
@@ -215,9 +218,12 @@ export async function bootHttpTest(
     saved.set(key, process.env[key]);
     process.env[key] = value;
   }
-  const apiKey = env['API_KEY'] ?? TEST_API_KEY;
 
-  const httpServer = await startHttpServer(0, { cliAllowedDirs: allowedDirs });
+  const httpServer = await startHttpServer(
+    0,
+    { cliAllowedDirs: allowedDirs },
+    { apiKey: TEST_API_KEY },
+  );
   const port = (httpServer.address() as AddressInfo).port;
   const base = new URL(`http://127.0.0.1:${port}/mcp`);
   const clients: Client[] = [];
@@ -229,7 +235,7 @@ export async function bootHttpTest(
       const transport = new StreamableHTTPClientTransport(base, {
         fetch: (url, init) => {
           const headers = new Headers(init?.headers);
-          headers.set('Authorization', `Bearer ${apiKey}`);
+          headers.set('Authorization', `Bearer ${TEST_API_KEY}`);
           return fetch(url, { ...init, headers });
         },
       });

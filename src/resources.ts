@@ -168,13 +168,16 @@ function warnWatcherCap(uri: string): void {
   Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
 }
 
-export interface WatcherAttachResult {
-  /** True only when a watcher is live for this uri and `notify` is registered. */
-  ok: boolean;
-  reason?: 'stale' | 'capped' | 'bad-uri' | 'invalid-path' | 'attach-failed';
-  /** Only for `invalid-path`: what `validateExistingPath` threw. */
-  error?: unknown;
-}
+/**
+ * `ok` means a watcher is live for this uri and `notify` is registered. Every
+ * other outcome names why, and only `invalid-path` carries what
+ * `validateExistingPath` threw — so `error` is unreachable on a branch that has
+ * none.
+ */
+export type WatcherAttachResult =
+  | { ok: true }
+  | { ok: false; reason: 'stale' | 'capped' | 'bad-uri' | 'attach-failed' }
+  | { ok: false; reason: 'invalid-path'; error: unknown };
 
 /**
  * The one attach ladder both watcher entry points run: `resources/subscribe`
@@ -187,7 +190,9 @@ export interface WatcherAttachResult {
  * `markSubscribe` is the one branch that differs: only `resources/subscribe`
  * declares desired state (what `isStale` aborts against). The listen path must
  * not, or a rejected attach past that point strands a `'subscribing'` entry
- * nothing settles.
+ * nothing settles. Whoever declares it, this function settles it: every failing
+ * exit past that point cancels the declaration, so no uri is poisoned for a
+ * later attach.
  *
  * Lifetime is the caller's to manage, and the legs differ. HTTP releases per
  * stream: the listen stream is the POST's own SSE response, so `transport.ts`
@@ -203,8 +208,15 @@ export async function attachFileWatcherForUri(
   pathGuard: PathGuard,
   uri: string,
   notify: (uri: string) => void,
-  markSubscribe = false,
+  { markSubscribe = false }: { markSubscribe?: boolean } = {},
 ): Promise<WatcherAttachResult> {
+  // Every failing exit below routes through here, so the declaration made by
+  // `startSubscribe` can never outlive the attach that made it.
+  const fail = (result: WatcherAttachResult & { ok: false }): WatcherAttachResult => {
+    if (markSubscribe) registry.cancelSubscribe(uri);
+    return result;
+  };
+
   if (registry.hasWatcher(uri)) {
     // A watcher already tracks this uri; just (re)register the callback so its
     // change events reach the new subscriber. No validation or cap work is
@@ -222,16 +234,18 @@ export async function attachFileWatcherForUri(
   if (markSubscribe) registry.startSubscribe(uri);
 
   const filePath = extractPath(uri);
-  if (!filePath) return { ok: false, reason: 'bad-uri' };
+  if (!filePath) return fail({ ok: false, reason: 'bad-uri' });
 
   let resolved: string;
   try {
     resolved = await pathGuard.validateExistingPath(filePath);
   } catch (error: unknown) {
-    return { ok: false, reason: 'invalid-path', error };
+    return fail({ ok: false, reason: 'invalid-path', error });
   }
 
-  // Re-check what the await could have changed.
+  // Re-check what the await could have changed. A stale uri is the one failure
+  // that must NOT cancel: an unsubscribe landed mid-await and its
+  // 'unsubscribed' marker is the thing that aborted this attach.
   if (registry.isStale(uri)) return { ok: false, reason: 'stale' };
   if (registry.hasWatcher(uri)) {
     registry.addCallback(uri, notify);
@@ -239,7 +253,7 @@ export async function attachFileWatcherForUri(
   }
   if (registry.isAtCap()) {
     warnWatcherCap(uri);
-    return { ok: false, reason: 'capped' };
+    return fail({ ok: false, reason: 'capped' });
   }
 
   registry.addCallback(uri, notify);
@@ -247,7 +261,7 @@ export async function attachFileWatcherForUri(
     // fs.watch threw (inotify exhaustion, or a race deleted the path): roll back
     // so no dangling callback is left believing a watcher exists.
     registry.remove(uri);
-    return { ok: false, reason: 'attach-failed' };
+    return fail({ ok: false, reason: 'attach-failed' });
   }
   return { ok: true };
 }
@@ -336,7 +350,9 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     async subscribe(uri, notify) {
       if (!options.pathGuard) return;
 
-      const result = await attachFileWatcherForUri(registry, options.pathGuard, uri, notify, true);
+      const result = await attachFileWatcherForUri(registry, options.pathGuard, uri, notify, {
+        markSubscribe: true,
+      });
       if (result.ok) return undefined;
 
       if (result.reason === 'bad-uri') {
