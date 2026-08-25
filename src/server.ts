@@ -109,7 +109,6 @@ export async function createServer(
     tools: {},
     prompts: {},
     completions: {},
-    logging: {},
   } satisfies ServerCapabilities;
 
   const cacheScope = process.env['API_KEY'] ? 'private' : 'public';

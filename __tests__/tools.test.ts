@@ -769,4 +769,22 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(value.type, 'file');
     assert.ok(typeof value.size === 'number' && value.size > 0);
   });
+
+  it('TC-FUNC-072: search_text finds a literal match via callTool', async () => {
+    const dir = join(tmpDir, 'grep_dir');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'target.txt'), 'line one\nNEEDLE_MARK here\nline three\n');
+    const result = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: dir, searchPattern: 'NEEDLE_MARK' },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const structured = result.structuredContent as {
+      matches?: { line?: number; content?: string }[];
+      totalMatches?: number;
+    };
+    assert.strictEqual(structured.totalMatches, 1);
+    assert.strictEqual(structured.matches?.[0]?.line, 2);
+    assert.ok(structured.matches?.[0]?.content?.includes('NEEDLE_MARK'));
+  });
 });

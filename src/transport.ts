@@ -410,7 +410,7 @@ export async function startHttpServer(port: number, options: ServerOptions): Pro
 
   if (apiKey) {
     Logger.warn(
-      "[HTTP] subscriptions/listen resource_updated events are delivered on the handler's default in-process bus. A multi-instance fleet behind a load balancer needs a shared backend, passed via createMcpHandler's bus option, or events on one instance will not reach listeners on another.",
+      "[HTTP] subscriptions/listen resource_updated events are delivered on the handler's default in-process bus. A multi-instance fleet behind a load balancer needs a shared backend, passed via createMcpHandler's bus option, or events on one instance will not reach listeners on another. See README.md#multi-instance-http-deployments for an example.",
     );
   }
   const sharedRegistry = createWatcherRegistry();

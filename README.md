@@ -395,6 +395,52 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `NO_COLOR`                                | Any value disables ANSI color output.                                                                             |
 | `FILESYSTEM_MCP_REQUEST_STATE_KEY`        | HMAC key sealing `input_required` requestState across retry rounds (UTF-8, >=32 bytes; random per boot if unset). |
 
+#### Multi-instance HTTP deployments
+
+Each instance delivers `subscriptions/listen` change events (`resources/updated`,
+`tools/list_changed`, etc.) on an in-process bus by default. Behind a load
+balancer with more than one instance, a listener on instance A will not see an
+event published on instance B — the server logs a warning at boot when
+`API_KEY` is set for this reason.
+
+To fan events out across instances, implement the SDK's `ServerEventBus`
+interface (two methods: `publish`/`subscribe`) over whatever pub/sub you
+already run, and pass it to `createMcpHandler({ bus })`:
+
+```ts
+import type { ServerEvent, ServerEventBus } from '@modelcontextprotocol/server';
+
+import Redis from 'ioredis';
+
+// any pub/sub client works the same way
+
+class RedisServerEventBus implements ServerEventBus {
+  private readonly listeners = new Set<(event: ServerEvent) => void>();
+  private readonly pub = new Redis(process.env['REDIS_URL']);
+  private readonly sub = new Redis(process.env['REDIS_URL']);
+
+  constructor() {
+    void this.sub.subscribe('fs-mcp-events');
+    this.sub.on('message', (_channel, message) => {
+      const event = JSON.parse(message) as ServerEvent;
+      for (const listener of this.listeners) listener(event);
+    });
+  }
+
+  publish(event: ServerEvent): void {
+    void this.pub.publish('fs-mcp-events', JSON.stringify(event));
+  }
+
+  subscribe(listener: (event: ServerEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+}
+```
+
+This project ships no bus adapter and no pub/sub dependency — a single
+in-process instance (the common case) needs nothing extra.
+
 ### Examples
 
 ```bash
