@@ -34,6 +34,16 @@ export class ResourceStore {
   private readonly byUri = new Map<string, ResourceEntry>();
   private _totalBytes = 0;
 
+  private readonly onListChanged: (() => void) | undefined;
+
+  constructor(onListChanged?: () => void) {
+    this.onListChanged = onListChanged;
+  }
+
+  private emitListChanged(changed: boolean): void {
+    if (changed) this.onListChanged?.();
+  }
+
   private bumpLru(uri: string, entry: ResourceEntry): void {
     if (!this.byUri.has(uri)) {
       return;
@@ -60,7 +70,7 @@ export class ResourceStore {
     this.removeEntry(first.value.uri);
   }
 
-  private pruneExpiredEntries(now = Date.now()): void {
+  private pruneExpiredEntries(now = Date.now()): boolean {
     const toRemove: string[] = [];
     for (const entry of this.byUri.values()) {
       if (isExpired(entry, now)) {
@@ -70,6 +80,7 @@ export class ResourceStore {
     for (const uri of toRemove) {
       this.removeEntry(uri);
     }
+    return toRemove.length > 0;
   }
 
   private enforceLimits(): void {
@@ -99,6 +110,7 @@ export class ResourceStore {
 
     if (isExpired(existing)) {
       this.removeEntry(uri);
+      this.emitListChanged(true);
       throw new FsError(
         ErrorCode.NOT_FOUND,
         `Resource expired: ${uri}. Re-run the tool to regenerate.`,
@@ -110,8 +122,9 @@ export class ResourceStore {
   }
 
   private checkBeforePut(entryBytes: number): void {
-    this.pruneExpiredEntries();
+    const changed = this.pruneExpiredEntries();
     if (entryBytes > MAX_ENTRY_BYTES) {
+      this.emitListChanged(changed);
       throw new FsError(ErrorCode.TOO_LARGE, `Resource too large to cache (${entryBytes} bytes).`);
     }
   }
@@ -134,6 +147,7 @@ export class ResourceStore {
     this.byUri.set(entry.uri, entry);
     this._totalBytes += entryBytes;
     this.enforceLimits();
+    this.emitListChanged(true);
     return entry;
   }
 
@@ -144,6 +158,10 @@ export class ResourceStore {
   /**
    * Returns live URIs currently in the store.
    * Side effect: prunes expired entries before returning.
+   *
+   * Deliberately silent: this is the read path `resources/list` runs through,
+   * and the caller is already receiving the post-prune list. Emitting here
+   * would tell the client its list changed while handing it that same list.
    */
   keys(): string[] {
     this.pruneExpiredEntries();

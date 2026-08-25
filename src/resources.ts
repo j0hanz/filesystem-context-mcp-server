@@ -183,9 +183,11 @@ export type WatcherAttachResult =
  * The one attach ladder both watcher entry points run: `resources/subscribe`
  * (2025 era) and the `subscriptions/listen` filter (modern era, HTTP and
  * stdio). Never throws — it reports the outcome and lets each caller decide
- * what that is worth: subscribe owes its caller a precise error, listen skips a
- * bad or unreachable URI silently. Idempotent per URI — a second call for an
- * already-watched URI re-registers the notify callback (one watcher per URI).
+ * what that is worth: subscribe owes its caller a precise error, and listen
+ * (`prepareListenWatchers`) treats the batch as all-or-nothing, releasing every
+ * lease it already took and rejecting the request. Idempotent per URI — a
+ * second call for an already-watched URI re-registers the notify callback (one
+ * watcher per URI).
  *
  * `markSubscribe` is the one branch that differs: only `resources/subscribe`
  * declares desired state (what `isStale` aborts against). The listen path must
@@ -194,14 +196,15 @@ export type WatcherAttachResult =
  * exit past that point cancels the declaration, so no uri is poisoned for a
  * later attach.
  *
- * Lifetime is the caller's to manage, and the legs differ. HTTP releases per
- * stream: the listen stream is the POST's own SSE response, so `transport.ts`
- * calls `registry.remove` for each URI this returned `ok` for when that
- * response closes (the registry ref-counts by URI, so a watcher another stream
- * still holds survives). Stdio has no per-stream close hook on the SDK's listen
- * router, so its watchers live for the connection and are freed by the shared
- * registry's `destroy()` at close; that is bounded by MAX_WATCHERS, and a stdio
- * connection has exactly one client.
+ * Every `ok` return takes one lease; lifetime is the caller's to manage, and
+ * the legs differ. HTTP releases per stream: the listen stream is the POST's
+ * own SSE response, so `transport.ts` calls `registry.release` for each URI
+ * this returned `ok` for when that response closes (the registry ref-counts by
+ * URI, so a watcher another stream still holds survives). Stdio has no
+ * per-stream close hook on the SDK's listen router, so its watchers live for
+ * the connection and are freed by the shared registry's `destroy()` at close;
+ * that is bounded by MAX_WATCHERS, and a stdio connection has exactly one
+ * client.
  */
 export async function attachFileWatcherForUri(
   registry: WatcherRegistry,
@@ -222,6 +225,7 @@ export async function attachFileWatcherForUri(
     // change events reach the new subscriber. No validation or cap work is
     // needed for an already-live watcher.
     registry.addCallback(uri, notify);
+    registry.retain(uri);
     return { ok: true };
   }
   // A cap hit before validation and one found after the await are the same
@@ -249,6 +253,7 @@ export async function attachFileWatcherForUri(
   if (registry.isStale(uri)) return { ok: false, reason: 'stale' };
   if (registry.hasWatcher(uri)) {
     registry.addCallback(uri, notify);
+    registry.retain(uri);
     return { ok: true };
   }
   if (registry.isAtCap()) {
@@ -259,10 +264,12 @@ export async function attachFileWatcherForUri(
   registry.addCallback(uri, notify);
   if (!registry.attach(uri, resolved)) {
     // fs.watch threw (inotify exhaustion, or a race deleted the path): roll back
-    // so no dangling callback is left believing a watcher exists.
-    registry.remove(uri);
+    // so no dangling callback is left believing a watcher exists. No lease was
+    // taken yet, so `release` drops the entry outright.
+    registry.release(uri);
     return fail({ ok: false, reason: 'attach-failed' });
   }
+  registry.retain(uri);
   return { ok: true };
 }
 
@@ -377,7 +384,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     unsubscribe(uri) {
-      registry.remove(uri);
+      registry.release(uri);
     },
 
     destroy() {
@@ -533,6 +540,9 @@ export function registerResources(deps: ServerDeps): { dispose(): void } {
   // handlers on a modern-era instance would dispatch to code no request can
   // reach.
   if (deps.era !== 'modern') {
+    server.server.assertCanSetRequestHandler('resources/subscribe');
+    server.server.assertCanSetRequestHandler('resources/unsubscribe');
+
     server.server.setRequestHandler(
       'resources/subscribe',
       async (req: { params: SubscribeRequestParams }) => {

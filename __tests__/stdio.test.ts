@@ -1,7 +1,9 @@
 import type { McpSubscription } from '@modelcontextprotocol/client';
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
@@ -97,6 +99,18 @@ describe('Stdio Transport (real subprocess)', () => {
       count,
       streams,
       'one change must yield one update per listen stream; more means a stacked notify callback',
+    );
+  });
+
+  it('STDIO-005: rejects a missing filesystem resource before acknowledging the listen', async () => {
+    const uri = buildFileResourceUri(join(tmpDir, 'missing-listen.txt'));
+
+    await assert.rejects(
+      harness.client.listen({ resourceSubscriptions: [uri] }),
+      (err: unknown) => {
+        assert.equal((err as { code?: unknown }).code, ProtocolErrorCode.InvalidParams);
+        return true;
+      },
     );
   });
 });

@@ -1,17 +1,20 @@
 import type {
+  AuthInfo,
   CallToolResult,
   ContentBlock,
   InputRequiredResult,
+  JsonSchemaType,
+  JsonSchemaValidator,
+  jsonSchemaValidator,
   McpServer,
   Notification,
   RegisteredTool,
   RequestMeta,
   RequestStateAccessor,
   ServerContext,
-  StandardSchemaWithJSON,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { isInputRequiredResult } from '@modelcontextprotocol/server';
+import { fromJsonSchema, isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
@@ -38,6 +41,7 @@ import { McpProgressSink, ProgressSession, StderrProgressSink } from './progress
 export interface ToolCtx {
   readonly signal: AbortSignal;
   readonly sessionId?: string;
+  readonly authInfo?: AuthInfo;
   readonly _meta?: RequestMeta | undefined;
   readonly fs: GuardedFileSystem;
   readonly resourceStore: ResourceStore | undefined;
@@ -133,6 +137,7 @@ function toToolCtx(
   return {
     signal: ctx.mcpReq.signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+    ...(ctx.http?.authInfo ? { authInfo: ctx.http.authInfo } : {}),
     ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
     fs: new GuardedFileSystem(deps.pathGuard),
     resourceStore: deps.resourceStore,
@@ -152,6 +157,7 @@ function buildExecutionCtx(
   return {
     signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+    ...(ctx.authInfo ? { authInfo: ctx.authInfo } : {}),
     ...(ctx._meta ? { _meta: ctx._meta } : {}),
     fs: ctx.fs,
     resourceStore: ctx.resourceStore,
@@ -397,45 +403,47 @@ function createServerToolHandler<I extends z.ZodType, O extends z.ZodType>(
     new ToolExecutor<I, O>(def.name, toToolCtx(ctx, deps), def, args).execute();
 }
 
-// WHY THIS EXISTS: The SDK exports fromJsonSchema(rawSchema) which creates a
-// StandardSchemaWithJSON from a plain JSON Schema, but it validates at runtime using
-// CfWorkerJsonSchemaValidator instead of Zod. We need Zod validation (for structured
-// error messages) while serving a draft-2020-12 JSON Schema to clients. This function
-// keeps Zod's ~standard.validate intact while replacing ~standard.jsonSchema with the
-// precomputed draft-2020-12 schema. Remove when the SDK supports separate
-// validate/publication schemas in registerTool.
-function withJsonSchema<T extends z.ZodType>(
-  schema: T,
-  precomputedJsonSchema: Record<string, unknown>,
-  io: 'input' | 'output',
-): StandardSchemaWithJSON<z.infer<T>, z.infer<T>> {
-  const standard = (schema as unknown as { '~standard'?: Record<string, unknown> })['~standard'];
-  const compute = (options: { target: string }): Record<string, unknown> =>
-    options.target === 'draft-2020-12'
-      ? precomputedJsonSchema
-      : z.toJSONSchema(schema, { target: options.target as never, io });
+/**
+ * Validate with Zod while publishing the precomputed JSON Schema: clients get
+ * draft-2020-12, handlers get Zod's coercions, defaults and error messages.
+ *
+ * Each validator instance is built for exactly one schema and handed straight
+ * to `fromJsonSchema(thatSchema, ...)`, which calls `getValidator` once with
+ * the same schema — so the argument is redundant here and deliberately ignored.
+ * Reusing one instance across schemas would silently validate against `schema`.
+ */
+function zodJsonSchemaValidator(schema: z.ZodType): jsonSchemaValidator {
   return {
-    '~standard': {
-      ...(standard ?? {}),
-      jsonSchema: {
-        input: compute,
-        output: compute,
-      },
+    getValidator<U>(): JsonSchemaValidator<U> {
+      return (input: unknown) => {
+        const result = schema.safeParse(input);
+        if (result.success) {
+          return {
+            valid: true as const,
+            data: result.data as U,
+            errorMessage: undefined,
+          };
+        }
+        return {
+          valid: false as const,
+          data: undefined,
+          errorMessage: z.prettifyError(result.error),
+        };
+      };
     },
-  } as StandardSchemaWithJSON<z.infer<T>, z.infer<T>>;
+  };
+}
+
+function toDraft202012(schema: z.ZodType, io: 'input' | 'output'): JsonSchemaType {
+  const generated: unknown = z.toJSONSchema(schema, { target: 'draft-2020-12', io });
+  return generated as JsonSchemaType;
 }
 
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
-  const inputJsonSchema = z.toJSONSchema(def.input, {
-    target: 'draft-2020-12',
-    io: 'input',
-  }) as Record<string, unknown>;
-  const outputJsonSchema = z.toJSONSchema(def.output, {
-    target: 'draft-2020-12',
-    io: 'output',
-  }) as Record<string, unknown>;
+  const inputJsonSchema = toDraft202012(def.input, 'input');
+  const outputJsonSchema = toDraft202012(def.output, 'output');
 
   const annotations = { ...def.annotations, title: def.title };
   // Nothing here depends on `deps`, so it is built once per tool definition
@@ -444,8 +452,8 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   const toolDefShape = {
     title: def.title,
     description: def.description,
-    inputSchema: withJsonSchema(def.input, inputJsonSchema, 'input'),
-    outputSchema: withJsonSchema(def.output, outputJsonSchema, 'output'),
+    inputSchema: fromJsonSchema<z.infer<I>>(inputJsonSchema, zodJsonSchemaValidator(def.input)),
+    outputSchema: fromJsonSchema<z.infer<O>>(outputJsonSchema, zodJsonSchemaValidator(def.output)),
     annotations,
   };
 

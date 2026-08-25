@@ -80,7 +80,7 @@ describe('HTTP shared PathGuard (grant persistence + watcher visibility)', () =>
     assert.strictEqual(
       received,
       uri,
-      'no update means attachListenWatchers validated against a guard without the grant',
+      'no update means prepareListenWatchers validated against a guard without the grant',
     );
   });
 });

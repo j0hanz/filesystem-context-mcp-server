@@ -1,4 +1,5 @@
 import { Client, type McpSubscription } from '@modelcontextprotocol/client';
+import { InMemoryServerEventBus, ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -29,12 +30,65 @@ describe('listenSubscriptionUris', () => {
   });
 });
 
+describe('HTTP watcher fan-out and listen admission', () => {
+  let tmpDir: string;
+  let http: HttpTestContext;
+  let client: Client;
+
+  before(async () => {
+    tmpDir = await createTestRoot();
+    http = await bootHttpTest([tmpDir]);
+    client = await http.makeClient('http-listen-admission');
+  });
+
+  after(async () => {
+    await http.close();
+    await cleanupTestRoot(tmpDir);
+  });
+
+  it('rejects a missing filesystem resource before acknowledging the listen', async () => {
+    const uri = buildFileResourceUri(join(tmpDir, 'missing.txt'));
+
+    await assert.rejects(client.listen({ resourceSubscriptions: [uri] }), (err: unknown) => {
+      assert.equal((err as { code?: unknown }).code, ProtocolErrorCode.InvalidParams);
+      return true;
+    });
+  });
+
+  it('rejects a mixed valid/invalid batch and leaves the valid URI reusable', async () => {
+    const filePath = await writeTestFile(tmpDir, 'valid-after-reject.txt', 'initial');
+    const validUri = buildFileResourceUri(filePath);
+    const missingUri = buildFileResourceUri(join(tmpDir, 'missing-in-batch.txt'));
+
+    await assert.rejects(
+      client.listen({ resourceSubscriptions: [validUri, missingUri] }),
+      (err: unknown) => {
+        assert.equal((err as { code?: unknown }).code, ProtocolErrorCode.InvalidParams);
+        return true;
+      },
+    );
+
+    let received: string | undefined;
+    client.setNotificationHandler('notifications/resources/updated', (n) => {
+      received = (n.params as { uri: string }).uri;
+    });
+    const subscription = await client.listen({ resourceSubscriptions: [validUri] });
+    try {
+      await writeFile(filePath, 'changed');
+      await waitFor(() => received !== undefined);
+      assert.strictEqual(received, validUri);
+    } finally {
+      await subscription.close();
+    }
+  });
+});
+
 // Per-connection subscription gating (verify-first). Two HTTP clients over one
 // real HTTP server (one shared bus/registry): A opens a subscriptions/listen
 // for a file URI, B does not. On mutation, A must receive
 // notifications/resources/updated and B must NOT. If B receives, the shared bus
 // cross-talks across connections (the audit's Should-Fix) and step 8 installs
-// per-connection filtering. Uses the real Express server so attachListenWatchers
+// per-connection filtering. Uses the real Express server so prepareListenWatchers
 // wires the file watcher (the handler.fetch harness bypasses it).
 
 describe('HTTP per-connection subscription gating (cross-talk)', () => {
@@ -132,14 +186,14 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
   it('both subscribers receive the update for one file URI', async () => {
     const filePath = join(tmpDir, 'fanout.txt');
     const uri = buildFileResourceUri(filePath);
-    let receivedA: string | undefined;
-    let receivedB: string | undefined;
+    let countA = 0;
+    let countB = 0;
 
     clientA.setNotificationHandler('notifications/resources/updated', (n) => {
-      receivedA = (n.params as { uri: string }).uri;
+      if ((n.params as { uri: string }).uri === uri) countA += 1;
     });
     clientB.setNotificationHandler('notifications/resources/updated', (n) => {
-      receivedB = (n.params as { uri: string }).uri;
+      if ((n.params as { uri: string }).uri === uri) countB += 1;
     });
 
     subA = await clientA.listen({ resourceSubscriptions: [uri] });
@@ -147,9 +201,15 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
 
     await writeFile(filePath, 'changed');
 
-    await waitFor(() => receivedA !== undefined && receivedB !== undefined);
-    assert.strictEqual(receivedA, uri, 'subscriber A must receive the update');
-    assert.strictEqual(receivedB, uri, 'subscriber B must receive the update');
+    await waitFor(() => countA >= 1 && countB >= 1);
+    await setTimeout(150);
+    assert.strictEqual(countA, 1, 'subscriber A must receive exactly one update');
+    assert.strictEqual(countB, 1, 'subscriber B must receive exactly one update');
+
+    await subA.close();
+    await subB.close();
+    subA = undefined;
+    subB = undefined;
   });
 
   it('remaining subscriber still receives updates after one unsubscribes', async () => {
@@ -254,6 +314,39 @@ describe('HTTP resourcesListChanged listen filter', () => {
     }));
   });
 
+  describe('HTTP resourcesListChanged injected bus', () => {
+    let tmpDir: string;
+    let http: HttpTestContext;
+    let client: Client;
+    let sub: McpSubscription | undefined;
+    const bus = new InMemoryServerEventBus();
+
+    before(async () => {
+      tmpDir = await createTestRoot();
+      http = await bootHttpTest([tmpDir], {}, { eventBus: bus });
+      client = await http.makeClient('http-injected-bus');
+    });
+
+    after(async () => {
+      await sub?.close().catch(() => {});
+      await http.close();
+      await cleanupTestRoot(tmpDir);
+    });
+
+    it('delivers an event published through the supplied ServerEventBus', async () => {
+      let received = false;
+      client.setNotificationHandler('notifications/resources/list_changed', () => {
+        received = true;
+      });
+      sub = await client.listen({ resourcesListChanged: true });
+
+      bus.publish({ kind: 'resources_list_changed' });
+
+      await waitFor(() => received);
+      assert.strictEqual(received, true);
+    });
+  });
+
   after(async () => {
     await sub?.close().catch(() => {});
     await http.close();
@@ -275,6 +368,43 @@ describe('HTTP resourcesListChanged listen filter', () => {
       assert.notStrictEqual(r.isError, true, 'granted read must succeed');
       await waitFor(() => received);
       assert.strictEqual(received, true, 'list-changed listener must be notified on grant');
+    } finally {
+      await sub.close().catch(() => {});
+      sub = undefined;
+    }
+  });
+
+  it('an externalized result invalidates resources/list and appears after refresh', async () => {
+    const file = await writeTestFile(rootDir, 'hash-result.txt', 'body');
+    const before = await client.listResources();
+    let received = false;
+    client.setNotificationHandler('notifications/resources/list_changed', () => {
+      received = true;
+    });
+    sub = await client.listen({ resourcesListChanged: true });
+
+    try {
+      const result = (await client.callTool({
+        name: 'hash_file',
+        arguments: { path: file },
+      })) as { structuredContent?: { resourceUri?: string } };
+      const uri = result.structuredContent?.resourceUri;
+      assert.ok(uri, 'hash_file must externalize a result resource');
+
+      await waitFor(() => received);
+      assert.strictEqual(received, true, 'result insertion must emit resources/list_changed');
+
+      const after = await client.listResources();
+      assert.strictEqual(
+        before.resources.some((resource) => resource.uri === uri),
+        false,
+        'the result must not exist before the tool call',
+      );
+      assert.strictEqual(
+        after.resources.some((resource) => resource.uri === uri),
+        true,
+        'the invalidated resource list must contain the result URI',
+      );
     } finally {
       await sub.close().catch(() => {});
       sub = undefined;
@@ -321,23 +451,22 @@ describe('HTTP duplicate listen does not consume capacity', () => {
       received = (n.params as { uri: string }).uri;
     });
 
-    // Establish the watcher for `uri` first, and prove — via a real
-    // delivered notification, not a fixed wait — that it is actually live in
-    // the registry (attachListenWatchers runs async after the SSE response
-    // is already sent, so `.listen()` resolving does not itself guarantee
-    // the watcher has attached yet).
+    // Establish the watcher for `uri` first and prove it is live through a
+    // delivered notification.
     sub = await client.listen({ resourceSubscriptions: [uri] });
     await writeFile(filePath, 'first-change');
     await waitFor(() => received !== undefined);
     assert.strictEqual(received, uri, 'the real watcher must be live before the batch check');
 
-    // `uri` now occupies exactly one slot. Fill every remaining slot with
-    // new, non-existent URIs and include `uri` again in the same batch. A
-    // second `.listen()` on the same (already-initialized) client reuses its
-    // session/protocol-version handshake, unlike a bare fetch, so the only
-    // thing under test is the capacity pre-check.
-    const fakeUris = Array.from({ length: MAX_WATCHERS - 1 }, (_, i) => `file:///fake-dup-${i}`);
-    const sub2 = await client.listen({ resourceSubscriptions: [uri, ...fakeUris] });
+    // `uri` now occupies exactly one slot. Fill every remaining slot with real
+    // files and include `uri` again in the same batch. The already-watched URI
+    // must not be counted as a new watcher by the capacity pre-check.
+    const capacityUris = await Promise.all(
+      Array.from({ length: MAX_WATCHERS - 1 }, async (_, i) =>
+        buildFileResourceUri(await writeTestFile(tmpDir, `capacity-${String(i)}.txt`, String(i))),
+      ),
+    );
+    const sub2 = await client.listen({ resourceSubscriptions: [uri, ...capacityUris] });
     await sub2.close();
   });
 });

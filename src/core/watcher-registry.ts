@@ -17,19 +17,17 @@ export const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4
  */
 export function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
-  // A URI may have several subscribers; each subscriber's notify callback lives
-  // in the Set. `addCallback` adds (not replaces), so a second subscriber no
-  // longer silently drops the first's callback. The unsubscribe protocol
-  // carries no subscription id, so `remove(uri)` ref-counts by URI: it only
-  // tears down the shared watcher when the last subscriber leaves. A departed
-  // subscriber's notify closure lingers in the Set until then; its transport is
-  // gone and `sendResourceUpdated` already swallows closed-transport errors, so
-  // the remaining subscribers keep receiving updates.
+  // A URI may have several notification sinks and several independent leases.
+  // Callback identity and lifetime are intentionally separate: the HTTP leg
+  // uses one stable bus-publishing callback for every listen stream, while each
+  // stream still owns one lease that must be released on close.
   // ponytail: no per-subscription id in the SDK unsubscribe contract, so we
-  // ref-count by URI, not by callback identity. If a same client re-subscribes
-  // to the same URI with a fresh closure (without unsubscribing first), the
-  // count over-counts and the watcher leaks past the last unsubscribe — bounded
-  // by MAX_WATCHERS; add per-subscription-id keying if that churn is observed.
+  // ref-count by URI. A departed direct-notification callback can linger until
+  // the final lease ends; sends to a closed transport already fail harmlessly.
+  // The count outlives the watcher (see `dropWatcher`), so a URI whose watcher
+  // errored keeps one map entry per still-unreleased lease until they drain —
+  // no watcher slot, just bookkeeping. Per-subscription-id keying retires both
+  // this and the unsubscribe-by-URI over-release if that churn is observed.
   const activeCallbacks = new Map<string, Set<(uri: string) => void>>();
   const subscriberCounts = new Map<string, number>();
   const desiredState = new Map<string, 'subscribed' | 'unsubscribed' | 'subscribing'>();
@@ -52,6 +50,11 @@ export function createWatcherRegistry() {
     }
   };
 
+  // Tears down the watcher itself, NOT the ref-count. The 'error' event calls
+  // this with leases still outstanding: clearing the count there would let the
+  // next release from one of those leases decrement from zero and drop a
+  // watcher a later subscriber re-established for the same URI. `drop` below is
+  // the only path that ends leases, and it is the only one that clears them.
   const dropWatcher = (uri: string, watcher: FSWatcher): void => {
     const current = watchers.get(uri);
     if (current !== watcher) return;
@@ -62,6 +65,19 @@ export function createWatcherRegistry() {
     }
     watcher.close();
     watchers.delete(uri);
+    activeCallbacks.delete(uri);
+    settleDesiredState(uri);
+  };
+
+  /** The last lease ended: drop the watcher and every trace of the URI. */
+  const drop = (uri: string): void => {
+    const timer = debounceTimers.get(uri);
+    if (timer) {
+      clearTimeout(timer);
+      debounceTimers.delete(uri);
+    }
+    const watcher = watchers.get(uri);
+    if (watcher) dropWatcher(uri, watcher);
     activeCallbacks.delete(uri);
     subscriberCounts.delete(uri);
     settleDesiredState(uri);
@@ -128,13 +144,12 @@ export function createWatcherRegistry() {
         callbacks = new Set();
         activeCallbacks.set(uri, callbacks);
       }
-      // Only count a genuinely new subscriber; a duplicate add of the same
-      // closure (idempotent re-subscribe) must not inflate the ref count.
-      if (!callbacks.has(notify)) {
-        subscriberCounts.set(uri, (subscriberCounts.get(uri) ?? 0) + 1);
-      }
       callbacks.add(notify);
       desiredState.set(uri, 'subscribed');
+    },
+
+    retain(uri: string): void {
+      subscriberCounts.set(uri, (subscriberCounts.get(uri) ?? 0) + 1);
     },
 
     attach(uri: string, resolvedPath: string): boolean {
@@ -153,6 +168,14 @@ export function createWatcherRegistry() {
           Logger.warn(`Watcher error for ${uri}: ${err.message}`);
           dropWatcher(uri, watcher);
         });
+        // Two attaches that both cleared `hasWatcher` before either finished
+        // validating land here for the same uri. Keep the one already wired to
+        // the callback set and close this one — overwriting the map entry would
+        // strand the first watcher's fd with nothing left holding a reference.
+        if (watchers.has(uri)) {
+          watcher.close();
+          return true;
+        }
         watchers.set(uri, watcher);
         return true;
       } catch (err) {
@@ -161,28 +184,18 @@ export function createWatcherRegistry() {
       }
     },
 
-    remove(uri: string): void {
-      // Ref-count by URI: only tear down the shared watcher when the last
-      // subscriber leaves. While others remain, the departed subscriber's
-      // closure lingers (see the activeCallbacks comment above) and the watcher
-      // stays live so the remaining subscribers keep receiving updates.
+    /**
+     * Ref-count by URI: only tear down the shared watcher when the last lease
+     * ends. Callback identity is independent from this count. A release with no
+     * lease outstanding (a rolled-back attach) drops the watcher outright.
+     */
+    release(uri: string): void {
       const remaining = (subscriberCounts.get(uri) ?? 0) - 1;
       if (remaining > 0) {
         subscriberCounts.set(uri, remaining);
         return;
       }
-      subscriberCounts.delete(uri);
-      settleDesiredState(uri);
-      activeCallbacks.delete(uri);
-      const timer = debounceTimers.get(uri);
-      if (timer) {
-        clearTimeout(timer);
-        debounceTimers.delete(uri);
-      }
-      const watcher = watchers.get(uri);
-      if (watcher) {
-        dropWatcher(uri, watcher);
-      }
+      drop(uri);
     },
 
     destroy(): void {

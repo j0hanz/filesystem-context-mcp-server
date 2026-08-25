@@ -137,6 +137,21 @@ describe('Real HTTP Server integration', () => {
     assert.ok(body.error, '400 must carry a JSON-RPC error object');
   });
 
+  it('GET and DELETE /mcp preserve the SDK JSON-RPC 405 response', async () => {
+    for (const method of ['GET', 'DELETE']) {
+      const r = await fetch(base, {
+        method,
+        headers: { Authorization: ['Bearer', TEST_API_KEY].join(' ') },
+      });
+      assert.strictEqual(r.status, 405);
+      assert.match(r.headers.get('content-type') ?? '', /^application\/json/u);
+      assert.strictEqual(r.headers.get('allow'), 'POST, OPTIONS', 'RFC 9110 §15.5.6');
+      const body = (await r.json()) as { error?: { code?: number; message?: string } };
+      assert.strictEqual(body.error?.code, -32000);
+      assert.strictEqual(body.error?.message, 'Method not allowed.');
+    }
+  });
+
   it('7. subscriptions/listen over remaining watcher capacity -> 400 InvalidParams pre-ack', async () => {
     const resourceSubscriptions = Array.from(
       { length: MAX_WATCHERS + 1 },

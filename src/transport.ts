@@ -4,10 +4,15 @@ import type {
   JSONRPCMessage,
   McpHttpHandler,
   McpServerFactory,
+  MessageExtraInfo,
+  ServerEventBus,
+  Transport,
+  TransportSendOptions,
 } from '@modelcontextprotocol/server';
 import {
   createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
+  JSONRPC_VERSION,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 import {
@@ -134,6 +139,95 @@ export interface RuntimeConfig {
   httpHost?: string;
   /** `--api-key` or `API_KEY`. Unset means open access (loopback dev mode). */
   apiKey?: string;
+  /** Shared change-event bus for multi-instance HTTP deployments. Caller-owned. */
+  eventBus?: ServerEventBus;
+}
+
+/** A gate either lets the message through to the SDK or answers it itself. */
+interface InboundGate {
+  /**
+   * Cheap synchronous test for "does this message need gating at all". Only a
+   * message that answers `true` enters the serialized queue below; everything
+   * else is forwarded on the spot, so one slow gate run cannot stall the
+   * connection's other traffic (a `notifications/cancelled` for the very
+   * request being gated, most of all).
+   */
+  applies(message: JSONRPCMessage): boolean;
+  run(
+    message: JSONRPCMessage,
+  ): Promise<{ action: 'forward' } | { action: 'respond'; message: JSONRPCMessage }>;
+}
+
+class GatedStdioTransport implements Transport {
+  public onclose?: () => void;
+  public onerror?: (error: Error) => void;
+  public onmessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
+
+  readonly #inner: StdioServerTransport;
+  readonly #gate: InboundGate;
+  #incoming = Promise.resolve();
+
+  constructor(inner: StdioServerTransport, gate: InboundGate) {
+    this.#inner = inner;
+    this.#gate = gate;
+  }
+
+  async start(): Promise<void> {
+    this.#inner.onclose = () => {
+      this.onclose?.();
+    };
+    this.#inner.onerror = (error) => {
+      this.onerror?.(error);
+    };
+    this.#inner.onmessage = (message: JSONRPCMessage) => {
+      if (!this.#gate.applies(message)) {
+        this.onmessage?.(message);
+        return;
+      }
+      // Gated messages stay ordered among themselves: two listens naming the
+      // same URI must not race the registry's ref-count.
+      this.#incoming = this.#incoming
+        .then(async () => {
+          const result = await this.#gate.run(message);
+          if (result.action === 'respond') {
+            await this.#inner.send(result.message);
+            return;
+          }
+          this.onmessage?.(message);
+        })
+        .catch(async (error: unknown) => {
+          const failure =
+            error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
+          this.onerror?.(failure);
+          // The gate swallowed the message, so nothing downstream will answer
+          // it. Without this the client waits out its whole request timeout.
+          const id = jsonRpcRequestId(message);
+          if (id === null) return;
+          await this.#inner
+            .send({
+              jsonrpc: JSONRPC_VERSION,
+              id,
+              error: { code: ProtocolErrorCode.InternalError, message: failure.message },
+            })
+            .catch(() => {
+              /* the wire is gone; onerror above already reported it */
+            });
+        });
+    };
+    await this.#inner.start();
+  }
+
+  // `TransportSendOptions` is accepted and dropped: `StdioServerTransport.send`
+  // takes no options (one shared channel, so there is no per-request stream to
+  // relate an outbound message to). Declaring the parameter keeps the wrapper
+  // substitutable for the inner transport if the SDK ever starts passing one.
+  send(message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {
+    return this.#inner.send(message);
+  }
+
+  close(): Promise<void> {
+    return this.#inner.close();
+  }
 }
 
 export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
@@ -163,15 +257,6 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
     return c.mcp;
   };
 
-  const wire = new StdioServerTransport();
-  const handle = serveStdio(factory, {
-    legacy: 'serve',
-    transport: wire,
-    onerror: (error: unknown) => {
-      Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
-    },
-  });
-
   // One sink for the whole connection. `addCallback` de-duplicates by function
   // identity, so re-using this closure makes a repeat `subscriptions/listen` on
   // an already-watched URI a no-op; a fresh closure per listen would instead
@@ -189,38 +274,42 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
     });
   };
 
-  const attachForListen = (message: JSONRPCMessage): void => {
-    const uris = listenSubscriptionUris(message);
-    if (uris.length === 0) return;
-    const ctx = activeCtx;
-    if (!ctx) return;
-    for (const uri of uris) {
-      void attachFileWatcherForUri(registry, ctx.pathGuard, uri, sink).catch((err: unknown) => {
-        Logger.warn(
-          `[Stdio] listen watcher attach failed for ${uri}:`,
-          formatUnknownErrorMessage(err),
-        );
-      });
-    }
-  };
+  const rawWire = new StdioServerTransport();
+  const wire = new GatedStdioTransport(rawWire, {
+    applies: (message) => listenSubscriptionUris(message).length > 0,
 
-  // Intercept through an accessor, not a one-shot reassignment: `serveStdio`
-  // installs the SDK's own `onmessage` and may reinstall it later (reconnect,
-  // legacy branch swap). A plain wrapper would be overwritten by that, silently
-  // dropping the tap and leaving every listen subscription watcher-less with no
-  // error. The setter re-wraps instead, so whatever the SDK assigns stays
-  // downstream of `attachForListen`.
-  let sdkOnMessage = wire.onmessage;
-  const tap = (message: JSONRPCMessage): void => {
-    attachForListen(message);
-    sdkOnMessage?.(message);
-  };
-  Object.defineProperty(wire, 'onmessage', {
-    configurable: true,
-    enumerable: true,
-    get: () => tap,
-    set: (next: typeof sdkOnMessage) => {
-      sdkOnMessage = next;
+    // Every lease this takes is held for the rest of the connection: stdio has
+    // no per-stream close hook, so nothing releases them and `registry.destroy`
+    // at close is the only teardown. That covers a listen the SDK goes on to
+    // reject too — the watcher stays until the connection ends, bounded by
+    // MAX_WATCHERS. Per-subscription release needs the id the unsubscribe
+    // contract does not carry (see watcher-registry.ts).
+    run: async (message) => {
+      const id = jsonRpcRequestId(message);
+      const ctx = activeCtx;
+      if (id === null || !ctx) return { action: 'forward' };
+
+      const prepared = await prepareListenWatchers(message, ctx.pathGuard, registry, sink);
+      if (prepared.ok) return { action: 'forward' };
+
+      return {
+        action: 'respond',
+        message: {
+          jsonrpc: JSONRPC_VERSION,
+          id,
+          error: {
+            code: ProtocolErrorCode.InvalidParams,
+            message: prepared.message,
+          },
+        },
+      };
+    },
+  });
+  const handle = serveStdio(factory, {
+    legacy: 'serve',
+    transport: wire,
+    onerror: (error: unknown) => {
+      Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
     },
   });
 
@@ -288,35 +377,55 @@ export function listenSubscriptionUris(parsedBody: unknown): string[] {
 }
 
 /**
- * Attach filesystem watchers for the URIs named in a `subscriptions/listen`
- * filter. Returns the URIs that actually got a watcher, so the caller can
- * release exactly those when the stream ends.
+ * The code the SDK's own non-POST rejection carries. Not a `ProtocolErrorCode`
+ * member — the enum has no `-32000` — so it is pinned here to keep the local
+ * 405 envelope identical to the one the handler would have produced.
  */
-async function attachListenWatchers(
+const SDK_METHOD_NOT_ALLOWED_CODE = -32000;
+
+type ListenPreparation =
+  | { readonly ok: true; readonly acquiredUris: string[] }
+  | { readonly ok: false; readonly message: string };
+
+const WATCHER_FAILURE_REASONS = {
+  'bad-uri': 'unsupported resource URI',
+  capped: `watcher limit ${MAX_WATCHERS} reached`,
+  'attach-failed': 'filesystem watcher could not be created',
+  stale: 'subscription was cancelled during setup',
+} as const;
+
+function watcherFailureMessage(
+  uri: string,
+  result: Exclude<Awaited<ReturnType<typeof attachFileWatcherForUri>>, { ok: true }>,
+): string {
+  const why =
+    result.reason === 'invalid-path'
+      ? formatUnknownErrorMessage(result.error)
+      : WATCHER_FAILURE_REASONS[result.reason];
+  return `Cannot subscribe to ${uri}: ${why}`;
+}
+
+/**
+ * Prepare every filesystem watcher named by a `subscriptions/listen` filter.
+ * The batch is all-or-nothing: a failed URI releases each prior lease.
+ */
+async function prepareListenWatchers(
   parsedBody: unknown,
   pathGuard: PathGuard,
   registry: WatcherRegistry,
-  notifier: ServerNotifier,
-): Promise<string[]> {
+  notify: (uri: string) => void,
+): Promise<ListenPreparation> {
   const uris = listenSubscriptionUris(parsedBody);
-  if (uris.length === 0) return [];
-  const sink = (uri: string): void => {
-    notifier.resourceUpdated(uri);
-  };
-  const attached: string[] = [];
+  const acquired: string[] = [];
   for (const uri of uris) {
-    try {
-      if ((await attachFileWatcherForUri(registry, pathGuard, uri, sink)).ok) {
-        attached.push(uri);
-      }
-    } catch (err: unknown) {
-      Logger.warn(
-        `[HTTP] listen watcher attach failed for ${uri}:`,
-        formatUnknownErrorMessage(err),
-      );
+    const result = await attachFileWatcherForUri(registry, pathGuard, uri, notify);
+    if (!result.ok) {
+      for (const prior of acquired) registry.release(prior);
+      return { ok: false, message: watcherFailureMessage(uri, result) };
     }
+    acquired.push(uri);
   }
-  return attached;
+  return { ok: true, acquiredUris: acquired };
 }
 
 function makeHttpModernFactory(
@@ -420,52 +529,80 @@ function setupExpressApp(
 
   app.use('/mcp', bearerAuthMiddleware(apiKey, allowedHosts.length > 0, publicUrl));
 
+  const resourceUpdateSink = (uri: string): void => {
+    notifier.resourceUpdated(uri);
+  };
+
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
-    const parsedBody = req.body as unknown;
-    // Reject an over-cap listen before the ack so the client does not believe
-    // every requested URI is watched when the watcher budget is exhausted.
-    const requestedUris = listenSubscriptionUris(parsedBody);
-    // Only URIs without a live watcher consume a slot; a re-listen to an
-    // already-watched URI just adds a callback (attachFileWatcherForUri
-    // short-circuits on hasWatcher), so it must not count against capacity.
-    const newUris = requestedUris.filter((uri) => !sharedRegistry.hasWatcher(uri));
-    // Pre-check against *remaining* capacity so a registry already near the cap
-    // rejects the batch pre-ack instead of silently dropping URIs. Best-effort:
-    // a concurrent listen can still race past this and be dropped at attach by
-    // `isAtCap` — but that path already logs and the client gets no ack for it.
-    const available = MAX_WATCHERS - sharedRegistry.size();
-    if (newUris.length > available) {
-      sendJsonRpcError(
-        res,
-        400,
-        ProtocolErrorCode.InvalidParams,
-        `subscriptions/listen names ${newUris.length} not-yet-watched URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
-        jsonRpcRequestId(parsedBody),
+    void (async () => {
+      const parsedBody = req.body as unknown;
+      // Reject an over-cap listen before the ack so the client does not believe
+      // every requested URI is watched when the watcher budget is exhausted.
+      const requestedUris = listenSubscriptionUris(parsedBody);
+      // Only URIs without a live watcher consume a slot; a re-listen to an
+      // already-watched URI just retains another lease.
+      const newUris = requestedUris.filter((uri) => !sharedRegistry.hasWatcher(uri));
+      const available = MAX_WATCHERS - sharedRegistry.size();
+      if (newUris.length > available) {
+        sendJsonRpcError(
+          res,
+          400,
+          ProtocolErrorCode.InvalidParams,
+          `subscriptions/listen names ${newUris.length} not-yet-watched URIs but only ${available} watcher slots remain (cap ${MAX_WATCHERS}). Reduce the resourceSubscriptions list.`,
+          jsonRpcRequestId(parsedBody),
+        );
+        return;
+      }
+
+      const prepared = await prepareListenWatchers(
+        parsedBody,
+        sharedPathGuard,
+        sharedRegistry,
+        resourceUpdateSink,
       );
-      return;
-    }
-    // Best-effort: fire-and-forget so a watcher error never blocks the request.
-    void attachListenWatchers(parsedBody, sharedPathGuard, sharedRegistry, notifier)
-      .then((attached) => {
-        if (attached.length === 0) return;
-        // The listen stream IS this POST's SSE response, so its close is the
-        // teardown hook the SDK handler does not expose. `remove` ref-counts by
-        // URI, so a watcher another stream also holds survives. The attach is
-        // async, so the response may already be gone — release now if so.
-        const release = (): void => {
-          for (const uri of attached) sharedRegistry.remove(uri);
-        };
-        if (res.writableEnded || res.destroyed) release();
+      if (!prepared.ok) {
+        sendJsonRpcError(
+          res,
+          400,
+          ProtocolErrorCode.InvalidParams,
+          prepared.message,
+          jsonRpcRequestId(parsedBody),
+        );
+        return;
+      }
+
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        for (const uri of prepared.acquiredUris) sharedRegistry.release(uri);
+      };
+      if (prepared.acquiredUris.length > 0) {
+        // The attach loop awaits per-URI path validation, so the client can be
+        // gone by the time it returns. `close` fires once: a listener attached
+        // after it would never run and every lease this batch took would leak
+        // until process shutdown.
+        if (res.closed || res.destroyed || res.writableEnded) release();
         else res.once('close', release);
-      })
-      .catch((err: unknown) => {
-        Logger.warn('[HTTP] listen watcher attach error:', formatUnknownErrorMessage(err));
-      });
-    modernNodeHandler(req, res, parsedBody).catch(next);
+      }
+
+      try {
+        await modernNodeHandler(req, res, parsedBody);
+      } catch (error) {
+        release();
+        throw error;
+      }
+    })().catch(next);
   });
 
+  // Answer non-POST here rather than handing it to `modernNodeHandler`. The
+  // SDK's own 405 is byte-identical to this one, but it omits the `Allow`
+  // header RFC 9110 §15.5.6 requires and routes every routine GET probe through
+  // the handler's `onerror` — which this server logs at error level.
   app.all('/mcp', (_req: Request, res: Response) => {
-    res.status(405).set('Allow', 'POST, OPTIONS').end();
+    sendJsonRpcError(res, 405, SDK_METHOD_NOT_ALLOWED_CODE, 'Method not allowed.', null, {
+      Allow: 'POST, OPTIONS',
+    });
   });
 
   app.use(errorHandlerMiddleware);
@@ -488,7 +625,7 @@ export async function startHttpServer(
   config: RuntimeConfig = {},
 ): Promise<Server> {
   const httpHost = config.httpHost ?? '127.0.0.1';
-  const { apiKey } = config;
+  const { apiKey, eventBus } = config;
   assertHttpBindingPolicy(httpHost, apiKey);
   // A multi-instance HTTP fleet needs a shared requestState key; refuse to boot
   // when an API key is set and the key is missing/weak (see input-required.ts).
@@ -500,7 +637,7 @@ export async function startHttpServer(
     process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
   );
 
-  if (apiKey) {
+  if (apiKey && !eventBus) {
     Logger.warn(
       "[HTTP] subscriptions/listen resource_updated events are delivered on the handler's default in-process bus. A multi-instance fleet behind a load balancer needs a shared backend, passed via createMcpHandler's bus option, or events on one instance will not reach listeners on another. See README.md#multi-instance-http-deployments for an example.",
     );
@@ -511,7 +648,11 @@ export async function startHttpServer(
   // one POST must survive to the follow-up resources/read, and the modern leg
   // builds a fresh McpServer per request so a per-request store would discard
   // it immediately.
-  const sharedStore = new ResourceStore();
+  // Fires only from a tool call, which is long after `modernHandler` below is
+  // constructed, so reading it from the closure is safe (same as `getNotifier`).
+  const sharedStore = new ResourceStore(() => {
+    modernHandler.notify.resourcesChanged();
+  });
   // One guard for the whole endpoint. The modern leg builds a fresh McpServer
   // per request, so a per-instance guard would discard every accepted access
   // grant the moment the request ended — re-prompting on each subsequent call
@@ -534,6 +675,7 @@ export async function startHttpServer(
     ),
     {
       legacy: 'reject',
+      ...(eventBus ? { bus: eventBus } : {}),
       onerror: (error: Error) => {
         Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
       },

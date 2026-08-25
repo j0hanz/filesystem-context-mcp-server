@@ -19,6 +19,7 @@ import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
 
 export type { ServerNotifier };
+export type { ServerOptions };
 
 export interface ServerDeps {
   readonly server: McpServer;
@@ -109,8 +110,6 @@ export async function createServer(
     apiKey?: string;
   },
 ): Promise<FilesystemServerContext> {
-  const resourceStore = extraDeps?.resourceStore ?? new ResourceStore();
-
   const capabilities = {
     resources: { subscribe: true, listChanged: true },
     tools: {},
@@ -155,6 +154,19 @@ export async function createServer(
     Logger.debug('Unhandled client notification', { method: notification.method });
     return Promise.resolve();
   };
+
+  // A failed send means the connection went away; nothing to recover.
+  const resourceStore =
+    extraDeps?.resourceStore ??
+    new ResourceStore(() => {
+      if (extraDeps?.notifier) {
+        extraDeps.notifier.resourcesChanged();
+        return;
+      }
+      void server.server.sendResourceListChanged().catch((error: unknown) => {
+        Logger.debug('resource list_changed not delivered', { error: String(error) });
+      });
+    });
 
   const pathGuard = extraDeps?.pathGuard ?? new PathGuard(options, true);
   // Recompute once per guard, keyed on the guard's own state rather than on

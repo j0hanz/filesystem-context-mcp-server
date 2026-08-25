@@ -405,11 +405,12 @@ event published on instance B — the server logs a warning at boot when
 
 To fan events out across instances, implement the SDK's `ServerEventBus`
 interface (two methods: `publish`/`subscribe`) over whatever pub/sub you
-already run, and pass it to `createMcpHandler({ bus })`:
+already run, then pass it to filesystem-mcp's programmatic HTTP entry:
 
 ```ts
 import type { ServerEvent, ServerEventBus } from '@modelcontextprotocol/server';
 
+import { startHttpServer } from '@j0hanz/filesystem-mcp/transport';
 import Redis from 'ioredis';
 
 // any pub/sub client works the same way
@@ -436,6 +437,12 @@ class RedisServerEventBus implements ServerEventBus {
     return () => this.listeners.delete(listener);
   }
 }
+
+const eventBus = new RedisServerEventBus();
+const apiKey = process.env['API_KEY'];
+if (!apiKey) throw new Error('API_KEY is required for a multi-instance HTTP deployment');
+
+await startHttpServer(3000, { cliAllowedDirs: ['/workspace'] }, { apiKey, eventBus });
 ```
 
 This project ships no bus adapter and no pub/sub dependency — a single

@@ -18,6 +18,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./transport": {
+      "types": "./dist/transport.d.ts",
+      "default": "./dist/transport.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

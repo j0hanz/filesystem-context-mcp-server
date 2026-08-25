@@ -1,4 +1,4 @@
-import { ProtocolErrorCode, ResourceNotFoundError } from '@modelcontextprotocol/server';
+import { McpServer, ProtocolErrorCode, ResourceNotFoundError } from '@modelcontextprotocol/server';
 import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/instructions.js';
-import { getResourceContracts } from '../src/resources.js';
+import { getResourceContracts, registerResources } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
 import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
@@ -197,6 +197,25 @@ describe('MCP Resources', () => {
         { code: ProtocolErrorCode.InvalidParams },
       );
     });
+
+    it('TC-FUNC-060A: resourcesListChanged emits once per ResourceStore mutation', () => {
+      let notifications = 0;
+      const store = new ResourceStore(() => {
+        notifications += 1;
+      });
+
+      store.putText({ name: 'first', text: 'first' });
+      assert.strictEqual(notifications, 1, 'insertion must emit one list change');
+
+      for (let i = 1; i < 64; i += 1) {
+        store.putText({ name: `entry-${String(i)}`, text: String(i) });
+      }
+      notifications = 0;
+      store.putText({ name: 'evicting-entry', text: 'last' });
+
+      assert.strictEqual(notifications, 1, 'insert plus eviction must be coalesced');
+      assert.strictEqual(store.keys().length, 64, 'entry limit must still be enforced');
+    });
   });
 
   describe('filesystem-mcp://file/{+path} (TC-FUNC-061–066)', () => {
@@ -300,12 +319,44 @@ describe('MCP Resources', () => {
       const testUri = buildFileResourceUri(testFile);
 
       registry.addCallback(testUri, () => {});
+      registry.retain(testUri);
       registry.attach(testUri, testFile);
       assert.strictEqual(registry.hasWatcher(testUri), true);
 
-      registry.remove(testUri);
+      registry.release(testUri);
       assert.strictEqual(registry.hasWatcher(testUri), false);
       assert.strictEqual(registry.isStale(testUri), false);
+
+      registry.destroy();
+    });
+
+    it('TC-FUNC-064A: WatcherRegistry - callback identity is independent from leases', async () => {
+      const registry = createWatcherRegistry();
+      const testFile = await writeTestFile(tmpDir, 'lease_test.txt', 'content');
+      const testUri = buildFileResourceUri(testFile);
+      let notifications = 0;
+      const callback = () => {
+        notifications += 1;
+      };
+
+      registry.addCallback(testUri, callback);
+      registry.addCallback(testUri, callback);
+      registry.retain(testUri);
+      registry.retain(testUri);
+      assert.strictEqual(registry.attach(testUri, testFile), true);
+
+      await writeFile(testFile, 'changed');
+      const deadline = Date.now() + 1000;
+      while (notifications === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      assert.strictEqual(notifications, 1, 'one filesystem event must invoke one callback');
+
+      registry.release(testUri);
+      assert.strictEqual(registry.hasWatcher(testUri), true, 'one retained lease must remain');
+      registry.release(testUri);
+      assert.strictEqual(registry.hasWatcher(testUri), false, 'last release must drop the watcher');
 
       registry.destroy();
     });
@@ -350,14 +401,16 @@ describe('MCP Resources', () => {
       registry.startSubscribe(uri);
       assert.strictEqual(registry.isStale(uri), false);
       registry.addCallback(uri, () => {});
+      registry.retain(uri);
       registry.attach(uri, file);
 
-      registry.remove(uri);
+      registry.release(uri);
       assert.strictEqual(registry.isStale(uri), false);
 
       registry.startSubscribe(uri);
       assert.strictEqual(registry.isStale(uri), false);
       registry.addCallback(uri, () => {});
+      registry.retain(uri);
       assert.strictEqual(registry.isStale(uri), false);
 
       // in-flight abort: a subscribe that never settles (no addCallback yet)
@@ -366,7 +419,7 @@ describe('MCP Resources', () => {
       const abortFile = await writeTestFile(tmpDir, 'resub_abort.txt', 'content');
       const abortUri = buildFileResourceUri(abortFile);
       registry.startSubscribe(abortUri);
-      registry.remove(abortUri);
+      registry.release(abortUri);
       assert.strictEqual(registry.isStale(abortUri), true);
 
       // and a fresh startSubscribe clears it again
@@ -466,5 +519,29 @@ describe('MCP Resources', () => {
       assert.strictEqual(capabilities.resources?.listChanged, true);
       await serverContext.close();
     });
+  });
+
+  it('legacy resource registration refuses to replace an existing request handler', async () => {
+    const root = await createTestRoot();
+    const pathGuard = await PathGuard.fromAllowedDirectories([root]);
+    const server = new McpServer({ name: 'resource-collision-test', version: '1.0.0' });
+    server.server.setRequestHandler('resources/subscribe', async () => ({}));
+
+    try {
+      assert.throws(
+        () =>
+          registerResources({
+            server,
+            pathGuard,
+            resourceStore: new ResourceStore(),
+            readOnly: false,
+            era: 'legacy',
+          }),
+        /handler|registered|resources\/subscribe/iu,
+      );
+    } finally {
+      await server.close();
+      await cleanupTestRoot(root);
+    }
   });
 });

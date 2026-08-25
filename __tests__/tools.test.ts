@@ -1,5 +1,9 @@
-import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
-import { ProtocolErrorCode } from '@modelcontextprotocol/server';
+import {
+  Client,
+  InMemoryTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import { createMcpHandler, McpServer, ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -7,7 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import * as z from 'zod/v4';
+
+import { PathGuard } from '../src/core/path.js';
+import { ResourceStore } from '../src/core/store.js';
 import { createServer } from '../src/server.js';
+import { defineTool } from '../src/tools/define.js';
 import {
   ALL_REGISTERED_TOOL_NAMES,
   ALL_TOOLS,
@@ -151,7 +160,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(allTools.length, ALL_REGISTERED_TOOL_NAMES.length);
   });
 
-  it('tools/list publishes draft-2020-12 JSON Schema (withJsonSchema pin)', async () => {
+  it('tools/list publishes draft-2020-12 through fromJsonSchema and preserves Zod runtime semantics', async () => {
     const pinHarness = await createTestClientPair([tmpDir]);
     try {
       const { tools } = await pinHarness.client.listTools();
@@ -162,9 +171,116 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
           'https://json-schema.org/draft/2020-12/schema',
           `${tool.name} must publish the precomputed draft-2020-12 schema`,
         );
+        assert.strictEqual(
+          (tool.outputSchema as { $schema?: string } | undefined)?.$schema,
+          'https://json-schema.org/draft/2020-12/schema',
+          `${tool.name} must publish a draft-2020-12 output schema`,
+        );
       }
+
+      const file = await writeTestFile(tmpDir, 'schema-hash.txt', 'body');
+      const defaulted = await pinHarness.client.callTool({
+        name: 'hash_file',
+        arguments: { path: file },
+      });
+      assert.deepStrictEqual(
+        (defaulted.structuredContent as { algorithms?: string[] } | undefined)?.algorithms,
+        ['sha256'],
+        'Zod defaults must reach the tool handler',
+      );
+
+      const invalid = await pinHarness.client.callTool({
+        name: 'hash_file',
+        arguments: { path: file, algorithms: [] },
+      });
+      assert.strictEqual(invalid.isError, true);
+      const errorText = firstTextBlock(invalid).text ?? '';
+      assert.match(errorText, /algorithms/u);
+      assert.match(errorText, /too small|at least|>=1/iu);
     } finally {
       await pinHarness.close();
+    }
+  });
+
+  it('authenticated HTTP context reaches ToolCtx and is absent in-memory', async () => {
+    const authProbe = defineTool({
+      name: 'auth_probe',
+      title: 'Auth Probe',
+      description: 'Expose the validated auth context for transport plumbing tests.',
+      input: z.strictObject({}),
+      output: z.strictObject({
+        clientId: z.string().nullable(),
+        scopes: z.array(z.string()),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+      async run(_args, ctx) {
+        return {
+          structured: {
+            clientId: ctx.authInfo?.clientId ?? null,
+            scopes: ctx.authInfo?.scopes ?? [],
+          },
+        };
+      },
+    });
+    const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
+    const resourceStore = new ResourceStore();
+    const createProbeServer = (): McpServer => {
+      const server = new McpServer({ name: 'auth-probe', version: '1.0.0' });
+      authProbe.register({ server, pathGuard, resourceStore });
+      return server;
+    };
+
+    const handler = createMcpHandler(() => createProbeServer(), { legacy: 'reject' });
+    const httpTransport = new StreamableHTTPClientTransport(new URL('http://test.local/mcp'), {
+      fetch: (url, init) =>
+        handler.fetch(new Request(url, init), {
+          authInfo: {
+            token: 'test-token',
+            clientId: 'test-client',
+            scopes: ['files:read'],
+          },
+        }),
+    });
+    const httpClient = new Client(
+      { name: 'auth-http-test', version: '1.0.0' },
+      { versionNegotiation: { mode: 'auto' } },
+    );
+    await httpClient.connect(httpTransport);
+    try {
+      const result = await httpClient.callTool({ name: 'auth_probe', arguments: {} });
+      assert.deepStrictEqual(result.structuredContent, {
+        clientId: 'test-client',
+        scopes: ['files:read'],
+      });
+    } finally {
+      await httpClient.close();
+      await handler.close();
+    }
+
+    const inMemoryServer = createProbeServer();
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const inMemoryClient = new Client(
+      { name: 'auth-memory-test', version: '1.0.0' },
+      { capabilities: {} },
+    );
+    await Promise.all([
+      inMemoryClient.connect(clientTransport),
+      inMemoryServer.connect(serverTransport),
+    ]);
+    try {
+      const result = await inMemoryClient.callTool({ name: 'auth_probe', arguments: {} });
+      assert.deepStrictEqual(result.structuredContent, {
+        clientId: null,
+        scopes: [],
+      });
+    } finally {
+      await inMemoryClient.close();
+      await inMemoryServer.close();
     }
   });
 
