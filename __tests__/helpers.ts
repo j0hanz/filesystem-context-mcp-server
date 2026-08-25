@@ -6,6 +6,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -14,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
+import { startHttpServer } from '../src/transport.js';
 
 /** Create an isolated temp directory for a test. */
 export async function createTestRoot(): Promise<string> {
@@ -172,6 +174,90 @@ export async function createTestHttpHarness(
       await client.close();
       await handler.close();
       sharedRegistry.destroy();
+    },
+  };
+}
+
+export const TEST_API_KEY = 'x-test-key-0123456789';
+
+/** The env a real HTTP server needs to boot in a test: bearer, host, state key. */
+const HTTP_TEST_ENV: Record<string, string> = {
+  API_KEY: TEST_API_KEY,
+  HTTP_HOST: '127.0.0.1',
+  FILESYSTEM_MCP_REQUEST_STATE_KEY: 'a'.repeat(32),
+};
+
+export interface HttpTestContext {
+  port: number;
+  /** The `/mcp` endpoint of the booted server. */
+  base: URL;
+  /** Connect a bearer-authenticated client; `onElicit` opts it into form elicitation. */
+  makeClient: (name: string, onElicit?: ElicitHandler) => Promise<Client>;
+  close: () => Promise<void>;
+}
+
+/**
+ * Boot a real HTTP server on an ephemeral port for one test file, with the env
+ * it needs and every client it opens tracked for teardown.
+ *
+ * `extraEnv` adds to (or overrides) `HTTP_TEST_ENV` — e.g. `ROOT_BOUNDARY` so
+ * an access grant sticks, or a rate-limit cap. Every key touched is saved
+ * before it is set and restored on `close`, so a var the process already
+ * carried survives the test.
+ */
+export async function bootHttpTest(
+  allowedDirs: string[],
+  extraEnv: Record<string, string> = {},
+): Promise<HttpTestContext> {
+  const env = { ...HTTP_TEST_ENV, ...extraEnv };
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(env)) {
+    saved.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  const apiKey = env['API_KEY'] ?? TEST_API_KEY;
+
+  const httpServer = await startHttpServer(0, { cliAllowedDirs: allowedDirs });
+  const port = (httpServer.address() as AddressInfo).port;
+  const base = new URL(`http://127.0.0.1:${port}/mcp`);
+  const clients: Client[] = [];
+
+  return {
+    port,
+    base,
+    async makeClient(name, onElicit) {
+      const transport = new StreamableHTTPClientTransport(base, {
+        fetch: (url, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set('Authorization', `Bearer ${apiKey}`);
+          return fetch(url, { ...init, headers });
+        },
+      });
+      const client = new Client(
+        { name, version: '1.0.0' },
+        {
+          versionNegotiation: { mode: 'auto' },
+          ...(onElicit ? { capabilities: { elicitation: { form: {} } } } : {}),
+        },
+      );
+      if (onElicit) client.setRequestHandler('elicitation/create', onElicit);
+      await client.connect(transport);
+      clients.push(client);
+      return client;
+    },
+    close: async () => {
+      // A test that closed its own client already is the normal case, not an
+      // error — close is idempotent enough to swallow the second attempt.
+      for (const client of clients) {
+        await client.close().catch(() => {});
+      }
+      await new Promise<void>((resolve) => httpServer.close(resolve));
+      for (const [key, value] of saved) {
+        // Reflect over `delete`: an empty string is not the same as unset here
+        // (API_KEY='' would read as "auth configured"), so the key must go.
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
     },
   };
 }

@@ -1,38 +1,33 @@
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import type { Server } from 'node:http';
-import { type AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
-import { startHttpServer } from '../src/transport.js';
-import { cleanupTestRoot, createTestRoot, firstTextBlock, writeTestFile } from './helpers.js';
+import {
+  bootHttpTest,
+  cleanupTestRoot,
+  createTestRoot,
+  firstTextBlock,
+  type HttpTestContext,
+  writeTestFile,
+} from './helpers.js';
 
 describe('Real HTTP Server integration', () => {
   let tmpDir: string;
-  let httpServer: Server;
+  let http: HttpTestContext;
   let base: URL;
   let port: number;
 
   beforeEach(async () => {
     tmpDir = await createTestRoot();
-    process.env['API_KEY'] = 'x-test-key-0123456789';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'x-test-state-key-01234567890123456789';
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
+    http = await bootHttpTest([tmpDir]);
+    ({ base, port } = http);
   });
 
   afterEach(async () => {
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    await new Promise<void>((resolve) => {
-      httpServer.close(resolve);
-    });
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
 
@@ -53,18 +48,7 @@ describe('Real HTTP Server integration', () => {
   });
 
   it('3. Full MCP handshake + tool call over real HTTP with bearer', async () => {
-    const transport = new StreamableHTTPClientTransport(base, {
-      fetch: (url, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', 'Bearer x-test-key-0123456789');
-        return fetch(url, { ...init, headers });
-      },
-    });
-    const client = new Client(
-      { name: 'http-server-test', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
+    const client = await http.makeClient('http-server-test');
     try {
       const tools = await client.listTools();
       assert.strictEqual(tools.tools.length, ALL_REGISTERED_TOOL_NAMES.length);
@@ -80,18 +64,7 @@ describe('Real HTTP Server integration', () => {
   });
 
   it('externalized tool result is readable back over HTTP', async () => {
-    const transport = new StreamableHTTPClientTransport(base, {
-      fetch: (url, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', 'Bearer x-test-key-0123456789');
-        return fetch(url, { ...init, headers });
-      },
-    });
-    const client = new Client(
-      { name: 'result-roundtrip', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
+    const client = await http.makeClient('result-roundtrip');
     try {
       const file = await writeTestFile(tmpDir, 'hashed.txt', 'body');
       const res = (await client.callTool({ name: 'hash_file', arguments: { path: file } })) as {
@@ -188,28 +161,17 @@ describe('Real HTTP Server integration', () => {
 
 describe('rate limiting', () => {
   let tmpDir: string;
-  let httpServer: Server;
+  let http: HttpTestContext;
   let base: URL;
 
   beforeEach(async () => {
     tmpDir = await createTestRoot();
-    process.env['API_KEY'] = 'x-test-key-0123456789';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'x-test-state-key-01234567890123456789';
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = '2';
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
+    http = await bootHttpTest([tmpDir], { FILESYSTEM_MCP_RATE_LIMIT_RPM: '2' });
+    ({ base } = http);
   });
 
   afterEach(async () => {
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-    await new Promise<void>((resolve) => {
-      httpServer.close(resolve);
-    });
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
 

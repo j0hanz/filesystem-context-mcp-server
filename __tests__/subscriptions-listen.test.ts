@@ -1,13 +1,7 @@
-import {
-  Client,
-  type McpSubscription,
-  StreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client';
+import { Client, type McpSubscription } from '@modelcontextprotocol/client';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
-import type { Server } from 'node:http';
-import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -15,8 +9,15 @@ import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
-import { listenSubscriptionUris, startHttpServer } from '../src/transport.js';
-import { cleanupTestRoot, createTestRoot, waitFor, writeTestFile } from './helpers.js';
+import { listenSubscriptionUris } from '../src/transport.js';
+import {
+  bootHttpTest,
+  cleanupTestRoot,
+  createTestRoot,
+  type HttpTestContext,
+  waitFor,
+  writeTestFile,
+} from './helpers.js';
 
 describe('listenSubscriptionUris', () => {
   it('de-duplicates repeated URIs so attach and release stay balanced', () => {
@@ -36,13 +37,9 @@ describe('listenSubscriptionUris', () => {
 // per-connection filtering. Uses the real Express server so attachListenWatchers
 // wires the file watcher (the handler.fetch harness bypasses it).
 
-const API_KEY = 'x-test-key-0123456789';
-const STATE_KEY = 'a'.repeat(32);
-
 describe('HTTP per-connection subscription gating (cross-talk)', () => {
   let tmpDir: string;
-  let httpServer: Server;
-  let base: URL;
+  let http: HttpTestContext;
   let clientA: Client;
   let clientB: Client;
   let subscription: McpSubscription | undefined;
@@ -50,14 +47,9 @@ describe('HTTP per-connection subscription gating (cross-talk)', () => {
   before(async () => {
     tmpDir = await createTestRoot();
     await writeTestFile(tmpDir, 'watch.txt', 'initial');
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
-    clientA = await makeClient(base);
-    clientB = await makeClient(base);
+    http = await bootHttpTest([tmpDir]);
+    clientA = await http.makeClient('http-cross-talk');
+    clientB = await http.makeClient('http-cross-talk');
   });
 
   after(async () => {
@@ -66,30 +58,9 @@ describe('HTTP per-connection subscription gating (cross-talk)', () => {
     } catch {
       /* subscription may already be torn down */
     }
-    await clientA.close();
-    await clientB.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
-
-  async function makeClient(url: URL): Promise<Client> {
-    const transport = new StreamableHTTPClientTransport(url, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    const client = new Client(
-      { name: 'http-cross-talk', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
-    return client;
-  }
 
   it('subscriber receives the update; non-subscriber does not (no cross-talk)', async () => {
     const filePath = join(tmpDir, 'watch.txt');
@@ -129,8 +100,7 @@ describe('HTTP per-connection subscription gating (cross-talk)', () => {
 // Set-based registry must notify every subscriber.
 describe('HTTP watcher fan-out (multi-subscriber)', () => {
   let tmpDir: string;
-  let httpServer: Server;
-  let base: URL;
+  let http: HttpTestContext;
   let clientA: Client;
   let clientB: Client;
   let subA: McpSubscription | undefined;
@@ -139,14 +109,9 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
   before(async () => {
     tmpDir = await createTestRoot();
     await writeTestFile(tmpDir, 'fanout.txt', 'initial');
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
-    clientA = await makeFanoutClient(base);
-    clientB = await makeFanoutClient(base);
+    http = await bootHttpTest([tmpDir]);
+    clientA = await http.makeClient('http-fanout');
+    clientB = await http.makeClient('http-fanout');
   });
 
   after(async () => {
@@ -160,30 +125,9 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
     } catch {
       /* teardown */
     }
-    await clientA.close();
-    await clientB.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
-
-  async function makeFanoutClient(url: URL): Promise<Client> {
-    const transport = new StreamableHTTPClientTransport(url, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    const client = new Client(
-      { name: 'http-fanout', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
-    return client;
-  }
 
   it('both subscribers receive the update for one file URI', async () => {
     const filePath = join(tmpDir, 'fanout.txt');
@@ -247,20 +191,14 @@ describe('HTTP watcher fan-out (multi-subscriber)', () => {
 // `attach` ponytail comment), so it is not asserted here to stay green on Linux.
 describe('HTTP recursive directory watch', () => {
   let tmpDir: string;
-  let httpServer: Server;
-  let base: URL;
+  let http: HttpTestContext;
   let client: Client;
   let subscription: McpSubscription | undefined;
 
   before(async () => {
     tmpDir = await createTestRoot();
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
-    client = await makeRecursiveClient(base);
+    http = await bootHttpTest([tmpDir]);
+    client = await http.makeClient('http-recursive');
   });
 
   after(async () => {
@@ -269,29 +207,9 @@ describe('HTTP recursive directory watch', () => {
     } catch {
       /* teardown */
     }
-    await client.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
-
-  async function makeRecursiveClient(url: URL): Promise<Client> {
-    const transport = new StreamableHTTPClientTransport(url, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    const client = new Client(
-      { name: 'http-recursive', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
-    return client;
-  }
 
   it('subscriber is notified when a child file is created under the directory', async () => {
     const dirUri = buildFileResourceUri(tmpDir);
@@ -320,53 +238,25 @@ describe('HTTP resourcesListChanged listen filter', () => {
   let rootDir: string;
   let outDir: string;
   let outFile: string;
-  let httpServer: Server;
+  let http: HttpTestContext;
   let client: Client;
   let sub: McpSubscription | undefined;
-  let savedBoundary: string | undefined;
 
   before(async () => {
     rootDir = await createTestRoot();
     outDir = await mkdtemp(join(tmpdir(), 'fsmcp-listchanged-'));
     outFile = await writeTestFile(outDir, 'granted.txt', 'initial');
 
-    savedBoundary = process.env['ROOT_BOUNDARY'];
-    process.env['ROOT_BOUNDARY'] = tmpdir();
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [rootDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    const base = new URL(`http://127.0.0.1:${port}/mcp`);
-
-    const transport = new StreamableHTTPClientTransport(base, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    client = new Client(
-      { name: 'http-list-changed', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' }, capabilities: { elicitation: { form: {} } } },
-    );
-    client.setRequestHandler('elicitation/create', () => ({
+    http = await bootHttpTest([rootDir], { ROOT_BOUNDARY: tmpdir() });
+    client = await http.makeClient('http-list-changed', () => ({
       action: 'accept' as const,
       content: { confirm: true },
     }));
-    await client.connect(transport);
   });
 
   after(async () => {
     await sub?.close().catch(() => {});
-    await client.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    if (savedBoundary === undefined) delete process.env['ROOT_BOUNDARY'];
-    else process.env['ROOT_BOUNDARY'] = savedBoundary;
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(outDir);
     await cleanupTestRoot(rootDir);
   });
@@ -402,32 +292,15 @@ describe('HTTP resourcesListChanged listen filter', () => {
 // rejected the batch with 400; the fix excludes it and must accept.
 describe('HTTP duplicate listen does not consume capacity', () => {
   let tmpDir: string;
-  let httpServer: Server;
-  let base: URL;
+  let http: HttpTestContext;
   let client: Client;
   let sub: McpSubscription | undefined;
 
   before(async () => {
     tmpDir = await createTestRoot();
     await writeTestFile(tmpDir, 'duplisten.txt', 'initial');
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
-    const transport = new StreamableHTTPClientTransport(base, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    client = new Client(
-      { name: 'http-dup-listen', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
+    http = await bootHttpTest([tmpDir]);
+    client = await http.makeClient('http-dup-listen');
   });
 
   after(async () => {
@@ -436,11 +309,7 @@ describe('HTTP duplicate listen does not consume capacity', () => {
     } catch {
       /* teardown */
     }
-    await client.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
 
@@ -481,32 +350,15 @@ describe('HTTP duplicate listen does not consume capacity', () => {
 // teardown instead of poisoning it.
 describe('HTTP re-listen after full release', () => {
   let tmpDir: string;
-  let httpServer: Server;
-  let base: URL;
+  let http: HttpTestContext;
   let client: Client;
   let sub: McpSubscription | undefined;
 
   before(async () => {
     tmpDir = await createTestRoot();
     await writeTestFile(tmpDir, 'relisten.txt', 'initial');
-    process.env['API_KEY'] = API_KEY;
-    process.env['HTTP_HOST'] = '127.0.0.1';
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = STATE_KEY;
-    httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
-    const port = (httpServer.address() as AddressInfo).port;
-    base = new URL(`http://127.0.0.1:${port}/mcp`);
-    const transport = new StreamableHTTPClientTransport(base, {
-      fetch: (u, init) => {
-        const headers = new Headers(init?.headers);
-        headers.set('Authorization', `Bearer ${API_KEY}`);
-        return fetch(u, { ...init, headers });
-      },
-    });
-    client = new Client(
-      { name: 'http-relisten', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    );
-    await client.connect(transport);
+    http = await bootHttpTest([tmpDir]);
+    client = await http.makeClient('http-relisten');
   });
 
   after(async () => {
@@ -515,11 +367,7 @@ describe('HTTP re-listen after full release', () => {
     } catch {
       /* teardown */
     }
-    await client.close();
-    await new Promise<void>((resolve) => httpServer.close(resolve));
-    delete process.env['API_KEY'];
-    delete process.env['HTTP_HOST'];
-    delete process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    await http.close();
     await cleanupTestRoot(tmpDir);
   });
 
