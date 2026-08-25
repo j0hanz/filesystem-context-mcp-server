@@ -5,7 +5,6 @@ import { basename, dirname, resolve, sep } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { processInParallel } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
@@ -16,10 +15,11 @@ import {
 } from '../core/errors.js';
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
-import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
-import { isSamePath } from '../core/path.js';
-import { PerFileErrorSchema, RequiredPath } from '../core/schema.js';
-import { PARALLEL_CONCURRENCY } from '../core/util.js';
+import { readAcceptedChoice } from '../core/input-required.js';
+import { IS_CASE_INSENSITIVE_FS, isSamePath } from '../core/path.js';
+import { pairFailureSchema, RequiredPath } from '../core/schema.js';
+import type { PairExecResult, PairPlanResult } from './batch.js';
+import { pairFailure, runOverPairs } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -46,11 +46,7 @@ const MoveInputSchema = z.strictObject({
     .describe('List of move operations to perform (max 100); each requires source and destination'),
 });
 
-const MoveFailureItemSchema = z.strictObject({
-  source: z.string().describe('The source path that could not be moved'),
-  destination: z.string().describe('The intended destination path for the failed move'),
-  error: PerFileErrorSchema,
-});
+const MoveFailureItemSchema = pairFailureSchema('moved', 'move');
 
 type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
 
@@ -71,7 +67,7 @@ type MoveItemResult = z.infer<typeof MoveItemResultSchema>;
 
 /** A move pre-checked up to the point a confirmation decision is needed. */
 interface MovePlan {
-  move: { source: string; destination: string };
+  pair: { source: string; destination: string };
   renamePath: string;
   validDest: string;
   isCaseOnlyRename: boolean;
@@ -79,22 +75,6 @@ interface MovePlan {
   destExistedOriginally: boolean;
   /** Destination exists and is not a self/case-only move → needs overwrite confirmation. */
   pending: boolean;
-}
-
-type MovePlanResult =
-  | { status: 'fail'; failure: MoveFailureItem }
-  | { status: 'noop' }
-  | { status: 'plan'; plan: MovePlan };
-
-function moveFailure(
-  move: { source: string; destination: string },
-  error: unknown,
-): MoveFailureItem {
-  return {
-    source: move.source,
-    destination: move.destination,
-    error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, move.source),
-  };
 }
 
 /**
@@ -107,20 +87,20 @@ function moveFailure(
 async function planMove(
   move: { source: string; destination: string },
   fs: ToolCtx['fs'],
-): Promise<MovePlanResult> {
+): Promise<PairPlanResult<MovePlan>> {
   let renamePath: string;
   let realPath: string;
   try {
     ({ renamePath, realPath } = await validateMoveSource(move.source, fs));
   } catch (error) {
-    return { status: 'fail', failure: moveFailure(move, error) };
+    return { status: 'fail', failure: pairFailure(move, error) };
   }
 
   let validDest: string;
   try {
     validDest = await fs.pathGuard.validatePathForWrite(move.destination);
   } catch (error) {
-    return { status: 'fail', failure: moveFailure(move, error) };
+    return { status: 'fail', failure: pairFailure(move, error) };
   }
 
   // Comparisons run on the resolved source; only the fs call below uses
@@ -134,18 +114,15 @@ async function planMove(
     return { status: 'noop' };
   }
 
-  const platform = process.platform;
-  const normalizedDest =
-    platform === 'win32' || platform === 'darwin' ? resolvedDest.toLowerCase() : resolvedDest;
-  const normalizedSource =
-    platform === 'win32' || platform === 'darwin'
-      ? (resolvedSource + sep).toLowerCase()
-      : resolvedSource + sep;
+  const normalizedDest = IS_CASE_INSENSITIVE_FS ? resolvedDest.toLowerCase() : resolvedDest;
+  const normalizedSource = IS_CASE_INSENSITIVE_FS
+    ? (resolvedSource + sep).toLowerCase()
+    : resolvedSource + sep;
 
   if (normalizedDest.startsWith(normalizedSource)) {
     return {
       status: 'fail',
-      failure: moveFailure(
+      failure: pairFailure(
         move,
         new FsError(
           ErrorCode.INVALID_INPUT,
@@ -162,7 +139,7 @@ async function planMove(
   const pending = !isCaseOnlyRename && destExistedOriginally;
   return {
     status: 'plan',
-    plan: { move, renamePath, validDest, isCaseOnlyRename, destExistedOriginally, pending },
+    plan: { pair: move, renamePath, validDest, isCaseOnlyRename, destExistedOriginally, pending },
   };
 }
 
@@ -175,20 +152,20 @@ async function planMove(
  */
 async function executeMove(
   plan: MovePlan,
-  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
+  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses' | 'log'>,
   pendingSorted: readonly string[],
-): Promise<MoveItemResult | { skipped: true; path: string }> {
+): Promise<PairExecResult<MoveItemResult>> {
   if (plan.pending) {
     const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
     const choice = readAcceptedChoice(ctx.inputResponses, key);
     if (choice === 'skip') {
-      return { skipped: true as const, path: plan.move.destination };
+      return { skipped: plan.pair.destination };
     }
     if (choice !== 'overwrite') {
       throw new FsError(
         ErrorCode.CANCELLED,
-        `Move cancelled: overwrite of "${plan.move.destination}" was declined or missing`,
-        plan.move.destination,
+        `Move cancelled: overwrite of "${plan.pair.destination}" was declined or missing`,
+        plan.pair.destination,
       );
     }
   }
@@ -200,16 +177,17 @@ async function executeMove(
     if (existsNow && !plan.destExistedOriginally) {
       throw new FsError(
         ErrorCode.CANCELLED,
-        `Move cancelled: destination "${plan.move.destination}" was created during confirmation.`,
-        plan.move.destination,
+        `Move cancelled: destination "${plan.pair.destination}" was created during confirmation.`,
+        plan.pair.destination,
       );
     }
   }
 
   await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
 
-  await performRenameWithFallback(plan.renamePath, plan.validDest, ctx.fs, plan.move.source);
-  return { ok: true as const, from: plan.renamePath, to: plan.validDest };
+  await performRenameWithFallback(plan.renamePath, plan.validDest, ctx.fs, plan.pair.source);
+  ctx.log?.('info', `move: ${plan.pair.source} -> ${plan.pair.destination}`, 'move');
+  return { value: { ok: true as const, from: plan.renamePath, to: plan.validDest } };
 }
 
 /**
@@ -223,100 +201,14 @@ async function handleMove(
   args: z.infer<typeof MoveInputSchema>,
   ctx: ToolCtx,
 ): Promise<z.infer<typeof MoveOutputSchema> | InputRequiredResult> {
-  const allPlans: MovePlan[] = [];
-  const earlyFailures: MoveFailureItem[] = [];
-  for (const move of args.moves) {
-    const r = await planMove(move, ctx.fs);
-    if (r.status === 'fail') earlyFailures.push(r.failure);
-    else if (r.status === 'plan') allPlans.push(r.plan);
-    // 'noop' (self-move) is silently skipped, as before.
-  }
+  const outcome = await runOverPairs(args.moves, ctx, {
+    op: 'move',
+    plan: (move) => planMove(move, ctx.fs),
+    execute: (plan, pendingSorted) => executeMove(plan, ctx, pendingSorted),
+  });
+  if (isInputRequiredResult(outcome)) return outcome;
 
-  // Two sources targeting the same destination in one batch would otherwise
-  // collapse to a single shared overwrite confirmation and let the second
-  // move silently clobber the first's freshly-written content. Fail closed:
-  // only the first plan per destination proceeds; later ones targeting the
-  // same destination are reported as a per-move failure.
-  const isCaseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
-  const seenDest = new Set<string>();
-  const plans: MovePlan[] = [];
-  for (const plan of allPlans) {
-    const destKey = isCaseInsensitive ? plan.validDest.toLowerCase() : plan.validDest;
-    if (seenDest.has(destKey)) {
-      earlyFailures.push(
-        moveFailure(
-          plan.move,
-          new FsError(
-            ErrorCode.INVALID_INPUT,
-            `Move cancelled: another entry in this batch already targets destination "${plan.move.destination}"`,
-            plan.move.destination,
-          ),
-        ),
-      );
-      continue;
-    }
-    seenDest.add(destKey);
-    plans.push(plan);
-  }
-
-  const pendingSorted = [...new Set(plans.filter((p) => p.pending).map((p) => p.validDest))].sort();
-
-  if (pendingSorted.length > 0) {
-    // Round 1 returns input_required; a retry whose verified state does not
-    // bind this overwrite set throws (R9) via `pendingRoundTrip`.
-    const round = await pendingRoundTrip({
-      op: 'move',
-      pending: pendingSorted,
-      requestState: ctx.requestState,
-      buildInputs: (ds) =>
-        ds.map((d, i) =>
-          choiceInput(`confirm_${i}`, `"${d}" already exists. Overwrite it?`, [
-            { value: 'overwrite', title: 'Overwrite' },
-            { value: 'skip', title: 'Skip' },
-          ]),
-        ),
-    });
-    if (round !== undefined) return round;
-  }
-
-  const executed = await processInParallel(
-    plans,
-    async (plan) => {
-      try {
-        const res = await executeMove(plan, ctx, pendingSorted);
-        if (!('skipped' in res)) {
-          ctx.log?.('info', `move: ${plan.move.source} -> ${plan.move.destination}`, 'move');
-        }
-        return { ok: true as const, res };
-      } catch (err) {
-        if (ctx.signal.aborted) throw err;
-        return { ok: false as const, failure: moveFailure(plan.move, err) };
-      }
-    },
-    PARALLEL_CONCURRENCY,
-    ctx.signal,
-  );
-
-  const results: MoveItemResult[] = [];
-  const skipped: string[] = [];
-  const failures = [...earlyFailures];
-  for (const { value: r } of executed.results) {
-    if (r.ok) {
-      if ('skipped' in r.res) {
-        skipped.push(r.res.path);
-      } else {
-        results.push(r.res);
-      }
-    } else {
-      failures.push(r.failure);
-    }
-  }
-  for (const { index, error } of executed.errors) {
-    const plan = plans[index];
-    if (plan) {
-      failures.push(moveFailure(plan.move, error));
-    }
-  }
+  const { results, skipped, failures } = outcome;
 
   return {
     ok: true as const,

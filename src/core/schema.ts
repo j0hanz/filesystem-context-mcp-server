@@ -195,6 +195,23 @@ export const PathFailureSchema = z.strictObject({
   error: PerFileErrorSchema,
 });
 
+/**
+ * One entry of a source→destination tool's `failures[]`. Un-`meta`'d for the
+ * same reason as `PathFailureSchema`: `copy` and `move` publish this shape
+ * inline today, and an `id` would hoist it into `$defs` and change both emitted
+ * schemas. The verb and noun stay per-op so the `.describe()` text is unchanged.
+ */
+export function pairFailureSchema(verb: 'copied' | 'moved', noun: 'copy' | 'move') {
+  return z.strictObject({
+    source: z.string().describe(`The source path that could not be ${verb}`),
+    destination: z.string().describe(`The intended destination path for the failed ${noun}`),
+    error: PerFileErrorSchema,
+  });
+}
+
+/** Wire shape of a `pairFailureSchema` entry — the runtime twin of the schema. */
+export type PairFailureItem = z.infer<ReturnType<typeof pairFailureSchema>>;
+
 // TODO(future): Wrap createReadRangeFields output in a typed Zod object with built-in
 // cross-validation. Safe for now — the only caller (read.ts) calls validateReadRange in its own superRefine.
 interface ReadRangeDescriptions {

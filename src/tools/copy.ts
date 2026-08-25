@@ -5,13 +5,13 @@ import { basename, dirname } from 'node:path';
 
 import * as z from 'zod/v4';
 
-import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import { destExists } from '../core/fs.js';
-import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
+import { readAcceptedChoice } from '../core/input-required.js';
 import { isPathInsideDirectory, isSamePath } from '../core/path.js';
-import { defaultFalseBoolean, PerFileErrorSchema, RequiredPath } from '../core/schema.js';
-import { PARALLEL_CONCURRENCY } from '../core/util.js';
+import { defaultFalseBoolean, pairFailureSchema, RequiredPath } from '../core/schema.js';
+import type { PairExecResult, PairPlanResult } from './batch.js';
+import { pairFailure, runOverPairs } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -39,13 +39,7 @@ const CopyItemResultSchema = z.strictObject({
     .describe('Always true for this entry; failures are in the outer failures array'),
 });
 
-const CopyFailureItemSchema = z.strictObject({
-  source: z.string().describe('The source path that could not be copied'),
-  destination: z.string().describe('The intended destination path for the failed copy'),
-  error: PerFileErrorSchema,
-});
-
-type CopyFailureItem = z.infer<typeof CopyFailureItemSchema>;
+const CopyFailureItemSchema = pairFailureSchema('copied', 'copy');
 
 const CopyOutputSchema = z.strictObject({
   ok: z.literal(true).describe('Always true; per-copy errors are in failures[]'),
@@ -63,46 +57,30 @@ const CopyOutputSchema = z.strictObject({
 type CopyItemResult = z.infer<typeof CopyItemResultSchema>;
 
 interface CopyPlan {
-  copy: { source: string; destination: string };
+  pair: { source: string; destination: string };
   realSource: string;
   validDest: string;
   destExistedOriginally: boolean;
   pending: boolean;
 }
 
-type CopyPlanResult =
-  | { status: 'fail'; failure: CopyFailureItem }
-  | { status: 'noop' }
-  | { status: 'plan'; plan: CopyPlan };
-
-function copyFailure(
-  copy: { source: string; destination: string },
-  error: unknown,
-): CopyFailureItem {
-  return {
-    source: copy.source,
-    destination: copy.destination,
-    error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, copy.source),
-  };
-}
-
 async function planCopy(
   copy: { source: string; destination: string },
   fs: ToolCtx['fs'],
   overwrite: boolean,
-): Promise<CopyPlanResult> {
+): Promise<PairPlanResult<CopyPlan>> {
   let realSource: string;
   try {
     realSource = await fs.pathGuard.validateExistingPath(copy.source);
   } catch (error) {
-    return { status: 'fail', failure: copyFailure(copy, error) };
+    return { status: 'fail', failure: pairFailure(copy, error) };
   }
 
   let validDest: string;
   try {
     validDest = await fs.pathGuard.validatePathForWrite(copy.destination);
   } catch (error) {
-    return { status: 'fail', failure: copyFailure(copy, error) };
+    return { status: 'fail', failure: pairFailure(copy, error) };
   }
 
   if (isSamePath(realSource, validDest)) {
@@ -113,7 +91,7 @@ async function planCopy(
   if (isPathInsideDirectory(realSource, validDest)) {
     return {
       status: 'fail',
-      failure: copyFailure(
+      failure: pairFailure(
         copy,
         new FsError(
           ErrorCode.INVALID_INPUT,
@@ -129,7 +107,7 @@ async function planCopy(
   const pending = destExistedOriginally && !overwrite;
   return {
     status: 'plan',
-    plan: { copy, realSource, validDest, destExistedOriginally, pending },
+    plan: { pair: copy, realSource, validDest, destExistedOriginally, pending },
   };
 }
 
@@ -138,18 +116,18 @@ async function executeCopy(
   ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
   pendingSorted: readonly string[],
   overwrite: boolean,
-): Promise<CopyItemResult | { skipped: true; path: string }> {
+): Promise<PairExecResult<CopyItemResult>> {
   if (plan.pending && !overwrite) {
     const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
     const choice = readAcceptedChoice(ctx.inputResponses, key);
     if (choice === 'skip') {
-      return { skipped: true as const, path: plan.copy.destination };
+      return { skipped: plan.pair.destination };
     }
     if (choice !== 'overwrite') {
       throw new FsError(
         ErrorCode.CANCELLED,
-        `Copy cancelled: overwrite of "${plan.copy.destination}" was declined or missing`,
-        plan.copy.destination,
+        `Copy cancelled: overwrite of "${plan.pair.destination}" was declined or missing`,
+        plan.pair.destination,
       );
     }
   }
@@ -159,8 +137,8 @@ async function executeCopy(
   if ((await destExists(ctx.fs, plan.validDest, 'copy')) && !plan.destExistedOriginally) {
     throw new FsError(
       ErrorCode.CANCELLED,
-      `Copy cancelled: destination "${plan.copy.destination}" was created during confirmation.`,
-      plan.copy.destination,
+      `Copy cancelled: destination "${plan.pair.destination}" was created during confirmation.`,
+      plan.pair.destination,
     );
   }
 
@@ -173,101 +151,22 @@ async function executeCopy(
     force: true,
   });
 
-  return { ok: true as const, from: plan.realSource, to: plan.validDest };
+  return { value: { ok: true as const, from: plan.realSource, to: plan.validDest } };
 }
 
 async function handleCopy(
   args: z.infer<typeof CopyInputSchema>,
   ctx: ToolCtx,
 ): Promise<{ structured: z.infer<typeof CopyOutputSchema>; text: string } | InputRequiredResult> {
-  const { results: plans } = await processInParallel(
-    args.copies,
-    (copy) => planCopy(copy, ctx.fs, args.overwrite),
-    PARALLEL_CONCURRENCY,
-    ctx.signal,
-  );
+  const outcome = await runOverPairs(args.copies, ctx, {
+    op: 'copy',
+    plan: (copy) => planCopy(copy, ctx.fs, args.overwrite),
+    execute: (plan, pendingSorted) => executeCopy(plan, ctx, pendingSorted, args.overwrite),
+  });
+  if (isInputRequiredResult(outcome)) return outcome;
 
-  const initialFailures: CopyFailureItem[] = [];
-  const candidatePlans: CopyPlan[] = [];
+  const { results: copies, skipped, failures: finalFailures } = outcome;
 
-  for (const res of plans) {
-    if (res.value.status === 'fail') {
-      initialFailures.push(res.value.failure);
-    } else if (res.value.status === 'plan') {
-      candidatePlans.push(res.value.plan);
-    }
-  }
-
-  const isCaseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
-  const seenDest = new Set<string>();
-  const readyPlans: CopyPlan[] = [];
-  const pendingSet = new Set<string>();
-
-  for (const plan of candidatePlans) {
-    const destKey = isCaseInsensitive ? plan.validDest.toLowerCase() : plan.validDest;
-    if (seenDest.has(destKey)) {
-      initialFailures.push(
-        copyFailure(
-          plan.copy,
-          new FsError(
-            ErrorCode.INVALID_INPUT,
-            `Copy cancelled: another entry in this batch already targets destination "${plan.copy.destination}"`,
-            plan.copy.destination,
-          ),
-        ),
-      );
-      continue;
-    }
-    seenDest.add(destKey);
-    readyPlans.push(plan);
-    if (plan.pending) {
-      pendingSet.add(plan.validDest);
-    }
-  }
-
-  const pendingSorted = Array.from(pendingSet).sort();
-  if (pendingSorted.length > 0) {
-    const round = await pendingRoundTrip({
-      op: 'copy',
-      pending: pendingSorted,
-      requestState: ctx.requestState,
-      buildInputs: (dests) =>
-        dests.map((dest, i) =>
-          choiceInput(`confirm_${i}`, `Destination "${dest}" already exists. Overwrite it?`, [
-            { value: 'overwrite', title: 'Overwrite' },
-            { value: 'skip', title: 'Skip' },
-          ]),
-        ),
-    });
-    if (round !== undefined) return round;
-  }
-
-  const { results: execResults, errors: execErrors } = await processInParallel(
-    readyPlans,
-    (plan) => executeCopy(plan, ctx, pendingSorted, args.overwrite),
-    PARALLEL_CONCURRENCY,
-    ctx.signal,
-  );
-
-  const finalFailures: CopyFailureItem[] = [...initialFailures];
-  for (const { error, index } of execErrors) {
-    rethrowIfAborted(error);
-    const plan = readyPlans[index];
-    if (plan) {
-      finalFailures.push(copyFailure(plan.copy, error));
-    }
-  }
-
-  const copies: CopyItemResult[] = [];
-  const skipped: string[] = [];
-  for (const r of execResults) {
-    const v = r.value;
-    if ('skipped' in v) {
-      skipped.push(v.path);
-    } else {
-      copies.push(v);
-    }
-  }
   const structured: z.infer<typeof CopyOutputSchema> = {
     ok: true as const,
     copies,
