@@ -126,9 +126,6 @@ export const SafeGlobPattern = z
   .string()
   .min(1, { message: 'Pattern required' })
   .max(1000, { message: 'Max 1000 chars' })
-  .regex(/^(?![\\/])(?![a-zA-Z]:[\\/])(?!.*\.\.).*$/, {
-    message: 'Invalid glob or unsafe path (absolute/.. forbidden)',
-  })
   .superRefine((val, ctx) => {
     if (val.length === 0) {
       return;

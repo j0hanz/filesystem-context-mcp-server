@@ -1,16 +1,12 @@
 import type { Implementation, ServerCapabilities } from '@modelcontextprotocol/server';
 import { McpServer } from '@modelcontextprotocol/server';
 
-import { readFile } from 'node:fs/promises';
-
 import packageJson from '../package.json' with { type: 'json' };
 import { GuardedFileSystem } from './core/fs.js';
 import { requestStateCodec } from './core/input-required.js';
 import { Logger } from './core/observability.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
-import type { IconInfo } from './core/primitives.js';
-import { withDefaultIcons } from './core/primitives.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
 import { INSTRUCTIONS_URI } from './instructions.js';
@@ -27,7 +23,6 @@ export interface ServerDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore;
-  readonly iconInfo?: IconInfo;
   readonly readOnly?: boolean;
   /** Shared file-watcher registry for the modern HTTP leg; omitted on stdio. */
   readonly watcherRegistry?: WatcherRegistry;
@@ -78,32 +73,6 @@ export class FilesystemServerContext {
   }
 }
 
-let cachedIconInfo: Promise<IconInfo | undefined> | undefined;
-
-function getLocalIconInfo(): Promise<IconInfo | undefined> {
-  if (cachedIconInfo !== undefined) {
-    return cachedIconInfo;
-  }
-
-  cachedIconInfo = (async () => {
-    const name = 'logo.svg';
-    const mime = 'image/svg+xml';
-    // From src/server.ts, ../assets/ resolves to the root-level assets/ folder
-    try {
-      const iconPath = new URL(`../assets/${name}`, import.meta.url);
-      const buffer = await readFile(iconPath);
-      return {
-        src: `data:${mime};base64,${buffer.toString('base64')}`,
-        mimeType: mime,
-      };
-    } catch {
-      return undefined;
-    }
-  })();
-
-  return cachedIconInfo;
-}
-
 export async function createServer(
   options: ServerOptions = {},
   extraDeps?: {
@@ -114,7 +83,6 @@ export async function createServer(
   },
 ): Promise<FilesystemServerContext> {
   const resourceStore = new ResourceStore();
-  const localIcon = await getLocalIconInfo();
 
   const capabilities = {
     resources: { subscribe: true, listChanged: true },
@@ -155,7 +123,7 @@ export async function createServer(
     ...(SERVER_DESCRIPTION ? { description: SERVER_DESCRIPTION } : {}),
     ...(SERVER_HOMEPAGE ? { websiteUrl: SERVER_HOMEPAGE } : {}),
   };
-  const server = new McpServer(withDefaultIcons(implementation, localIcon), serverConfig);
+  const server = new McpServer(implementation, serverConfig);
   server.server.fallbackNotificationHandler = (notification) => {
     Logger.debug('Unhandled client notification', { method: notification.method });
     return Promise.resolve();
@@ -168,7 +136,6 @@ export async function createServer(
     server,
     pathGuard,
     resourceStore,
-    ...(localIcon ? { iconInfo: localIcon } : {}),
     ...(options.readOnly ? { readOnly: true } : {}),
     ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
     ...(extraDeps?.notifier ? { notifier: extraDeps.notifier } : {}),

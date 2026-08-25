@@ -113,18 +113,7 @@ export function formatCount(count: number, singular: string, plural = `${singula
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {
-  if (pattern.length <= maxLength) {
-    return pattern;
-  }
-
-  let preview = pattern;
-  if (pattern.includes('|')) {
-    const [first = '', second] = pattern.split('|');
-    preview = second !== undefined ? `${first}|${second}` : first;
-  }
-
-  const sliced = preview.length <= maxLength ? preview : preview.slice(0, maxLength);
-  return `${sliced}…`;
+  return pattern.length <= maxLength ? pattern : `${pattern.slice(0, maxLength)}…`;
 }
 
 // ---------------------------------------------------------------------------

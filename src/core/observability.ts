@@ -46,50 +46,8 @@ export function isLevelEnabled(
   return LEVEL_ORDER.indexOf(level) <= LEVEL_ORDER.indexOf(minimum);
 }
 
-function serializeLogDetail(arg: unknown): unknown {
-  if (arg instanceof Error) {
-    return {
-      name: arg.name,
-      message: arg.message,
-      ...(arg.stack ? { stack: arg.stack } : {}),
-      ...('code' in arg && typeof arg.code === 'string' ? { code: arg.code } : {}),
-    };
-  }
-  if (typeof arg === 'object' && arg !== null) {
-    try {
-      JSON.stringify(arg);
-      return arg;
-    } catch {
-      return '[non-serializable object]';
-    }
-  }
-  return arg;
-}
-
-function safeJsonStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      message: '[observability] Failed to serialize log entry to JSON',
-    });
-  }
-}
-
 function write(level: LoggingLevel, message: string, args: readonly unknown[]): void {
   if (!isLevelEnabled(level)) return;
-  if (process.env['LOG_FORMAT'] === 'json') {
-    const entry: Record<string, unknown> = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      ...(args.length > 0 ? { details: args.map(serializeLogDetail) } : {}),
-    };
-    console.error(safeJsonStringify(entry));
-    return;
-  }
   const prefix = `[${level}]`;
   console.error(`${prefix} ${message}`, ...args);
 }

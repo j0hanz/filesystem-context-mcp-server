@@ -65,7 +65,6 @@ export function registerTools(deps: ServerDeps): void {
     server: deps.server,
     pathGuard: deps.pathGuard,
     resourceStore: deps.resourceStore,
-    iconInfo: deps.iconInfo,
     ...(deps.notifier ? { notifier: deps.notifier } : {}),
   };
   for (const tool of registeredTools(deps.readOnly ?? false)) {

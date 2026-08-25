@@ -1,5 +1,3 @@
-import type { Icon } from '@modelcontextprotocol/server';
-
 import { platform } from 'node:os';
 
 /**
@@ -34,18 +32,6 @@ export function parseEnvDirList(envVar: string): string[] {
     .split(sep)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-}
-
-export type IconInfo = Icon & { mimeType: string };
-
-export function withDefaultIcons<T extends object>(
-  obj: T,
-  iconInfo: IconInfo | undefined,
-): T & { icons?: Icon[] } {
-  if (!iconInfo) return obj;
-  const existing = (obj as { icons?: Icon[] }).icons;
-  if (existing && existing.length > 0) return obj;
-  return { ...obj, icons: [{ src: iconInfo.src, mimeType: iconInfo.mimeType }] };
 }
 
 // ─── Path primitives (moved from path.ts to break the path↔sensitive cycle) ──

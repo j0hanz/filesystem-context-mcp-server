@@ -51,10 +51,6 @@ function computeSha256(data: string | Buffer): string {
   return hash('sha256', data, 'hex');
 }
 
-function buildIndexKey(mimeType: string, contentHash: string): string {
-  return `${mimeType}:${contentHash}`;
-}
-
 function isExpired(entry: TextResourceEntry | BlobResourceEntry, now = Date.now()): boolean {
   const expiresAt = Date.parse(entry.expiresAt);
   if (!Number.isFinite(expiresAt)) {
@@ -75,7 +71,6 @@ function invalidStoreOptionsError(maxEntryBytes: number, maxTotalBytes: number):
 
 export class ResourceStore {
   private readonly byUri = new Map<string, StoredEntry>();
-  private readonly byHashIndex = new Map<string, string>();
   private _totalBytes = 0;
   private readonly options: ResourceStoreOptions;
 
@@ -88,12 +83,6 @@ export class ResourceStore {
   }
 
   // ── low-level storage ────────────────────────────────────────────────────
-
-  private getEntryByHash(mimeType: string, contentHash: string): StoredEntry | undefined {
-    const indexKey = buildIndexKey(mimeType, contentHash);
-    const existingUri = this.byHashIndex.get(indexKey);
-    return existingUri ? this.byUri.get(existingUri) : undefined;
-  }
 
   private bumpLru(uri: string, entry: StoredEntry): void {
     if (!this.byUri.has(uri)) {
@@ -110,19 +99,6 @@ export class ResourceStore {
     }
     this._totalBytes -= existing.size;
     this.byUri.delete(uri);
-    const indexKey = buildIndexKey(existing.mimeType, existing.hash);
-    if (this.byHashIndex.get(indexKey) === uri) {
-      this.byHashIndex.delete(indexKey);
-      // Restore index mapping to another valid entry with the same hash and mimeType if one exists
-      for (const [otherUri, otherEntry] of this.byUri.entries()) {
-        if (otherEntry.mimeType === existing.mimeType && otherEntry.hash === existing.hash) {
-          if (!isExpired(otherEntry)) {
-            this.byHashIndex.set(indexKey, otherUri);
-            break;
-          }
-        }
-      }
-    }
     return existing;
   }
 
@@ -144,7 +120,6 @@ export class ResourceStore {
     });
 
     this.byUri.set(uri, entry);
-    this.byHashIndex.set(buildIndexKey(params.mimeType, contentHash), uri);
     this._totalBytes += entryBytes;
     return entry;
   }
@@ -225,46 +200,6 @@ export class ResourceStore {
     }
   }
 
-  private tryReturnHashHit(
-    kind: 'text',
-    mimeType: string,
-    name: string,
-    contentHash: string,
-  ): (TextResourceEntry & { kind: 'text' }) | undefined;
-  private tryReturnHashHit(
-    kind: 'blob',
-    mimeType: string,
-    name: string,
-    contentHash: string,
-  ): (BlobResourceEntry & { kind: 'blob' }) | undefined;
-  private tryReturnHashHit(
-    kind: 'text' | 'blob',
-    mimeType: string,
-    name: string,
-    contentHash: string,
-  ): StoredEntry | undefined {
-    const cached = this.getEntryByHash(mimeType, contentHash);
-    if (cached !== undefined) {
-      if (isExpired(cached)) {
-        this.removeEntry(cached.uri);
-      } else if (cached.kind === kind) {
-        const now = Date.now();
-        const refreshed: StoredEntry = {
-          ...cached,
-          name,
-          storedAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + this.options.entryTtlMs).toISOString(),
-        };
-        this.bumpLru(refreshed.uri, refreshed);
-        return refreshed;
-      } else {
-        // Kind mismatch: remove orphan so rawPut can safely take over the byHashIndex slot.
-        this.removeEntry(cached.uri);
-      }
-    }
-    return undefined;
-  }
-
   private enforceAfterPut(entry: StoredEntry): void {
     this.enforceLimits();
     if (!this.byUri.has(entry.uri)) {
@@ -280,15 +215,6 @@ export class ResourceStore {
     const contentHash = computeSha256(params.text);
     const entryBytes = estimateBytes(params.text);
     this.checkBeforePut(entryBytes);
-    const hit = this.tryReturnHashHit(
-      'text',
-      params.mimeType ?? 'text/plain',
-      params.name,
-      contentHash,
-    );
-    if (hit) {
-      return hit;
-    }
 
     const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType ?? 'text/plain', contentHash, entryBytes },
@@ -310,10 +236,6 @@ export class ResourceStore {
     const contentHash = computeSha256(params.data);
     const entryBytes = estimateBytes(params.data);
     this.checkBeforePut(entryBytes);
-    const hit = this.tryReturnHashHit('blob', params.mimeType, params.name, contentHash);
-    if (hit) {
-      return hit;
-    }
 
     const entry = this.rawPut(
       { name: params.name, mimeType: params.mimeType, contentHash, entryBytes },
@@ -333,7 +255,6 @@ export class ResourceStore {
 
   clear(): void {
     this.byUri.clear();
-    this.byHashIndex.clear();
     this._totalBytes = 0;
   }
 

@@ -25,8 +25,6 @@ import { confirmInput, pendingRoundTrip, readAcceptedConfirm } from '../core/inp
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
-import type { IconInfo } from '../core/primitives.js';
-import { withDefaultIcons } from '../core/primitives.js';
 import type { ResourceStore } from '../core/store.js';
 import type { ServerNotifier } from '../server.js';
 import type { ProgressSink } from './progress.js';
@@ -63,7 +61,6 @@ interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-  readonly iconInfo?: IconInfo | undefined;
   readonly notifier?: ServerNotifier | undefined;
 }
 
@@ -426,17 +423,14 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
 
     register(deps: ToolDeps): RegisteredTool {
       const resolvedInput = def.buildInput ? def.buildInput(deps.pathGuard) : def.input;
-      const toolDefShape = withDefaultIcons(
-        {
-          title: def.title,
-          description: def.description,
-          inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
-          outputSchema: outputSchemaWithJson,
-          annotations: { ...def.annotations, title: def.title },
-          ...(def.execution !== undefined ? { execution: def.execution } : {}),
-        },
-        deps.iconInfo,
-      );
+      const toolDefShape = {
+        title: def.title,
+        description: def.description,
+        inputSchema: withJsonSchema(resolvedInput, inputJsonSchema, 'input'),
+        outputSchema: outputSchemaWithJson,
+        annotations: { ...def.annotations, title: def.title },
+        ...(def.execution !== undefined ? { execution: def.execution } : {}),
+      };
 
       const serverCtxHandler = createServerToolHandler(def, deps);
 

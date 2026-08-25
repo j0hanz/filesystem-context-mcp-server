@@ -113,86 +113,6 @@ const EXT_MAP: Record<string, { mimeType: string; kind: MimeKind }> = {
   dmg: { mimeType: 'application/octet-stream', kind: 'binary' },
 };
 
-// ─── Magic Signatures ────────────────────────────────────────────────────────
-// Detect file types by magic bytes (file signatures)
-
-interface MagicSignature {
-  bytes: Buffer;
-  offset: number;
-  mimeType: string;
-  kind: MimeKind;
-}
-
-const MAGIC_SIGNATURES: MagicSignature[] = [
-  // PNG
-  {
-    bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    offset: 0,
-    mimeType: 'image/png',
-    kind: 'image',
-  },
-  // JPEG
-  {
-    bytes: Buffer.from([0xff, 0xd8, 0xff]),
-    offset: 0,
-    mimeType: 'image/jpeg',
-    kind: 'image',
-  },
-  // GIF 87a and 89a
-  {
-    bytes: Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]),
-    offset: 0,
-    mimeType: 'image/gif',
-    kind: 'image',
-  },
-  {
-    bytes: Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
-    offset: 0,
-    mimeType: 'image/gif',
-    kind: 'image',
-  },
-  // WEBP
-  {
-    bytes: Buffer.from([0x52, 0x49, 0x46, 0x46]),
-    offset: 0,
-    mimeType: 'image/webp',
-    kind: 'image',
-  }, // RIFF header, webp check is more complex
-  // PDF
-  {
-    bytes: Buffer.from([0x25, 0x50, 0x44, 0x46]),
-    offset: 0,
-    mimeType: 'application/pdf',
-    kind: 'pdf',
-  }, // %PDF
-  // ZIP
-  {
-    bytes: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
-    offset: 0,
-    mimeType: 'application/zip',
-    kind: 'binary',
-  }, // PK..
-  {
-    bytes: Buffer.from([0x50, 0x4b, 0x05, 0x06]),
-    offset: 0,
-    mimeType: 'application/zip',
-    kind: 'binary',
-  }, // PK..
-  {
-    bytes: Buffer.from([0x50, 0x4b, 0x07, 0x08]),
-    offset: 0,
-    mimeType: 'application/zip',
-    kind: 'binary',
-  }, // PK..
-  // TAR (gzip compressed)
-  {
-    bytes: Buffer.from([0x1f, 0x8b]),
-    offset: 0,
-    mimeType: 'application/gzip',
-    kind: 'binary',
-  },
-];
-
 // ─── Helper Functions ───────────────────────────────────────────────────────
 
 export const MIME_SAMPLE_SIZE = 512;
@@ -271,27 +191,6 @@ export function isBinarySample(slice: Buffer): boolean {
   return !isUtf8Prefix(slice);
 }
 
-const WEBP_MARKER_BYTES = Buffer.from([0x57, 0x45, 0x42, 0x50]);
-
-function detectByMagic(buffer: Buffer): MimeInfo | null {
-  for (const sig of MAGIC_SIGNATURES) {
-    const end = sig.offset + sig.bytes.length;
-    if (buffer.length >= end) {
-      if (buffer.compare(sig.bytes, 0, sig.bytes.length, sig.offset, end) === 0) {
-        // Special handling for RIFF (WEBP vs AVI)
-        if (sig.mimeType === 'image/webp') {
-          if (buffer.length >= 12 && buffer.compare(WEBP_MARKER_BYTES, 0, 4, 8, 12) === 0) {
-            return { mimeType: 'image/webp', kind: 'image' };
-          }
-          continue;
-        }
-        return { mimeType: sig.mimeType, kind: sig.kind };
-      }
-    }
-  }
-  return null;
-}
-
 export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
   const lastDot = path.lastIndexOf('.');
   const ext = lastDot > -1 ? path.slice(lastDot + 1).toLowerCase() : '';
@@ -303,18 +202,13 @@ export function detectMimeType(path: string, sample?: Buffer): MimeInfo {
     }
   }
 
-  // magic bytes then text heuristic
+  // No known extension: fall back to a binary/text probe of the content.
   if (sample) {
-    if (sample.length > 0) {
-      const magicResult = detectByMagic(sample);
-      if (magicResult !== null) return magicResult;
-    }
     return isBinarySample(sample.subarray(0, MIME_SAMPLE_SIZE))
       ? { mimeType: 'application/octet-stream', kind: 'binary' }
       : { mimeType: 'text/plain', kind: 'text' };
   }
 
-  // 3. Final fallback
   return { mimeType: 'application/octet-stream', kind: 'binary' };
 }
 

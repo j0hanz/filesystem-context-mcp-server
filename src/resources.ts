@@ -31,8 +31,6 @@ import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
-import type { IconInfo } from './core/primitives.js';
-import { withDefaultIcons } from './core/primitives.js';
 import type { ResourceStore } from './core/store.js';
 import {
   createWatcherRegistry,
@@ -48,7 +46,6 @@ import type { ServerDeps, ServerNotifier } from './server.js';
 
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
-  iconInfo?: IconInfo;
   pathGuard?: PathGuard;
   server?: McpServer;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
@@ -456,16 +453,13 @@ function registerResourceContracts(
   const resourceContracts = getResourceContracts({ ...options, server });
 
   for (const contract of resourceContracts) {
-    const config = withDefaultIcons(
-      {
-        ...(contract.title !== undefined ? { title: contract.title } : {}),
-        ...(contract.description !== undefined ? { description: contract.description } : {}),
-        ...(contract.mimeType !== undefined ? { mimeType: contract.mimeType } : {}),
-        ...(contract.annotations !== undefined ? { annotations: contract.annotations } : {}),
-        ...(contract.cacheHint !== undefined ? { cacheHint: contract.cacheHint } : {}),
-      },
-      options.iconInfo,
-    );
+    const config = {
+      ...(contract.title !== undefined ? { title: contract.title } : {}),
+      ...(contract.description !== undefined ? { description: contract.description } : {}),
+      ...(contract.mimeType !== undefined ? { mimeType: contract.mimeType } : {}),
+      ...(contract.annotations !== undefined ? { annotations: contract.annotations } : {}),
+      ...(contract.cacheHint !== undefined ? { cacheHint: contract.cacheHint } : {}),
+    };
 
     if (contract.uriTemplate) {
       const template = new ResourceTemplate(contract.uriTemplate, {
@@ -565,7 +559,6 @@ export function registerResources(deps: ServerDeps): { dispose(): void } {
     resourceStore: deps.resourceStore,
     pathGuard: deps.pathGuard,
     server: deps.server,
-    ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
     ...(deps.watcherRegistry ? { watcherRegistry: deps.watcherRegistry } : {}),
     ...(deps.notifier ? { notifier: deps.notifier } : {}),
     readOnly: deps.readOnly ?? false,

@@ -148,10 +148,6 @@ const OPTIONS_HELP: HelpRow[] = [
     flags: '--log-level <level>',
     desc: 'Log level: debug|info|warn|error (env: LOG_LEVEL)',
   },
-  {
-    flags: '--log-format <format>',
-    desc: 'Log format: text|json (env: LOG_FORMAT)',
-  },
   { flags: '--http-host <host>', desc: 'HTTP server bind address (env: HTTP_HOST)' },
   {
     flags: '--api-key <key>',
@@ -179,7 +175,6 @@ const OPTIONS_HELP: HelpRow[] = [
 
 export const ENV_HELP: HelpRow[] = [
   { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
-  { flags: 'LOG_FORMAT', desc: 'Log format: text|json (default: text)' },
   { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
   { flags: 'API_KEY', desc: 'HTTP API key' },
   {
@@ -337,7 +332,6 @@ export const CLI_PARSER_CONFIG = {
     help: { type: 'boolean', short: 'h' },
     version: { type: 'boolean', short: 'v' },
     'log-level': { type: 'string' },
-    'log-format': { type: 'string' },
     'http-host': { type: 'string' },
     'api-key': { type: 'string' },
     'allow-sensitive': { type: 'boolean', default: false },
@@ -378,7 +372,6 @@ export async function parseArgs(): Promise<{
     if (typeof vals['http-host'] === 'string') process.env['HTTP_HOST'] = vals['http-host'];
     if (typeof vals['api-key'] === 'string') process.env['API_KEY'] = vals['api-key'];
     if (typeof vals['log-level'] === 'string') process.env['LOG_LEVEL'] = vals['log-level'];
-    if (typeof vals['log-format'] === 'string') process.env['LOG_FORMAT'] = vals['log-format'];
     if (typeof vals['max-file-size'] === 'string')
       process.env['MAX_FILE_SIZE'] = vals['max-file-size'];
     if (typeof vals['root-boundary'] === 'string')

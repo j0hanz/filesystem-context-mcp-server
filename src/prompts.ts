@@ -21,8 +21,6 @@ import { buildFileResourceUri } from './core/file-uri.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
 import type { PathGuard } from './core/path.js';
-import type { IconInfo } from './core/primitives.js';
-import { withDefaultIcons } from './core/primitives.js';
 import { isBlank, RequiredPath, SHELL_METACHAR_RE } from './core/schema.js';
 import {
   buildSectionsRecord,
@@ -45,7 +43,6 @@ interface PromptRegistrationOptions {
   sections: Record<string, string>;
   instructions: string;
   instructionsUri: string;
-  iconInfo?: IconInfo;
 }
 
 interface PromptEntry {
@@ -145,19 +142,16 @@ const GET_HELP: PromptEntry = {
     const topics = Object.keys(options.sections);
     server.registerPrompt(
       GET_HELP.contract.name,
-      withDefaultIcons(
-        {
-          title: GET_HELP.contract.title,
-          description: GET_HELP.contract.description,
-          argsSchema: z.strictObject({
-            topic: topicArg(
-              topics,
-              'Section key to filter instructions (e.g. "tools", "paths"); omit to return all instructions.',
-            ).optional(),
-          }),
-        },
-        options.iconInfo,
-      ),
+      {
+        title: GET_HELP.contract.title,
+        description: GET_HELP.contract.description,
+        argsSchema: z.strictObject({
+          topic: topicArg(
+            topics,
+            'Section key to filter instructions (e.g. "tools", "paths"); omit to return all instructions.',
+          ).optional(),
+        }),
+      },
       ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
         wrapHandler(GET_HELP.contract, () => {
           const lowerTopic = topic?.toLowerCase();
@@ -192,20 +186,17 @@ const ANALYZE_PATH: PromptEntry = {
   register(server, options) {
     server.registerPrompt(
       ANALYZE_PATH.contract.name,
-      withDefaultIcons(
-        {
-          title: ANALYZE_PATH.contract.title,
-          description: ANALYZE_PATH.contract.description,
-          argsSchema: z.strictObject({
-            path: pathArg(
-              options.pathGuard,
-              'path',
-              'Absolute or relative path of the file or directory to analyze',
-            ),
-          }),
-        },
-        options.iconInfo,
-      ),
+      {
+        title: ANALYZE_PATH.contract.title,
+        description: ANALYZE_PATH.contract.description,
+        argsSchema: z.strictObject({
+          path: pathArg(
+            options.pathGuard,
+            'path',
+            'Absolute or relative path of the file or directory to analyze',
+          ),
+        }),
+      },
       async ({ path: rawPath }: { path: string }): Promise<GetPromptResult> =>
         wrapHandler(ANALYZE_PATH.contract, async () => {
           const resolved = await options.pathGuard.validateExistingPath(rawPath);
@@ -240,35 +231,32 @@ const FIND_IN_TREE: PromptEntry = {
   register(server, options) {
     server.registerPrompt(
       FIND_IN_TREE.contract.name,
-      withDefaultIcons(
-        {
-          title: FIND_IN_TREE.contract.title,
-          description: FIND_IN_TREE.contract.description,
-          argsSchema: z.strictObject({
-            query: z
-              .string()
-              .min(1)
-              .refine((val) => !isBlank(val), {
-                message: 'Query cannot be empty or whitespace-only',
-              })
-              .refine((val) => !SHELL_METACHAR_RE.test(val), {
-                message: 'Query contains prohibited characters (newlines or shell metacharacters)',
-              })
-              .describe(
-                'Search term. Glob pattern for name mode or RE2 regex pattern for content/both modes. Cannot be empty or whitespace-only, and must not contain shell metacharacters.',
-              ),
-            root: pathArg(
-              options.pathGuard,
-              'root',
-              'Directory to search under (must be within an allowed root); defaults to the first allowed root.',
-            ).optional(),
-            mode: FIND_IN_TREE_MODE.default('both').describe(
-              'Search scope: name = filename patterns only, content = file content only, both = all.',
+      {
+        title: FIND_IN_TREE.contract.title,
+        description: FIND_IN_TREE.contract.description,
+        argsSchema: z.strictObject({
+          query: z
+            .string()
+            .min(1)
+            .refine((val) => !isBlank(val), {
+              message: 'Query cannot be empty or whitespace-only',
+            })
+            .refine((val) => !SHELL_METACHAR_RE.test(val), {
+              message: 'Query contains prohibited characters (newlines or shell metacharacters)',
+            })
+            .describe(
+              'Search term. Glob pattern for name mode or RE2 regex pattern for content/both modes. Cannot be empty or whitespace-only, and must not contain shell metacharacters.',
             ),
-          }),
-        },
-        options.iconInfo,
-      ),
+          root: pathArg(
+            options.pathGuard,
+            'root',
+            'Directory to search under (must be within an allowed root); defaults to the first allowed root.',
+          ).optional(),
+          mode: FIND_IN_TREE_MODE.default('both').describe(
+            'Search scope: name = filename patterns only, content = file content only, both = all.',
+          ),
+        }),
+      },
       async ({
         query,
         root,
@@ -317,27 +305,24 @@ const SUMMARIZE_DIRECTORY: PromptEntry = {
   register(server, options) {
     server.registerPrompt(
       SUMMARIZE_DIRECTORY.contract.name,
-      withDefaultIcons(
-        {
-          title: SUMMARIZE_DIRECTORY.contract.title,
-          description: SUMMARIZE_DIRECTORY.contract.description,
-          argsSchema: z.strictObject({
-            path: pathArg(
-              options.pathGuard,
-              'path',
-              'Absolute or relative path of the directory to summarize',
+      {
+        title: SUMMARIZE_DIRECTORY.contract.title,
+        description: SUMMARIZE_DIRECTORY.contract.description,
+        argsSchema: z.strictObject({
+          path: pathArg(
+            options.pathGuard,
+            'path',
+            'Absolute or relative path of the directory to summarize',
+          ),
+          depth: z.coerce
+            .number()
+            .pipe(z.int32().min(1).max(6))
+            .default(3)
+            .describe(
+              'Maximum tree depth for directory listing (1 = top-level only, 6 = deep; default 3).',
             ),
-            depth: z.coerce
-              .number()
-              .pipe(z.int32().min(1).max(6))
-              .default(3)
-              .describe(
-                'Maximum tree depth for directory listing (1 = top-level only, 6 = deep; default 3).',
-              ),
-          }),
-        },
-        options.iconInfo,
-      ),
+        }),
+      },
       async ({ path: rawPath, depth }: { path: string; depth: number }): Promise<GetPromptResult> =>
         wrapHandler(SUMMARIZE_DIRECTORY.contract, async () => {
           const resolved = await options.pathGuard.validateExistingDirectory(rawPath);
@@ -367,20 +352,17 @@ const AUDIT_WORKSPACE_SECURITY: PromptEntry = {
   register(server, options) {
     server.registerPrompt(
       AUDIT_WORKSPACE_SECURITY.contract.name,
-      withDefaultIcons(
-        {
-          title: AUDIT_WORKSPACE_SECURITY.contract.title,
-          description: AUDIT_WORKSPACE_SECURITY.contract.description,
-          argsSchema: z.strictObject({
-            root: pathArg(
-              options.pathGuard,
-              'root',
-              'Directory to audit (defaults to first allowed root)',
-            ).optional(),
-          }),
-        },
-        options.iconInfo,
-      ),
+      {
+        title: AUDIT_WORKSPACE_SECURITY.contract.title,
+        description: AUDIT_WORKSPACE_SECURITY.contract.description,
+        argsSchema: z.strictObject({
+          root: pathArg(
+            options.pathGuard,
+            'root',
+            'Directory to audit (defaults to first allowed root)',
+          ).optional(),
+        }),
+      },
       async ({ root }: { root?: string | undefined }): Promise<GetPromptResult> =>
         wrapHandler(AUDIT_WORKSPACE_SECURITY.contract, async () => {
           const candidate = root ?? options.pathGuard.getAllowedDirectories()[0];
@@ -423,34 +405,31 @@ const REFACTOR_WORKFLOW: PromptEntry = {
   register(server, options) {
     server.registerPrompt(
       REFACTOR_WORKFLOW.contract.name,
-      withDefaultIcons(
-        {
-          title: REFACTOR_WORKFLOW.contract.title,
-          description: REFACTOR_WORKFLOW.contract.description,
-          argsSchema: z.strictObject({
-            query: z
-              .string()
-              .min(1)
-              .refine((val) => !isBlank(val), {
-                message: 'Query cannot be empty or whitespace-only',
-              })
-              .refine((val) => !SHELL_METACHAR_RE.test(val), {
-                message: 'Query contains prohibited characters (newlines or shell metacharacters)',
-              })
-              .describe('Symbol, function, or string pattern to refactor across the workspace.'),
-            root: pathArg(
-              options.pathGuard,
-              'root',
-              'Root directory to scope the refactoring within (defaults to first allowed root)',
-            ).optional(),
-            dryRun: z
-              .stringbool()
-              .default(true)
-              .describe('Preview changes as unified diffs first before applying (default: true).'),
-          }),
-        },
-        options.iconInfo,
-      ),
+      {
+        title: REFACTOR_WORKFLOW.contract.title,
+        description: REFACTOR_WORKFLOW.contract.description,
+        argsSchema: z.strictObject({
+          query: z
+            .string()
+            .min(1)
+            .refine((val) => !isBlank(val), {
+              message: 'Query cannot be empty or whitespace-only',
+            })
+            .refine((val) => !SHELL_METACHAR_RE.test(val), {
+              message: 'Query contains prohibited characters (newlines or shell metacharacters)',
+            })
+            .describe('Symbol, function, or string pattern to refactor across the workspace.'),
+          root: pathArg(
+            options.pathGuard,
+            'root',
+            'Root directory to scope the refactoring within (defaults to first allowed root)',
+          ).optional(),
+          dryRun: z
+            .stringbool()
+            .default(true)
+            .describe('Preview changes as unified diffs first before applying (default: true).'),
+        }),
+      },
       async ({
         query,
         root,
@@ -507,7 +486,6 @@ export function registerPrompts(deps: ServerDeps): void {
     sections,
     instructions: renderSections(sections),
     instructionsUri: INSTRUCTIONS_URI,
-    ...(deps.iconInfo ? { iconInfo: deps.iconInfo } : {}),
   };
   for (const { register } of PROMPT_ENTRIES) {
     register(deps.server, options);
