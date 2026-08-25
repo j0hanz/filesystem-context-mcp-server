@@ -16,7 +16,7 @@ starting, honor its STOP conditions, and update your row when done.
 
 | Plan | Title                                                          | Priority | Effort | Depends on | Status                                                                                                |
 | ---- | -------------------------------------------------------------- | -------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------- |
-| 001  | Make a released URI watchable again (watcher-state fix + leak) | P1       | S      | —          | BLOCKED (plan's own TC-FUNC-067 extension trips the ref-count-overcount ceiling; reverted, no commit) |
+| 001  | Make a released URI watchable again (watcher-state fix + leak) | P1       | S      | —          | DONE                                                                                                  |
 | 002  | Count only new watchers in the listen capacity pre-check       | P2       | S      | 001 (soft) | DONE                                                                                                  |
 | 003  | Dead branch in list() + misleading result-read error message   | P3       | S      | —          | DONE                                                                                                  |
 
