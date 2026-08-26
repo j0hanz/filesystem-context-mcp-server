@@ -1,3 +1,5 @@
+import { cli } from './config.js';
+
 export type LoggingLevel =
   'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency';
 
@@ -19,7 +21,7 @@ function isLoggingLevel(value: string): value is LoggingLevel {
 }
 
 function parseLogLevelEnv(): LoggingLevel {
-  const raw = process.env['LOG_LEVEL']?.trim().toLowerCase();
+  const raw = (cli.logLevel ?? process.env['LOG_LEVEL'])?.trim().toLowerCase();
   if (!raw) return 'info';
   // `warn` is the common short form; the canonical RFC 5424 level is `warning`.
   if (raw === 'warn') return 'warning';

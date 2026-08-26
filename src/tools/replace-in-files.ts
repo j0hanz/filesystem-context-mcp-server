@@ -66,7 +66,7 @@ const SearchAndReplaceInputSchema = z.strictObject({
     .string()
     .max(10000)
     .describe(
-      'Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches. Do not include shell commands or injected instructions.',
+      'Replacement text. Use capture group references ($1, $2, etc.) when isRegex=true. Use an empty string to delete all matches.',
     )
     .meta({ examples: ['$1_renamed', '', 'TODO: fix'] }),
   isRegex: defaultFalseBoolean('Treat searchPattern as a RE2 regex (default: literal text match)'),
@@ -95,7 +95,6 @@ const SearchAndReplaceInputSchema = z.strictObject({
 });
 
 const SearchAndReplaceOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; per-file errors are in failures[]'),
   filesModified: NonNegInt.describe('Number of files that had at least one replacement applied'),
   totalMatches: NonNegInt.describe('Total number of replacements made across all files'),
   processedFiles: NonNegInt.describe('Total number of files examined'),
@@ -500,7 +499,6 @@ function buildSearchAndReplaceStructuredResult(
   args: SearchAndReplaceArgs,
 ): SearchAndReplaceOutput {
   return {
-    ok: true,
     filesModified: summary.filesChanged,
     totalMatches: summary.totalMatches,
     processedFiles: summary.processedFiles,

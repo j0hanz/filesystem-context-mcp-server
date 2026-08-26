@@ -109,7 +109,6 @@ const GrepInputSchema = z.strictObject({
 });
 
 const GrepOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; unreadable files are skipped silently'),
   matches: z
     .array(
       z.strictObject({
@@ -159,7 +158,6 @@ function buildSearchStructured(
   matches: SearchMatchPayload[],
 ): SearchOutput {
   return {
-    ok: true,
     matches,
     totalMatches: summary.matchingLines,
     filesScanned: summary.filesScanned,

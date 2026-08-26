@@ -5,7 +5,7 @@ import { dirname, join, parse } from 'node:path';
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
 import { isPathWithinDirectories, isSamePath, normalizePath } from './path.js';
-import { parseEnvDirList } from './primitives.js';
+import { parseEnvDirList, splitDirList } from './primitives.js';
 
 // Resolve a configured env-var directory list (FS_ALLOWED_DIRS / ROOT_BOUNDARY)
 // into normalized, verified directories. Each entry is stat'd; a non-directory
@@ -13,12 +13,13 @@ import { parseEnvDirList } from './primitives.js';
 // which case the normalized path is kept). When `resolveReal` is set, a
 // directory entry is pushed as its realpath (normalized) instead of the raw
 // path — ROOT_BOUNDARY uses this so a symlinked root resolves to its target.
+// A CLI override supplies `rawValue`, which beats the environment entirely.
 // Both warning messages are templated on `envVar` so operator output is stable.
 export async function resolveConfiguredDirs(
   envVar: string,
-  opts: { allowMissing?: boolean; resolveReal?: boolean } = {},
+  opts: { allowMissing?: boolean; resolveReal?: boolean; rawValue?: string } = {},
 ): Promise<string[]> {
-  const raw = parseEnvDirList(envVar);
+  const raw = opts.rawValue !== undefined ? splitDirList(opts.rawValue) : parseEnvDirList(envVar);
   const result: string[] = [];
   for (const rawPath of raw) {
     const normalized = normalizePath(rawPath);

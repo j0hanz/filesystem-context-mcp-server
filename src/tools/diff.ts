@@ -18,7 +18,6 @@ const DiffInputSchema = z.strictObject({
 });
 
 const DiffOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; call succeeded'),
   a: z.string().describe('Resolved absolute path of the first file'),
   b: z.string().describe('Resolved absolute path of the second file'),
   diff: z.string().describe('Unified diff of the two files'),
@@ -82,7 +81,6 @@ async function handleDiff(
 
   return {
     structured: {
-      ok: true as const,
       a: validA,
       b: validB,
       diff: diffText,

@@ -24,13 +24,16 @@ export function escapeRegexLiteral(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function parseEnvDirList(envVar: string): string[] {
-  const val = process.env[envVar];
+export function splitDirList(val: string | undefined): string[] {
   if (!val) return [];
   return val
     .split(delimiter)
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
+}
+
+export function parseEnvDirList(envVar: string): string[] {
+  return splitDirList(process.env[envVar]);
 }
 
 // ─── Path primitives (moved from path.ts to break the path↔sensitive cycle) ──

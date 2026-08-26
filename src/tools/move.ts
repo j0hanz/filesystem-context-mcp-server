@@ -16,32 +16,29 @@ import {
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { readAcceptedChoice } from '../core/input-required.js';
-import { IS_CASE_INSENSITIVE_FS, isSamePath } from '../core/path.js';
-import { pairFailureSchema, RequiredPath } from '../core/schema.js';
+import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path.js';
+import { defaultFalseBoolean, pairFailureSchema, RequiredPath } from '../core/schema.js';
 import type { PairExecResult, PairPlanResult } from './batch.js';
 import { pairFailure, runOverPairs } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
 const MoveItemSchema = z.strictObject({
-  source: RequiredPath.describe('Absolute path of the file or directory to move'),
-  destination: RequiredPath.describe('Absolute destination path'),
+  source: RequiredPath.describe('Path of the file or directory to move or copy'),
+  destination: RequiredPath.describe('Destination path'),
 });
 
 const MoveItemResultSchema = z.strictObject({
   from: z.string().describe('Resolved absolute source path'),
   to: z.string().describe('Resolved absolute destination path'),
-  ok: z
-    .literal(true)
-    .describe('Always true for this entry; failures are in the outer failures array'),
 });
 
 const MoveInputSchema = z.strictObject({
-  moves: z
-    .array(MoveItemSchema)
-    .min(1)
-    .max(100)
-    .describe('List of move operations to perform (max 100); each requires source and destination'),
+  moves: z.array(MoveItemSchema).min(1).max(100).describe('Operations to perform (max 100)'),
+  copy: defaultFalseBoolean('Copy instead of move; sources are left in place'),
+  overwrite: defaultFalseBoolean(
+    'Copy mode only: overwrite existing destinations without confirmation',
+  ),
 });
 
 const MoveFailureItemSchema = pairFailureSchema('moved', 'move');
@@ -49,12 +46,11 @@ const MoveFailureItemSchema = pairFailureSchema('moved', 'move');
 type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
 
 const MoveOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; per-move errors are in failures[]'),
-  moves: z.array(MoveItemResultSchema).describe('Successfully completed move operations'),
+  moves: z.array(MoveItemResultSchema).describe('Successfully completed operations'),
   failures: z
     .array(MoveFailureItemSchema)
     .optional()
-    .describe('Move operations that failed with per-item error details'),
+    .describe('Operations that failed with per-item error details'),
   skipped: z
     .array(z.string())
     .optional()
@@ -185,7 +181,106 @@ async function executeMove(
 
   await performRenameWithFallback(plan.renamePath, plan.validDest, ctx.fs, plan.pair.source);
   ctx.log?.('info', `move: ${plan.pair.source} -> ${plan.pair.destination}`, 'move');
-  return { value: { ok: true as const, from: plan.renamePath, to: plan.validDest } };
+  return { value: { from: plan.renamePath, to: plan.validDest } };
+}
+
+/** A copy pre-checked up to the point a confirmation decision is needed. */
+interface CopyPlan {
+  pair: { source: string; destination: string };
+  realSource: string;
+  validDest: string;
+  destExistedOriginally: boolean;
+  pending: boolean;
+}
+
+async function planCopy(
+  copy: { source: string; destination: string },
+  fs: ToolCtx['fs'],
+  overwrite: boolean,
+): Promise<PairPlanResult<CopyPlan>> {
+  let realSource: string;
+  try {
+    realSource = await fs.pathGuard.validateExistingPath(copy.source);
+  } catch (error) {
+    return { status: 'fail', failure: pairFailure(copy, error) };
+  }
+
+  let validDest: string;
+  try {
+    validDest = await fs.pathGuard.validatePathForWrite(copy.destination);
+  } catch (error) {
+    return { status: 'fail', failure: pairFailure(copy, error) };
+  }
+
+  if (isSamePath(realSource, validDest)) {
+    // Self-copy — noop
+    return { status: 'noop' };
+  }
+
+  if (isPathInsideDirectory(realSource, validDest)) {
+    return {
+      status: 'fail',
+      failure: pairFailure(
+        copy,
+        new FsError(
+          ErrorCode.INVALID_INPUT,
+          'Cannot copy a directory into its own subdirectory',
+          copy.source,
+        ),
+      ),
+    };
+  }
+
+  const destExistedOriginally = await destExists(fs, validDest, 'copy');
+
+  const pending = destExistedOriginally && !overwrite;
+  return {
+    status: 'plan',
+    plan: { pair: copy, realSource, validDest, destExistedOriginally, pending },
+  };
+}
+
+async function executeCopy(
+  plan: CopyPlan,
+  ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses'>,
+  pendingSorted: readonly string[],
+  overwrite: boolean,
+): Promise<PairExecResult<MoveItemResult>> {
+  if (plan.pending && !overwrite) {
+    const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
+    const choice = readAcceptedChoice(ctx.inputResponses, key);
+    if (choice === 'skip') {
+      return { skipped: plan.pair.destination };
+    }
+    if (choice !== 'overwrite') {
+      throw new FsError(
+        ErrorCode.CANCELLED,
+        `Copy cancelled: overwrite of "${plan.pair.destination}" was declined or missing`,
+        plan.pair.destination,
+      );
+    }
+  }
+
+  // TOCTOU check before any mutation: a destination that did not exist when
+  // planned but exists now was created during the confirmation gap.
+  if ((await destExists(ctx.fs, plan.validDest, 'copy')) && !plan.destExistedOriginally) {
+    throw new FsError(
+      ErrorCode.CANCELLED,
+      `Copy cancelled: destination "${plan.pair.destination}" was created during confirmation.`,
+      plan.pair.destination,
+    );
+  }
+
+  await ctx.fs.mkdir(dirname(plan.validDest), { recursive: true });
+
+  await ctx.fs.cp(plan.realSource, plan.validDest, {
+    recursive: true,
+    verbatimSymlinks: true,
+    preserveTimestamps: true,
+    force: true,
+  });
+
+  return { value: { from: plan.realSource, to: plan.validDest } };
 }
 
 /**
@@ -199,17 +294,22 @@ async function handleMove(
   args: z.infer<typeof MoveInputSchema>,
   ctx: ToolCtx,
 ): Promise<z.infer<typeof MoveOutputSchema> | InputRequiredResult> {
-  const outcome = await runOverPairs(args.moves, ctx, {
-    op: 'move',
-    plan: (move) => planMove(move, ctx.fs),
-    execute: (plan, pendingSorted) => executeMove(plan, ctx, pendingSorted),
-  });
+  const outcome = args.copy
+    ? await runOverPairs(args.moves, ctx, {
+        op: 'copy',
+        plan: (pair) => planCopy(pair, ctx.fs, args.overwrite),
+        execute: (plan, pendingSorted) => executeCopy(plan, ctx, pendingSorted, args.overwrite),
+      })
+    : await runOverPairs(args.moves, ctx, {
+        op: 'move',
+        plan: (move) => planMove(move, ctx.fs),
+        execute: (plan, pendingSorted) => executeMove(plan, ctx, pendingSorted),
+      });
   if (isInputRequiredResult(outcome)) return outcome;
 
   const { results, skipped, failures } = outcome;
 
   return {
-    ok: true as const,
     moves: results,
     ...(failures.length > 0 ? { failures } : {}),
     ...(skipped.length > 0 ? { skipped } : {}),
@@ -217,6 +317,7 @@ async function handleMove(
 }
 
 function buildSummary(
+  verb: 'move' | 'copy',
   results: readonly MoveItemResult[],
   failures: readonly MoveFailureItem[],
 ): string {
@@ -225,10 +326,10 @@ function buildSummary(
   if (failCount === 0 && successCount === 1) {
     const result = results[0];
     if (result) {
-      return `move: ${basename(result.from)} → ${basename(result.to)}`;
+      return `${verb}: ${basename(result.from)} → ${basename(result.to)}`;
     }
   }
-  const parts = [`move: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
+  const parts = [`${verb}: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
   if (failCount > 0) parts.push(`${String(failCount)} failed`);
   return parts.join(' · ');
 }
@@ -311,10 +412,11 @@ async function performRenameWithFallback(
 
 export const MOVE = defineTool({
   name: 'move',
-  title: 'Move Files',
+  title: 'Move or Copy Files',
   description:
-    'Move or rename files and directories to explicit destination paths (max 100 operations per call). ' +
-    'Parent directories are created automatically. Self-moves are silently skipped.',
+    'Move, rename, or copy files and directories to explicit destination paths (max 100 operations per call). ' +
+    'Parent directories are created automatically. Set copy=true to copy instead of move (sources are kept). ' +
+    'Self-moves are silently skipped.',
   input: MoveInputSchema,
   output: MoveOutputSchema,
   annotations: {
@@ -324,14 +426,15 @@ export const MOVE = defineTool({
     openWorldHint: false,
   },
   progress: (args) => {
+    const label = args.copy ? 'Copy' : 'Move';
     if (args.moves.length === 1) {
       const move = args.moves[0];
       return {
-        label: 'Move',
+        label,
         subject: `${basename(move?.source ?? '')} → ${basename(move?.destination ?? '')}`,
       };
     }
-    return { label: 'Move', subject: `${String(args.moves.length)} files` };
+    return { label, subject: `${String(args.moves.length)} files` };
   },
   defaultErrorCode: ErrorCode.UNKNOWN,
   accessPaths: (args) => args.moves.flatMap((m) => [m.source, m.destination]),
@@ -340,6 +443,9 @@ export const MOVE = defineTool({
     // input_required is a return value, not a completed call: surface it
     // verbatim so the executor short-circuits before building a CallToolResult.
     if (isInputRequiredResult(output)) return output;
-    return { structured: output, text: buildSummary(output.moves, output.failures ?? []) };
+    return {
+      structured: output,
+      text: buildSummary(args.copy ? 'copy' : 'move', output.moves, output.failures ?? []),
+    };
   },
 });

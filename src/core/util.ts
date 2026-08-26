@@ -1,5 +1,6 @@
 import { availableParallelism } from 'node:os';
 
+import { cli } from './config.js';
 import { Logger } from './observability.js';
 import { parseTrueEnvFlag } from './primitives.js';
 
@@ -31,7 +32,17 @@ export function parseEnvInt(
   min: number,
   max: number,
 ): number {
-  const value = process.env[envVar];
+  return parseIntSetting(envVar, process.env[envVar], defaultValue, min, max);
+}
+
+/** Validate a raw integer setting (env var or CLI override) with a logged fallback. */
+export function parseIntSetting(
+  name: string,
+  value: string | undefined,
+  defaultValue: number,
+  min: number,
+  max: number,
+): number {
   if (!value) {
     return defaultValue;
   }
@@ -45,7 +56,7 @@ export function parseEnvInt(
     parsed < min ||
     parsed > max
   ) {
-    logInvalidEnvValue(envVar, value, `${String(min)}-${String(max)}`, defaultValue);
+    logInvalidEnvValue(name, value, `${String(min)}-${String(max)}`, defaultValue);
     return defaultValue;
   }
   return parsed;
@@ -73,7 +84,13 @@ export const PARALLEL_CONCURRENCY = Math.min(Math.max(availableParallelism(), 4)
 export const ROOTS_TIMEOUT_MS = 5000;
 
 export function getMaxTextFileSize(): number {
-  return parseEnvInt('MAX_FILE_SIZE', 10 * MIB, MIB, 100 * MIB);
+  return parseIntSetting(
+    'MAX_FILE_SIZE',
+    cli.maxFileSize ?? process.env['MAX_FILE_SIZE'],
+    10 * MIB,
+    MIB,
+    100 * MIB,
+  );
 }
 
 export function getDefaultReadManyMaxTotalSize(): number {

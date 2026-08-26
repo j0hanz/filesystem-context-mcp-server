@@ -6,6 +6,7 @@
 // glob.ts reach it through PathGuard.isSensitive, which delegates here.
 import { normalize, posix, sep } from 'node:path';
 
+import { cli } from './config.js';
 import { IS_WINDOWS, isAlpha, parseTrueEnvFlag, toPosixPath } from './primitives.js';
 
 const CHAR_COLON = 58;
@@ -138,7 +139,7 @@ const DEFAULT_SENSITIVE_PATTERNS = [
 ] as const;
 
 function buildSensitivePatterns(): readonly string[] {
-  const allowSensitive = parseTrueEnvFlag(process.env['ALLOW_SENSITIVE']);
+  const allowSensitive = cli.allowSensitive ?? parseTrueEnvFlag(process.env['ALLOW_SENSITIVE']);
   const envValue = process.env['DENYLIST'];
   const envDenylist = envValue
     ? envValue
@@ -146,8 +147,13 @@ function buildSensitivePatterns(): readonly string[] {
         .map((t) => t.trim())
         .filter((t) => t.length > 0)
     : [];
-  // ALLOW_SENSITIVE suppresses built-ins only; DENYLIST entries always apply
-  return [...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS), ...envDenylist];
+  const flagDenylist = cli.denyPatterns ?? [];
+  // ALLOW_SENSITIVE suppresses built-ins only; deny entries (env and --deny)
+  // always apply. Set-dedupe so a pattern in both sources matches once.
+  return [
+    ...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS),
+    ...new Set([...envDenylist, ...flagDenylist]),
+  ];
 }
 
 export class SensitiveMatcher {

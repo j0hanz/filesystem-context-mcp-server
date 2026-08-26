@@ -161,43 +161,49 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(allTools.length, ALL_REGISTERED_TOOL_NAMES.length);
   });
 
-  it('tools/list publishes draft-2020-12 through fromJsonSchema and preserves Zod runtime semantics', async () => {
+  it('tools/list publishes slimmed schemas and preserves Zod runtime semantics', async () => {
     const pinHarness = await createTestClientPair([tmpDir]);
     try {
       const { tools } = await pinHarness.client.listTools();
       assert.ok(tools.length > 0);
       for (const tool of tools) {
+        // The wire copy is slimmed: no $schema, no $defs, no titles.
         assert.strictEqual(
           (tool.inputSchema as { $schema?: string }).$schema,
-          'https://json-schema.org/draft/2020-12/schema',
-          `${tool.name} must publish the precomputed draft-2020-12 schema`,
+          undefined,
+          `${tool.name} must not publish a $schema key`,
         );
         assert.strictEqual(
-          (tool.outputSchema as { $schema?: string } | undefined)?.$schema,
-          'https://json-schema.org/draft/2020-12/schema',
-          `${tool.name} must publish a draft-2020-12 output schema`,
+          (tool.inputSchema as { $defs?: unknown }).$defs,
+          undefined,
+          `${tool.name} must publish a dereferenced input schema without $defs`,
+        );
+        assert.strictEqual(
+          (tool.outputSchema as { $defs?: unknown } | undefined)?.$defs,
+          undefined,
+          `${tool.name} must publish a dereferenced output schema without $defs`,
         );
       }
 
-      const file = await writeTestFile(tmpDir, 'schema-hash.txt', 'body');
+      // Zod defaults still reach the handler: edit applies with dryRun's
+      // default (false), so the file on disk actually changes.
+      const file = await writeTestFile(tmpDir, 'schema-defaults.txt', 'before body');
       const defaulted = await pinHarness.client.callTool({
-        name: 'hash_file',
-        arguments: { path: file },
+        name: 'edit',
+        arguments: { path: file, edits: [{ oldText: 'before body', newText: 'after body' }] },
       });
-      assert.deepStrictEqual(
-        (defaulted.structuredContent as { algorithms?: string[] } | undefined)?.algorithms,
-        ['sha256'],
-        'Zod defaults must reach the tool handler',
-      );
+      assert.notStrictEqual(defaulted.isError, true);
+      const edited = await readFile(file, 'utf-8');
+      assert.strictEqual(edited, 'after body', 'Zod defaults must reach the tool handler');
 
+      // Zod validation still runs with its error messages.
       const invalid = await pinHarness.client.callTool({
-        name: 'hash_file',
-        arguments: { path: file, algorithms: [] },
+        name: 'read',
+        arguments: { path: file, head: 0 },
       });
       assert.strictEqual(invalid.isError, true);
       const errorText = firstTextBlock(invalid).text ?? '';
-      assert.match(errorText, /algorithms/u);
-      assert.match(errorText, /too small|at least|>=1/iu);
+      assert.match(errorText, /head/u);
     } finally {
       await pinHarness.close();
     }
@@ -375,9 +381,10 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(dst, 'existing dst');
 
     const result = await harness.client.callTool({
-      name: 'copy',
+      name: 'move',
       arguments: {
-        copies: [{ source: src, destination: dst }],
+        moves: [{ source: src, destination: dst }],
+        copy: true,
         overwrite: true,
       },
     });
@@ -392,9 +399,10 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(src, 'copy content');
 
     const result = await harness.client.callTool({
-      name: 'copy',
+      name: 'move',
       arguments: {
-        copies: [{ source: src, destination: dst }],
+        moves: [{ source: src, destination: dst }],
+        copy: true,
       },
     });
     assert.notStrictEqual(result.isError, true);
@@ -414,9 +422,10 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(join(srcDir, 'sub', 'file2.txt'), 'file2');
 
     const result = await harness.client.callTool({
-      name: 'copy',
+      name: 'move',
       arguments: {
-        copies: [{ source: srcDir, destination: dstDir }],
+        moves: [{ source: srcDir, destination: dstDir }],
+        copy: true,
       },
     });
     assert.notStrictEqual(result.isError, true);
@@ -432,9 +441,10 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(outsideFile, 'secret');
     try {
       const result = await harness.client.callTool({
-        name: 'copy',
+        name: 'move',
         arguments: {
-          copies: [{ source: outsideFile, destination: join(tmpDir, 'stolen.txt') }],
+          moves: [{ source: outsideFile, destination: join(tmpDir, 'stolen.txt') }],
+          copy: true,
         },
       });
       assert.strictEqual(result.isError, true);
@@ -600,12 +610,12 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       await writeFile(src, 'new source');
       await writeFile(dst, 'existing dst');
       const result = await eh.client.callTool({
-        name: 'copy',
-        arguments: { copies: [{ source: src, destination: dst }] },
+        name: 'move',
+        arguments: { moves: [{ source: src, destination: dst }], copy: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { copies?: unknown[]; skipped?: string[] };
-      assert.strictEqual(s.copies?.length, 0);
+      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.moves?.length, 0);
       assert.ok(s.skipped?.includes(dst));
       assert.strictEqual(await readFile(dst, 'utf-8'), 'existing dst');
     } finally {
@@ -624,12 +634,12 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       await writeFile(src, 'new source');
       await writeFile(dst, 'existing dst');
       const result = await eh.client.callTool({
-        name: 'copy',
-        arguments: { copies: [{ source: src, destination: dst }] },
+        name: 'move',
+        arguments: { moves: [{ source: src, destination: dst }], copy: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { copies?: unknown[]; skipped?: string[] };
-      assert.strictEqual(s.copies?.length, 1);
+      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      assert.strictEqual(s.moves?.length, 1);
       assert.strictEqual(s.skipped, undefined);
       assert.strictEqual(await readFile(dst, 'utf-8'), 'new source');
     } finally {
@@ -776,21 +786,22 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       });
       try {
         const result = await eh.client.callTool({
-          name: 'copy',
+          name: 'move',
           arguments: {
-            copies: [
+            moves: [
               { source: srcA, destination: join(rootDir, 'a_copy.txt') },
               { source: srcB, destination: join(rootDir, 'b_copy.txt') },
             ],
+            copy: true,
           },
         });
         assert.notStrictEqual(result.isError, true);
         const s = result.structuredContent as {
-          copies?: { from?: string; to?: string }[];
+          moves?: { from?: string; to?: string }[];
           failures?: { source?: string; error?: { code?: string } }[];
         };
         // The accepted dir's copy succeeded; the declined dir's failed closed.
-        assert.strictEqual(s.copies?.length, 1, 'exactly one copy (the accepted dir) succeeds');
+        assert.strictEqual(s.moves?.length, 1, 'exactly one copy (the accepted dir) succeeds');
         assert.strictEqual(s.failures?.length, 1, 'exactly one failure (the declined dir)');
         assert.strictEqual(s.failures?.[0]?.error?.code, 'ACCESS_DENIED');
       } finally {
@@ -832,17 +843,18 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       }));
       try {
         const result = await eh.client.callTool({
-          name: 'copy',
+          name: 'move',
           arguments: {
-            copies: [
+            moves: [
               { source: srcA, destination: join(rootDir, 'a_copy.txt') },
               { source: srcB, destination: join(rootDir, 'b_copy.txt') },
             ],
+            copy: true,
           },
         });
         assert.notStrictEqual(result.isError, true);
-        const s = result.structuredContent as { copies?: unknown[] };
-        assert.strictEqual(s.copies?.length, 1, 'offered accepted dir is granted');
+        const s = result.structuredContent as { moves?: unknown[] };
+        assert.strictEqual(s.moves?.length, 1, 'offered accepted dir is granted');
 
         // secretDir was never offered -> not granted -> read fails ACCESS_DENIED.
         const readRes = await eh.client.callTool({
@@ -883,8 +895,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { pattern: '**/*.txt' },
     });
     assert.notStrictEqual(result.isError, true);
-    const sc = result.structuredContent as { ok?: boolean; results?: { path: string }[] };
-    assert.strictEqual(sc.ok, true);
+    const sc = result.structuredContent as { results?: { path: string }[] };
     assert.ok(sc.results?.some((r) => r.path.endsWith('findme.txt')));
   });
 
@@ -985,19 +996,22 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     for (const name of ['create', 'edit', 'patch', 'stat']) {
       const tool = tools.find((t) => t.name === name);
       assert.ok(tool, `${name} must be registered`);
-      const defs =
-        (tool.outputSchema as { $defs?: Record<string, { format?: string; pattern?: string }> })
-          .$defs ?? {};
-      const iso = defs['IsoDateTime'];
-      assert.ok(iso, `${name} outputSchema must carry $defs.IsoDateTime`);
-      assert.strictEqual(iso.format, 'date-time');
-      assert.strictEqual(iso.pattern, undefined, `${name} must not emit a date-time pattern`);
-      // Use-site guard: `02-29` is the leap-day branch unique to zod's calendar
-      // regex. Asserting over the whole serialized schema — not just `$defs` —
-      // is what catches a mechanism that relocates the regex to each `$ref`
-      // instead of removing it.
+      const serialized = JSON.stringify(tool.outputSchema);
+      assert.strictEqual(
+        (tool.outputSchema as { $defs?: unknown }).$defs,
+        undefined,
+        `${name} outputSchema must be dereferenced (no $defs)`,
+      );
       assert.ok(
-        !JSON.stringify(tool.outputSchema).includes('02-29'),
+        serialized.includes('"format":"date-time"'),
+        `${name} must keep the date-time format keyword inline`,
+      );
+      // Use-site guard: `02-29` is the leap-day branch unique to zod's calendar
+      // regex. Asserting over the whole serialized schema is what catches a
+      // mechanism that relocates the regex to each use site instead of
+      // removing it.
+      assert.ok(
+        !serialized.includes('02-29'),
         `${name} must not carry the calendar regex at any use site`,
       );
     }
@@ -1019,14 +1033,14 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const edit = tools.find((t) => t.name === 'edit');
     assert.ok(edit);
     const editInput = JSON.stringify(edit.inputSchema);
-    assert.ok(editInput.includes('#/$defs/EditSpec'), 'edit ops must be a $ref');
+    assert.ok(!editInput.includes('$ref'), 'edit input must be fully dereferenced');
     // Sentinel is the opening of EditSpecSchema's `oldText` description in
     // src/tools/edit.ts — reword that description and this count must move with
-    // it. Once means hoisted into `$defs`; twice means inlined at both use sites.
+    // it. EditSpec is inlined at both use sites (edits and files[].edits).
     assert.strictEqual(
       editInput.split('Exact literal text to locate').length - 1,
-      1,
-      "EditSpec's oldText description must appear exactly once, under $defs",
+      2,
+      "EditSpec's oldText description must appear at both inlined use sites",
     );
 
     // `oneOf` (not `anyOf`): `{path, paths}` matches two branches and so fails,
@@ -1045,6 +1059,6 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     };
     modeBranches('read', ['path', 'paths']);
     modeBranches('stat', ['path', 'paths']);
-    modeBranches('edit', ['path', 'paths', 'files']);
+    modeBranches('edit', ['path', 'files']);
   });
 });

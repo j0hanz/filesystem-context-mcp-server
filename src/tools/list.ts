@@ -217,7 +217,6 @@ const ListInputSchema = z.strictObject({
 });
 
 const ListOutputSchema = z.strictObject({
-  ok: z.literal(true),
   path: z.string().optional().describe('Resolved absolute path of the listed directory'),
   entries: z
     .array(
@@ -290,7 +289,6 @@ async function handleList(
   }
 
   const output: z.infer<typeof ListOutputSchema> = {
-    ok: true,
     path: validDir,
     entries: page,
     markdown,

@@ -97,6 +97,10 @@ export async function createServer(
     apiKey?: string;
   },
 ): Promise<FilesystemServerContext> {
+  // `resources.subscribe` stays advertised on both eras: the verb itself is
+  // 2025-only, but with enforceStrictCapabilities the SDK also gates outbound
+  // `notifications/resources/updated` — which the modern `subscriptions/listen`
+  // stream delivers — on this same capability bit.
   const capabilities = {
     resources: { subscribe: true, listChanged: true },
     tools: {},

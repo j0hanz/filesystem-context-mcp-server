@@ -28,7 +28,6 @@ const PatchInputSchema = z.strictObject({
 });
 
 const PatchOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; call succeeded'),
   path: z.string().describe('Resolved absolute path of the patched file'),
   size: NonNegInt.describe('File size in bytes after patching'),
   lineCount: NonNegInt.describe('Number of lines in the file after patching'),
@@ -138,7 +137,6 @@ async function handlePatch(
     const meta = buildPatchMeta(validPath, patched, ctx.resourceStore);
     return {
       structured: {
-        ok: true as const,
         path: validPath,
         size: meta.size,
         lineCount: meta.lineCount,
@@ -165,7 +163,6 @@ async function handlePatch(
   const meta = buildPatchMeta(validPath, patched, ctx.resourceStore);
   return {
     structured: {
-      ok: true as const,
       path: validPath,
       size: meta.size,
       lineCount: meta.lineCount,

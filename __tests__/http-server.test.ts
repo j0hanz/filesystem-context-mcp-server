@@ -70,12 +70,16 @@ describe('Real HTTP Server integration', () => {
   it('externalized tool result is readable back over HTTP', async () => {
     const client = await http.makeClient('result-roundtrip');
     try {
-      const file = await writeTestFile(tmpDir, 'hashed.txt', 'body');
-      const res = (await client.callTool({ name: 'hash_file', arguments: { path: file } })) as {
+      const fileA = await writeTestFile(tmpDir, 'diff-a.txt', 'body a\n');
+      const fileB = await writeTestFile(tmpDir, 'diff-b.txt', 'body b\n');
+      const res = (await client.callTool({
+        name: 'diff',
+        arguments: { a: fileA, b: fileB },
+      })) as {
         structuredContent?: { resourceUri?: string };
       };
       const uri = res.structuredContent?.resourceUri;
-      assert.ok(uri, 'hash_file must externalize a result uri');
+      assert.ok(uri, 'diff must externalize a result uri');
       const read = await client.readResource({ uri });
       assert.ok(read.contents.length > 0, 'the externalized result must be readable');
     } finally {

@@ -218,13 +218,12 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 | :------------ | :---------------------------------------------------------------------------------------- |
 | `stat`        | Get file/directory metadata: size, modified time, permissions, MIME type, token estimate. |
 | `search_text` | Search file contents for text (grep-like). Returns matching lines with context.           |
-| `hash_file`   | Calculate SHA-256, MD5, or other hashes for a file or directory.                          |
 
 #### Read
 
-| Tool   | Description                                                                                             |
-| :----- | :------------------------------------------------------------------------------------------------------ |
-| `read` | Read a text file. Supports head/tail, line ranges, and byte-range reads. Accepts `paths[]` for batches. |
+| Tool   | Description                                                                          |
+| :----- | :----------------------------------------------------------------------------------- |
+| `read` | Read a text file. Supports head/tail and line ranges. Accepts `paths[]` for batches. |
 
 #### Write
 
@@ -232,7 +231,7 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 | :------------- | :------------------------------------------------------------------------------------------------ |
 | `create`       | Create one or more files, overwriting existing content and creating parent directories as needed. |
 | `edit`         | Apply sequential literal string replacements to one or more files (max 5 per call).               |
-| `move`         | Move or rename one or more files/directories to explicit destinations.                            |
+| `move`         | Move, rename, or copy (`copy: true`) one or more files/directories to explicit destinations.      |
 | `delete`       | Permanently delete one or more files or directories. This action is irreversible.                 |
 | `replace_text` | Bulk search-and-replace across files matching a glob pattern.                                     |
 
@@ -246,12 +245,9 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 
 ### Prompts
 
-| Prompt                | Description                                                                   |
-| :-------------------- | :---------------------------------------------------------------------------- |
-| `get-help`            | Return usage instructions, optionally filtered to a specific section.         |
-| `analyze-path`        | Workflow for analyzing a file or directory using `stat`, `read`, and `tree`.  |
-| `find-in-tree`        | Locate files and content matches by name, content pattern, or both.           |
-| `summarize-directory` | Onboarding summary: purpose, tech stack, entry points, and project structure. |
+| Prompt     | Description                                                           |
+| :--------- | :-------------------------------------------------------------------- |
+| `get-help` | Return usage instructions, optionally filtered to a specific section. |
 
 ## Project structure
 
@@ -264,7 +260,7 @@ filesystem-mcp/
 │   ├── tools/        Tool definitions and registration
 │   ├── index.ts      Process entrypoint and transport selection
 │   ├── server.ts     Server factory and registrar composition
-│   ├── transport.ts  stdio and Streamable HTTP transport setup
+│   ├── transport/    stdio and Streamable HTTP transport setup
 │   ├── prompts.ts    Prompt definitions and registration
 │   └── resources.ts  Resource definitions and registration
 └── Dockerfile        Multi-stage alpine build, non-root user

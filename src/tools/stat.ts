@@ -33,7 +33,6 @@ const StatPerPathSchema = z.strictObject({
 });
 
 const StatOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; per-path errors are in results[].error'),
   results: z
     .array(StatPerPathSchema)
     .describe('Per-path metadata results ordered to match the input paths'),
@@ -196,7 +195,7 @@ export const GET_FILE_INFO = defineTool({
   title: 'Get File Info',
   description:
     'Get metadata for one or more files or directories: size, type, permissions, MIME type, timestamps, and tokenEstimate. ' +
-    'Use tokenEstimate (size / 4) to pre-screen read cost before calling read. ' +
+    'Use tokenEstimate to pre-screen read cost before calling read. ' +
     'Single path: pass path. Batch mode: pass paths[].',
   input: StatInputSchema,
   output: StatOutputSchema,
@@ -258,7 +257,6 @@ export const GET_FILE_INFO = defineTool({
 
     return {
       structured: {
-        ok: true as const,
         results: perPathPayload,
         summary: batch.summary,
         fileCount,

@@ -376,7 +376,8 @@ describe('HTTP resourcesListChanged listen filter', () => {
   });
 
   it('an externalized result invalidates resources/list and appears after refresh', async () => {
-    const file = await writeTestFile(rootDir, 'hash-result.txt', 'body');
+    const fileA = await writeTestFile(rootDir, 'diff-a.txt', 'body a\n');
+    const fileB = await writeTestFile(rootDir, 'diff-b.txt', 'body b\n');
     const before = await client.listResources();
     let received = false;
     client.setNotificationHandler('notifications/resources/list_changed', () => {
@@ -386,11 +387,11 @@ describe('HTTP resourcesListChanged listen filter', () => {
 
     try {
       const result = (await client.callTool({
-        name: 'hash_file',
-        arguments: { path: file },
+        name: 'diff',
+        arguments: { a: fileA, b: fileB },
       })) as { structuredContent?: { resourceUri?: string } };
       const uri = result.structuredContent?.resourceUri;
-      assert.ok(uri, 'hash_file must externalize a result resource');
+      assert.ok(uri, 'diff must externalize a result resource');
 
       await waitFor(() => received);
       assert.strictEqual(received, true, 'result insertion must emit resources/list_changed');

@@ -6,7 +6,6 @@ import {
   MAX_SEARCH_RESULTS,
 } from './core/util.js';
 import {
-  CALCULATE_HASH,
   GET_FILE_INFO,
   LIST,
   LIST_ALLOWED_DIRECTORIES,
@@ -19,7 +18,7 @@ import {
 function buildToolsOverview(readOnly: boolean): string {
   const rows: [string, string[]][] = [
     ['Navigate', [LIST_ALLOWED_DIRECTORIES.name, LIST.name, SEARCH_FILES.name]],
-    ['Inspect', [GET_FILE_INFO.name, SEARCH_CONTENT.name, CALCULATE_HASH.name]],
+    ['Inspect', [GET_FILE_INFO.name, SEARCH_CONTENT.name]],
     ['Read', [READ_FILE.name]],
   ];
 

@@ -49,7 +49,6 @@ const SearchFilesInputSchema = z.strictObject({
 });
 
 const SearchFilesOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; call succeeded'),
   root: z.string().describe('Resolved base directory used as the search root'),
   results: z
     .array(
@@ -129,7 +128,6 @@ async function handleSearchFiles(
 
   const relativeResults = buildRelativeResults(result.basePath, displayResults);
   const structured: z.infer<typeof SearchFilesOutputSchema> = {
-    ok: true,
     root: basePath,
     results: relativeResults,
     totalMatches: result.summary.matched,

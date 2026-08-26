@@ -4,6 +4,7 @@ import { homedir, platform } from 'node:os';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 
 import { timedSignal, withAbort } from './concurrency.js';
+import { cli } from './config.js';
 import {
   ERRNO_MAP,
   ErrorCode,
@@ -914,17 +915,21 @@ export class PathGuard {
     const cliAllowedDirs = normalizeAllowedDirectories(this.options?.cliAllowedDirs ?? []);
 
     // Parse allowed directories from environment variable
-    const allowMissing = parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
+    const allowMissing =
+      cli.allowMissingRoots ?? parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
     const envAllowedDirs = await resolveConfiguredDirs('FS_ALLOWED_DIRS', { allowMissing });
 
-    // Parse ROOT_BOUNDARY
-    const boundaries = await resolveConfiguredDirs('ROOT_BOUNDARY', { resolveReal: true });
+    // Parse ROOT_BOUNDARY (the --root-boundary flag beats the env var)
+    const boundaries = await resolveConfiguredDirs('ROOT_BOUNDARY', {
+      resolveReal: true,
+      ...(cli.rootBoundary !== undefined ? { rawValue: cli.rootBoundary } : {}),
+    });
 
     const allowCwd = Boolean(this.options?.allowCwd);
     const allowCwdDirs: string[] = [];
     if (allowCwd) {
       let cwd = normalizePath(process.cwd());
-      const walkCwd = parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
+      const walkCwd = cli.allowCwdWalk ?? parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
       if (walkCwd) {
         cwd = await findProjectRoot(cwd, [...boundaries, homedir()]);
       }

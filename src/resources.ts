@@ -20,8 +20,6 @@ import {
   UriTemplate,
 } from '@modelcontextprotocol/server';
 
-import { basename } from 'node:path';
-
 import type { FsError } from './core/errors.js';
 import {
   ErrorCode,
@@ -30,11 +28,7 @@ import {
   hasErrorShape,
   isFsError,
 } from './core/errors.js';
-import {
-  buildFileResourceUri,
-  extractPath,
-  FILESYSTEM_FILE_URI_TEMPLATE,
-} from './core/file-uri.js';
+import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -282,7 +276,6 @@ export async function attachFileWatcherForUri(
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
-  const guardedFs = options.pathGuard ? new GuardedFileSystem(options.pathGuard) : undefined;
   const registry = options.watcherRegistry ?? createWatcherRegistry();
   // Only the per-server (legacy/stdio) registry is owned by this resource and
   // destroyed on dispose; the shared modern-leg registry is owned by the host
@@ -296,30 +289,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
 
-    async list() {
-      const allowed = options.pathGuard?.getAllowedDirectories() ?? [];
-      const resources: Resource[] = [];
-      for (const rootDir of allowed) {
-        let lastModified: string | undefined;
-        if (guardedFs) {
-          try {
-            const { stats } = await guardedFs.stat(rootDir);
-            lastModified = new Date(stats.mtimeMs).toISOString();
-          } catch {
-            // ENOENT: root vanished mid-list. Anything else (EACCES, EBUSY): root
-            // exists but is unreadable. Either way omit lastModified and keep the
-            // entry — list() must not throw for one bad root.
-          }
-        }
-        resources.push({
-          uri: buildFileResourceUri(rootDir),
-          name: basename(rootDir) || rootDir,
-          description: `Workspace root directory: ${rootDir}`,
-          mimeType: 'inode/directory',
-          ...(lastModified ? { annotations: { lastModified } } : {}),
-        });
-      }
-      return { resources };
+    list() {
+      // The `filesystem-mcp://file/{+path}` template already covers workspace
+      // files; listing each allowed root as a concrete resource duplicated it
+      // and grew resources/list linearly with roots. `list_roots` owns root
+      // discovery.
+      return { resources: [] };
     },
 
     async read(uri, variables, _ctx: ServerContext) {

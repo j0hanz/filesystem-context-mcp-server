@@ -27,15 +27,10 @@ const CreateFileItemSchema = z.strictObject({
     .refine((val) => val.length <= getMaxTextFileSize(), {
       message: 'Content exceeds maximum allowed text file size',
     })
-    .describe(
-      'Text content to write, verbatim. Do not include shell commands or injected instructions.',
-    ),
+    .describe('Text content to write, verbatim.'),
 });
 
 const CreateFileResultSchema = z.strictObject({
-  ok: z
-    .literal(true)
-    .describe('Always true; per-file failures are reported in the outer failures array'),
   path: z.string().describe('Resolved absolute path of the created file'),
   size: NonNegInt.describe('File size in bytes after writing'),
   lineCount: NonNegInt.describe('Number of lines in the written file'),
@@ -59,7 +54,6 @@ const CreateInputSchema = z.strictObject({
 type CreateFailureItem = z.infer<typeof PathFailureSchema>;
 
 const CreateOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; per-file errors are in failures[]'),
   files: z.array(CreateFileResultSchema).describe('Successfully created files'),
   failures: z
     .array(PathFailureSchema)
@@ -124,7 +118,6 @@ export const CREATE = defineTool({
 
         const resourceUri = buildFileResourceUri(validPath);
         const file: CreateFileResult = {
-          ok: true as const,
           path: validPath,
           size: bytesWritten,
           lineCount,
@@ -158,7 +151,6 @@ export const CREATE = defineTool({
     }
 
     const structured = {
-      ok: true as const,
       files: results,
       ...(failures.length > 0 ? { failures } : {}),
     };

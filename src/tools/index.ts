@@ -2,8 +2,6 @@ import type { McpServer, ServerNotifier } from '@modelcontextprotocol/server';
 
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import { CALCULATE_HASH } from './calculate-hash.js';
-import { COPY_FILES } from './copy.js';
 import { CREATE } from './create.js';
 import type { DefinedTool } from './define.js';
 import { DELETE_FILE } from './delete-file.js';
@@ -20,8 +18,6 @@ import { SEARCH_FILES } from './search-files.js';
 import { GET_FILE_INFO } from './stat.js';
 
 export const ALL_TOOLS = [
-  CALCULATE_HASH,
-  COPY_FILES,
   CREATE,
   DELETE_FILE,
   DIFF,
@@ -53,15 +49,7 @@ export function registeredTools(readOnly: boolean): readonly DefinedTool[] {
 // Only the read-only tools are named individually: the mutating six are no
 // longer listed by hand anywhere, so their names reach callers through
 // MUTATING_TOOL_NAMES and ALL_TOOLS instead.
-export {
-  CALCULATE_HASH,
-  LIST,
-  LIST_ALLOWED_DIRECTORIES,
-  READ_FILE,
-  SEARCH_CONTENT,
-  SEARCH_FILES,
-  GET_FILE_INFO,
-};
+export { LIST, LIST_ALLOWED_DIRECTORIES, READ_FILE, SEARCH_CONTENT, SEARCH_FILES, GET_FILE_INFO };
 
 interface ToolRegistrarDeps {
   readonly server: McpServer;

@@ -2,7 +2,6 @@
 import type { Stats } from 'node:fs';
 import { open as fsOpen } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { text } from 'node:stream/consumers';
 import { StringDecoder } from 'node:string_decoder';
 
 import { withAbort } from './concurrency.js';
@@ -107,15 +106,6 @@ export type ReadSpec =
       maxSize?: number;
       skipBinary?: boolean;
       signal?: AbortSignal;
-    }
-  | {
-      kind: 'byteRange';
-      offset?: number;
-      length?: number;
-      encoding?: BufferEncoding;
-      maxSize?: number;
-      skipBinary?: boolean;
-      signal?: AbortSignal;
     };
 
 interface NormalizedBase {
@@ -129,8 +119,7 @@ type NormalizedSpec =
   | (NormalizedBase & { kind: 'full' })
   | (NormalizedBase & { kind: 'head'; lines: number })
   | (NormalizedBase & { kind: 'tail'; lines: number })
-  | (NormalizedBase & { kind: 'range'; start: number; end?: number })
-  | (NormalizedBase & { kind: 'byteRange'; offset: number; length?: number });
+  | (NormalizedBase & { kind: 'range'; start: number; end?: number });
 
 interface ReadContentOptions {
   encoding: BufferEncoding;
@@ -157,10 +146,6 @@ export interface ReadFileResult {
   endLine?: number;
   linesRead?: number;
   hasMoreLines?: boolean;
-  // Byte-range fields
-  offset?: number;
-  bytesRead?: number;
-  reachedEOF?: boolean;
 }
 
 function buildBaseOptions(spec: ReadSpec): NormalizedBase {
@@ -214,22 +199,6 @@ function normalizeRangeSpec(
   };
 }
 
-function normalizeByteRangeSpec(
-  spec: Extract<ReadSpec, { kind: 'byteRange' }>,
-  base: NormalizedBase,
-): NormalizedSpec {
-  if (spec.offset !== undefined && !(Number.isSafeInteger(spec.offset) && spec.offset >= 0)) {
-    throw new FsError(ErrorCode.INVALID_INPUT, 'offset must be a non-negative integer');
-  }
-  assertPositiveIntegerOption('length', spec.length);
-  return {
-    ...base,
-    kind: 'byteRange',
-    offset: spec.offset ?? 0,
-    ...(spec.length !== undefined ? { length: spec.length } : {}),
-  };
-}
-
 export function normalizeSpec(spec: ReadSpec): NormalizedSpec {
   const base = buildBaseOptions(spec);
   spec.signal?.throwIfAborted();
@@ -241,8 +210,6 @@ export function normalizeSpec(spec: ReadSpec): NormalizedSpec {
       return normalizeTailSpec(spec, base);
     case 'range':
       return normalizeRangeSpec(spec, base);
-    case 'byteRange':
-      return normalizeByteRangeSpec(spec, base);
     case 'full':
       return { ...base, kind: 'full' };
     default: {
@@ -733,71 +700,6 @@ async function readTail(
   };
 }
 
-async function readByteRange(
-  context: ReadModeContext,
-  spec: Extract<NormalizedSpec, { kind: 'byteRange' }>,
-): Promise<ReadFileResult> {
-  const start = spec.offset;
-  const fileSize = context.stats.size;
-
-  // Past EOF — return empty immediately
-  if (start >= fileSize) {
-    return {
-      path: context.validPath,
-      content: '',
-      truncated: false,
-      readMode: 'byteRange',
-      offset: start,
-      bytesRead: 0,
-      reachedEOF: true,
-    };
-  }
-
-  const length = spec.length;
-  let end: number | undefined;
-  let reachedEOF: boolean;
-
-  if (length !== undefined) {
-    const requestedEnd = start + length - 1; // createReadStream end is inclusive
-    if (requestedEnd >= fileSize) {
-      end = fileSize - 1;
-      reachedEOF = true;
-    } else {
-      end = requestedEnd;
-      reachedEOF = false;
-    }
-  } else {
-    // No length → read to EOF
-    reachedEOF = true;
-  }
-
-  const actualEnd = end ?? fileSize - 1;
-  const bytesRead = actualEnd - start + 1;
-
-  if (bytesRead > spec.maxSize) {
-    throw createTooLargeError(bytesRead, spec.maxSize, context.filePath);
-  }
-
-  const stream = context.handle.createReadStream({
-    encoding: spec.encoding,
-    start,
-    ...(end !== undefined ? { end } : {}),
-    signal: spec.signal,
-  });
-
-  const content = await text(stream);
-
-  return {
-    path: context.validPath,
-    content,
-    truncated: false,
-    readMode: 'byteRange',
-    offset: start,
-    bytesRead,
-    reachedEOF,
-  };
-}
-
 async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
   switch (context.spec.kind) {
     case 'head':
@@ -808,8 +710,6 @@ async function readByMode(context: ReadModeContext): Promise<ReadFileResult> {
       return readFull(context, context.spec);
     case 'tail':
       return readTail(context, context.spec);
-    case 'byteRange':
-      return readByteRange(context, context.spec);
     default: {
       const _exhaustive: never = context.spec;
       return _exhaustive;

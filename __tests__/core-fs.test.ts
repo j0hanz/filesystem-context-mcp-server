@@ -72,20 +72,6 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
       assert.strictEqual(result.content, 'Line 2\nLine 3\nLine 4');
     });
 
-    it('TC-FUNC-005: readFile with byte range returns byte slice', async () => {
-      const filePath = await writeTestFile(tmpDir, 'read_bytes.txt', '0123456789ABCDEF');
-      const result = await ctx.fs.readFile(filePath, {
-        kind: 'byteRange',
-        offset: 6,
-        length: 5,
-      });
-
-      assert.strictEqual(result.readMode, 'byteRange');
-      assert.strictEqual(result.offset, 6);
-      assert.strictEqual(result.bytesRead, 5);
-      assert.strictEqual(result.content, '6789A');
-    });
-
     it('TC-FUNC-006: readFile full returns entire content and line count', async () => {
       const filePath = await writeNLineFile(tmpDir, 'read_full.txt', 5);
       const result = await ctx.fs.readFile(filePath, { kind: 'full' });

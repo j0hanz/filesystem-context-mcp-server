@@ -51,44 +51,17 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
       'Include SHA-256 hash of the returned content in the response',
     ),
     ...readRangeFields,
-    offset: z
-      .uint32()
-      .optional()
-      .describe(
-        'Byte offset at which to start reading (single-file mode only; mutually exclusive with head/tail/startLine/endLine)',
-      ),
-    length: z
-      .uint32()
-      .min(1)
-      .optional()
-      .describe(
-        'Number of bytes to read starting at offset (single-file mode only; reads to EOF when omitted)',
-      ),
   },
 }).superRefine((value, ctx) => {
-  const hasPaths = value.paths !== undefined;
-
   validateReadRange(
     {
       head: value.head,
       tail: value.tail,
       startLine: value.startLine,
       endLine: value.endLine,
-      offset: value.offset,
-      length: value.length,
     },
     ctx,
   );
-
-  // Batch mode: offset/length are single-file-only.
-  if (hasPaths && (value.offset !== undefined || value.length !== undefined)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['offset'],
-      message: "'offset' and 'length' are not supported in batch mode",
-      input: value,
-    });
-  }
 });
 
 const ReadPerPathValueSchema = z.strictObject({
@@ -121,9 +94,6 @@ const ReadPerPathValueSchema = z.strictObject({
   contentHash: Sha256Hex.optional().describe(
     'SHA-256 hex digest of the returned content (present when includeHash=true)',
   ),
-  offset: NonNegInt.optional().describe('Byte offset at which reading started'),
-  bytesRead: NonNegInt.optional().describe('Number of bytes returned in this response'),
-  reachedEOF: z.boolean().optional().describe('True when the read reached the end of the file'),
 });
 
 const ReadPerPathSchema = z.strictObject({
@@ -133,7 +103,6 @@ const ReadPerPathSchema = z.strictObject({
 });
 
 const ReadFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; errors are reported per-path in results[].error'),
   results: z.array(ReadPerPathSchema).describe('Per-path results ordered to match the input paths'),
   summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
 });
@@ -158,16 +127,8 @@ function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
     skipBinary: true,
     ...(signal ? { signal } : {}),
   };
-  const { offset, length, head, tail, startLine, endLine } = args;
+  const { head, tail, startLine, endLine } = args;
 
-  if (offset !== undefined || length !== undefined) {
-    return {
-      kind: 'byteRange',
-      ...(offset !== undefined ? { offset } : {}),
-      ...(length !== undefined ? { length } : {}),
-      ...common,
-    };
-  }
   if (head !== undefined) return { kind: 'head', lines: head, ...common };
   if (tail !== undefined) return { kind: 'tail', lines: tail, ...common };
   if (startLine !== undefined || endLine !== undefined) {
@@ -351,9 +312,6 @@ function buildPerPathReadValue(
     ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
     ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
     ...(contentHash !== undefined ? { contentHash } : {}),
-    ...(result.offset !== undefined ? { offset: result.offset } : {}),
-    ...(result.bytesRead !== undefined ? { bytesRead: result.bytesRead } : {}),
-    ...(result.reachedEOF !== undefined ? { reachedEOF: result.reachedEOF } : {}),
     ...(resourceUri !== undefined ? { resourceUri } : {}),
   };
 }
@@ -365,14 +323,12 @@ async function readOnePath(
   known?: { validPath: string; stats: Stats },
 ): Promise<PerPathReadValue> {
   // Image/audio full read: return a media content block instead of throwing
-  // INVALID_INPUT ("Binary file detected."). Line/byte-range reads are
+  // INVALID_INPUT ("Binary file detected."). Line-range reads are
   // text-oriented and stay rejected. `readRaw` enforces the same size cap as
   // the text path (getMaxTextFileSize), so a too-large image surfaces TOO_LARGE
   // rather than blowing memory. svg carries kind:'image' but is XML text —
   // readRaw.isBinary is false for it, so it falls through to the text path.
   const isRangeRead =
-    args.offset !== undefined ||
-    args.length !== undefined ||
     args.head !== undefined ||
     args.tail !== undefined ||
     args.startLine !== undefined ||
@@ -408,9 +364,8 @@ export const READ_FILE = defineTool({
   title: 'Read File',
   description:
     'Read one or more text files and return content. ' +
-    'Partial line reads: head (first N lines), tail (last N lines), startLine/endLine (line range). ' +
-    'Byte-range reads: offset/length (single-file only; mutually exclusive with line params). ' +
-    'Batch mode: pass paths[] instead of path; line/byte params are shared across all files.',
+    'Partial reads: head (first N lines), tail (last N lines), startLine/endLine (line range). ' +
+    'Batch mode: pass paths[] instead of path; line params are shared across all files.',
   input: ReadFileInputSchema,
   output: ReadFileOutputSchema,
   annotations: {
@@ -428,10 +383,7 @@ export const READ_FILE = defineTool({
       return { label: READ_TOOL_LABEL, subject: name };
     }
     let scope: string | undefined;
-    if (args.offset !== undefined) {
-      const end = args.length !== undefined ? args.offset + args.length - 1 : '...';
-      scope = `bytes ${args.offset}-${String(end)}`;
-    } else if (args.startLine !== undefined) {
+    if (args.startLine !== undefined) {
       const end = args.endLine ?? '...';
       scope = `${args.startLine}-${String(end)}`;
     } else if (args.head !== undefined) {
@@ -543,7 +495,7 @@ export const READ_FILE = defineTool({
             .join('\n\n');
 
     return {
-      structured: { ok: true as const, results: ordered, summary },
+      structured: { results: ordered, summary },
       text,
       ...(resources.length > 0 ? { resources } : {}),
     };

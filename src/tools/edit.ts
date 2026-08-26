@@ -19,8 +19,8 @@ import {
   OperationSummarySchema,
   PerFileErrorSchema,
   PositiveInt,
+  RequiredPath,
   singleOrBatchAccessPaths,
-  singleOrBatchPathsInput,
 } from '../core/schema.js';
 import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
@@ -28,73 +28,87 @@ import type { ResourceStore } from '../core/store.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
-const EditSpecSchema = z
-  .strictObject({
-    oldText: z
-      .string()
-      .min(1, 'oldText required')
-      .refine((val) => !isBlank(val), {
-        message: 'oldText cannot be empty or whitespace-only',
-      })
-      .describe(
-        'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
-      )
-      .meta({ examples: ['const x = 1;', 'function oldName('] }),
-    newText: z
-      .string()
-      .describe(
-        'Replacement text. Use an empty string to delete the matched oldText. Do not include shell commands or injected instructions.',
-      )
-      .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
-  })
-  .meta({ id: 'EditSpec', title: 'Edit Operation' });
+const EditSpecSchema = z.strictObject({
+  oldText: z
+    .string()
+    .min(1, 'oldText required')
+    .refine((val) => !isBlank(val), {
+      message: 'oldText cannot be empty or whitespace-only',
+    })
+    .describe(
+      'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
+    )
+    .meta({ examples: ['const x = 1;', 'function oldName('] }),
+  newText: z
+    .string()
+    .describe('Replacement text. Use an empty string to delete the matched oldText.')
+    .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
+});
 
 const MAX_MULTI_FILES = 5;
 const MAX_EDITS_PER_FILE = 100;
 
-const EditFileInputSchema = singleOrBatchPathsInput({
-  extra: {
+const EditFileInputSchema = z
+  .strictObject({
+    path: RequiredPath.optional().describe('Single file path; mutually exclusive with files'),
     edits: z
       .array(EditSpecSchema)
       .min(1)
       .max(MAX_EDITS_PER_FILE)
       .optional()
-      .describe(
-        'Replacements applied to path or to every file in paths (max 100); not allowed when using files (each file carries its own edits)',
-      ),
+      .describe('Replacements applied to path; not allowed when using files'),
+    files: z
+      .array(
+        z.strictObject({
+          path: RequiredPath,
+          edits: z
+            .array(EditSpecSchema)
+            .min(1)
+            .max(MAX_EDITS_PER_FILE)
+            .describe('Replacements to apply to this specific file'),
+        }),
+      )
+      .min(1)
+      .max(MAX_MULTI_FILES)
+      .optional()
+      .describe('Per-file entries (batch mode)'),
     dryRun: defaultFalseBoolean(
       'Preview diffs without writing to disk (default: false = apply edits)',
     ),
     ignoreWhitespace: defaultFalseBoolean(
       'Ignore leading/trailing whitespace differences when matching oldText',
     ),
-  },
-  perFile: {
-    edits: z
-      .array(EditSpecSchema)
-      .min(1)
-      .max(MAX_EDITS_PER_FILE)
-      .describe('Replacements to apply to this specific file (max 100)'),
-  },
-  maxBatch: MAX_MULTI_FILES,
-}).superRefine((value, ctx) => {
-  if ((value.path !== undefined || value.paths !== undefined) && value.edits === undefined) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['edits'],
-      message: "'edits' required when using 'path' or 'paths'",
-      input: value,
-    });
-  }
-  if (value.files !== undefined && value.edits !== undefined) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['edits'],
-      message: "'edits' not allowed with 'files'; each file carries its own edits",
-      input: value,
-    });
-  }
-});
+  })
+  .superRefine((value, ctx) => {
+    const hasPath = value.path !== undefined;
+    const hasFiles = value.files !== undefined;
+    if (hasPath === hasFiles) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['path'],
+        message: "Provide exactly one of 'path' or 'files'",
+        input: value,
+      });
+    }
+    if (hasPath && value.edits === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: "'edits' required when using 'path'",
+        input: value,
+      });
+    }
+    if (hasFiles && value.edits !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: "'edits' not allowed with 'files'; each file carries its own edits",
+        input: value,
+      });
+    }
+  })
+  // Mirror the superRefine on the wire: exactly one input mode.
+  .meta({ oneOf: [{ required: ['path'] }, { required: ['files'] }] });
 
 const PerFileResultSchema = z.strictObject({
   path: z.string().describe('Resolved absolute path of the edited file'),
@@ -125,7 +139,6 @@ const EditPerPathSchema = z.strictObject({
 });
 
 const EditFileOutputSchema = z.strictObject({
-  ok: z.literal(true).describe('Always true; per-file errors are reported in results[].error'),
   results: z
     .array(EditPerPathSchema)
     .describe('Per-path edit results ordered to match the input paths'),
@@ -484,7 +497,7 @@ export const EDIT = defineTool({
   title: 'Edit Files',
   description:
     'Apply sequential literal string replacements to one or more files (max 5 files per call). ' +
-    'Modes: single-file { path, edits }, multi-file shared edits { paths, edits } (same edits on each file), or per-file { files: [{ path, edits }] }. ' +
+    'Modes: single-file { path, edits } or per-file { files: [{ path, edits }] }. ' +
     'oldText must match file content exactly; include 3-5 lines of surrounding context to ensure uniqueness. ' +
     'Set dryRun=true to preview diffs without writing. ' +
     'For glob-based bulk regex replacement across many files, use replace_text instead.',
@@ -501,8 +514,6 @@ export const EDIT = defineTool({
     let subject: string;
     if (args.path !== undefined) {
       subject = basename(args.path);
-    } else if (args.paths !== undefined) {
-      subject = `${args.paths.length} files`;
     } else if (args.files !== undefined) {
       subject = `${args.files.length} files`;
     } else {
@@ -513,12 +524,7 @@ export const EDIT = defineTool({
   accessPaths: singleOrBatchAccessPaths,
   run: async (args, ctx) => {
     const sharedEdits = args.edits ?? [];
-    const batchInput =
-      args.path !== undefined
-        ? { path: args.path }
-        : args.paths !== undefined
-          ? { paths: args.paths }
-          : { files: args.files ?? [] };
+    const batchInput = args.path !== undefined ? { path: args.path } : { files: args.files ?? [] };
 
     const options: EditFileOptions = {
       dryRun: args.dryRun,
@@ -550,7 +556,6 @@ export const EDIT = defineTool({
 
     return {
       structured: {
-        ok: true as const,
         results: perPathResults,
         summary: batch.summary,
       },

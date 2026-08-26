@@ -4,12 +4,13 @@ import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs }
 
 import packageJson from '../package.json' with { type: 'json' };
 import { processInParallel } from './core/concurrency.js';
+import { cli } from './core/config.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
 import { cliFmt, padEndVisible } from './core/fmt.js';
 import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './core/path-utils.js';
 import { normalizePath, PathGuard } from './core/path.js';
 import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
-import { getMaxTextFileSize, splitCsvList } from './core/util.js';
+import { getMaxTextFileSize } from './core/util.js';
 import { MUTATING_TOOL_NAMES, registeredTools } from './tools/index.js';
 
 const { version: SERVER_VERSION } = packageJson;
@@ -371,32 +372,27 @@ export async function parseArgs(): Promise<{
     }
 
     const vals = parsed.values as Record<string, unknown>;
-    // `--http-host` and `--api-key` are returned to the caller and handed to the
-    // server as config. This is the ONE place the flag-beats-env rule is
-    // written: every consumer downstream reads the resolved value and knows
-    // nothing about where it came from. The rest of the flags still travel by
-    // env because their readers are deep in core (path, sensitive,
-    // observability) and read the operator's environment anyway.
+    // `--http-host` and `--api-key` are returned to the caller and handed to
+    // the server as config. Every other flag lands in the CLI-override store
+    // (core/config.ts) — the one owner of the flag-beats-env rule — which deep
+    // core readers (path, sensitive, observability, util) consult before
+    // falling back to the operator's environment. Nothing writes process.env.
     const httpHost =
       typeof vals['http-host'] === 'string' ? vals['http-host'] : process.env['HTTP_HOST'];
     const apiKey = typeof vals['api-key'] === 'string' ? vals['api-key'] : process.env['API_KEY'];
-    if (typeof vals['log-level'] === 'string') process.env['LOG_LEVEL'] = vals['log-level'];
-    if (typeof vals['max-file-size'] === 'string')
-      process.env['MAX_FILE_SIZE'] = vals['max-file-size'];
-    if (typeof vals['root-boundary'] === 'string')
-      process.env['ROOT_BOUNDARY'] = vals['root-boundary'];
-    if (vals['allow-sensitive'] === true) process.env['ALLOW_SENSITIVE'] = '1';
-    if (vals['walk-cwd'] === true) process.env['ALLOW_CWD_WALK'] = '1';
-    if (vals['allow-missing-roots'] === true) process.env['ALLOW_MISSING_ROOTS'] = '1';
-    if (Array.isArray(vals['deny']) && vals['deny'].length > 0) {
-      const entries = splitCsvList(process.env['DENYLIST']);
-      for (const entry of vals['deny']) {
-        if (typeof entry === 'string') {
-          const trimmed = entry.trim();
-          if (trimmed && !entries.includes(trimmed)) entries.push(trimmed);
-        }
-      }
-      process.env['DENYLIST'] = entries.join(',');
+
+    if (typeof vals['log-level'] === 'string') cli.logLevel = vals['log-level'];
+    if (typeof vals['max-file-size'] === 'string') cli.maxFileSize = vals['max-file-size'];
+    if (typeof vals['root-boundary'] === 'string') cli.rootBoundary = vals['root-boundary'];
+    if (vals['allow-sensitive'] === true) cli.allowSensitive = true;
+    if (vals['walk-cwd'] === true) cli.allowCwdWalk = true;
+    if (vals['allow-missing-roots'] === true) cli.allowMissingRoots = true;
+    if (Array.isArray(vals['deny'])) {
+      const denyPatterns = vals['deny']
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (denyPatterns.length > 0) cli.denyPatterns = [...new Set(denyPatterns)];
     }
 
     const allowCwd =

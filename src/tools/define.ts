@@ -434,9 +434,35 @@ function zodJsonSchemaValidator(schema: z.ZodType): jsonSchemaValidator {
   };
 }
 
+/**
+ * Generate the wire copy of a schema for `tools/list`. The Zod schema keeps
+ * every constraint for runtime validation; the `override` pass only trims what
+ * the wire copy costs every client at session start:
+ *
+ * - `$schema` and `title` carry no information the host uses.
+ * - `maximum: Number.MAX_SAFE_INTEGER` is zod's int() artifact, not a bound.
+ * - Output schemas additionally drop `description`/`examples`: the model reads
+ *   real values at call time; only inputs need prose to be filled in.
+ *
+ * No shared subschema carries a `.meta({ id })`, so zod inlines every one of
+ * them and the emitted document has no `$defs`/`$ref` to dereference.
+ */
 function toDraft202012(schema: z.ZodType, io: 'input' | 'output'): JsonSchemaType {
-  const generated: unknown = z.toJSONSchema(schema, { target: 'draft-2020-12', io });
-  return generated as JsonSchemaType;
+  const generated = z.toJSONSchema(schema, {
+    target: 'draft-2020-12',
+    io,
+    override: ({ jsonSchema }) => {
+      const node = jsonSchema as Record<string, unknown>;
+      delete node['title'];
+      if (node['maximum'] === Number.MAX_SAFE_INTEGER) delete node['maximum'];
+      if (io === 'output') {
+        delete node['description'];
+        delete node['examples'];
+      }
+    },
+  }) as Record<string, unknown>;
+  delete generated['$schema'];
+  return generated;
 }
 
 export function defineTool<I extends z.ZodType, O extends z.ZodType>(

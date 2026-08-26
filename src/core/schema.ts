@@ -7,14 +7,14 @@ import { MAX_SEARCH_DEPTH } from './util.js';
 
 // Runtime: full ISO-8601 UTC; emits the standard `date-time` format on the wire
 // (no AJV warning — it is a known format, unlike sha256_hex / base64url).
+// No `id` on this or any other shared schema below: an `id` hoists the schema
+// into `$defs` and leaves a `$ref` at every use site, which is exactly the wire
+// weight `toDraft202012` (tools/define.ts) publishes without.
 export const IsoDateTime = z.iso.datetime().meta({
-  id: 'IsoDateTime',
-  title: 'ISO Date-Time',
   description: 'ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)',
   // `format: "date-time"` already pins the value; zod's ~330-char calendar
   // regex is pure wire weight. Runtime validation still runs it — this
-  // suppresses the emitted keyword only. Filtering at the toJSONSchema call
-  // instead would relocate the regex to every `$ref`, not remove it.
+  // suppresses the emitted keyword only.
   pattern: undefined,
 });
 
@@ -23,29 +23,23 @@ export const IsoDateTime = z.iso.datetime().meta({
 export const Sha256Hex = z
   .string()
   .regex(/^[0-9a-f]{64}$/)
-  .meta({
-    id: 'Sha256Hex',
-    title: 'SHA-256 Hash',
-    description: 'SHA-256 digest as a 64-character lowercase hex string',
-  });
+  .meta({ description: 'SHA-256 digest as a 64-character lowercase hex string' });
 
 export const NonNegInt = z
   .int({ message: 'Must be integer' })
-  .nonnegative({ message: 'Must be ≥ 0' })
-  .meta({ id: 'NonNegInt', title: 'Non-Negative Integer' });
+  .nonnegative({ message: 'Must be ≥ 0' });
 
 export const PositiveInt = z
   .int({ message: 'Must be integer' })
-  .positive({ message: 'Must be > 0' })
-  .meta({ id: 'PositiveInt', title: 'Positive Integer' });
+  .positive({ message: 'Must be > 0' });
 
 export const FILE_TYPES = ENTRY_TYPES;
 export type FileType = (typeof FILE_TYPES)[number];
-export const FileType = z.enum(FILE_TYPES).meta({ id: 'FileType', title: 'File Type' });
+export const FileType = z.enum(FILE_TYPES);
 
 export const FILE_KINDS = MIME_KINDS;
 export type FileKind = (typeof FILE_KINDS)[number];
-export const FileKind = z.enum(FILE_KINDS).meta({ id: 'FileKind', title: 'File Kind' });
+export const FileKind = z.enum(FILE_KINDS);
 
 const MAX_PATH_LENGTH = 4096;
 
@@ -94,9 +88,7 @@ const PathBase = z
       return z.NEVER;
     }
   })
-  .describe(
-    'Absolute or relative path within an allowed workspace root. No "..", shell metacharacters, or blank input.',
-  );
+  .describe('File or directory path inside an allowed workspace root.');
 
 export const OptionalPath = PathBase.optional();
 export const RequiredPath = PathBase;
@@ -142,66 +134,46 @@ export const SafeGlobPattern = z
       return z.NEVER;
     }
   })
-  .describe(
-    'Relative glob pattern matching files under the search root (e.g. "**/*.ts", "src/**/*.js"). No leading slash, "..", shell metacharacters, or blank input.',
-  )
-  .meta({
-    id: 'SafeGlobPattern',
-    title: 'Glob Pattern',
-    examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
-  });
+  .describe('Relative glob pattern under the search root (e.g. "**/*.ts", "src/**/*.js").')
+  .meta({ examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'] });
 
-export const FileInfoSchema = z
-  .strictObject({
-    name: z.string().describe('Name'),
-    path: z.string().describe('Absolute path'),
-    type: FileType.describe('Type'),
-    size: NonNegInt.describe('Size (bytes)'),
-    tokenEstimate: NonNegInt.optional().describe(
-      'Estimated token count (file size ÷ 4); use to pre-screen read cost',
-    ),
-    created: IsoDateTime.describe('Created'),
-    modified: IsoDateTime.describe('Modified'),
-    accessed: IsoDateTime.describe('Accessed'),
-    permissions: z.string().describe('Permissions'),
-    isHidden: z.boolean().describe('Hidden?'),
-    mimeType: z.string().optional().describe('MIME type'),
-    symlinkTarget: z.string().optional().describe('Target (symlink)'),
-  })
-  .meta({ id: 'FileInfo', title: 'File Info' });
+export const FileInfoSchema = z.strictObject({
+  name: z.string().describe('Name'),
+  path: z.string().describe('Absolute path'),
+  type: FileType.describe('Type'),
+  size: NonNegInt.describe('Size (bytes)'),
+  tokenEstimate: NonNegInt.optional().describe('Rough token estimate; use to pre-screen read cost'),
+  created: IsoDateTime.describe('Created'),
+  modified: IsoDateTime.describe('Modified'),
+  accessed: IsoDateTime.describe('Accessed'),
+  permissions: z.string().describe('Permissions'),
+  isHidden: z.boolean().describe('Hidden?'),
+  mimeType: z.string().optional().describe('MIME type'),
+  symlinkTarget: z.string().optional().describe('Target (symlink)'),
+});
 
-export const OperationSummarySchema = z
-  .strictObject({
-    total: NonNegInt.describe('Total'),
-    succeeded: NonNegInt.describe('Succeeded'),
-    failed: NonNegInt.describe('Failed'),
-  })
-  .meta({ id: 'OperationSummary', title: 'Operation Summary' });
+export const OperationSummarySchema = z.strictObject({
+  total: NonNegInt.describe('Total'),
+  succeeded: NonNegInt.describe('Succeeded'),
+  failed: NonNegInt.describe('Failed'),
+});
 
-export const PerFileErrorSchema = z
-  .strictObject({
-    code: z.string().describe('Error code'),
-    message: z.string().describe('Error message'),
-    path: z.string().optional().describe('Path involved'),
-    suggestion: z.string().optional().describe('Suggested fix'),
-  })
-  .meta({ id: 'PerFileError', title: 'Per-File Error' });
+export const PerFileErrorSchema = z.strictObject({
+  code: z.string().describe('Error code'),
+  message: z.string().describe('Error message'),
+  path: z.string().optional().describe('Path involved'),
+  suggestion: z.string().optional().describe('Suggested fix'),
+});
 
-/**
- * One entry of a tool's `failures[]`: the path that failed and why.
- * Deliberately un-`meta`'d — an `id` would hoist it into `$defs` and change the
- * emitted schema of every tool already publishing this shape inline.
- */
+/** One entry of a tool's `failures[]`: the path that failed and why. */
 export const PathFailureSchema = z.strictObject({
   path: z.string(),
   error: PerFileErrorSchema,
 });
 
 /**
- * One entry of a source→destination tool's `failures[]`. Un-`meta`'d for the
- * same reason as `PathFailureSchema`: `copy` and `move` publish this shape
- * inline today, and an `id` would hoist it into `$defs` and change both emitted
- * schemas. The verb and noun stay per-op so the `.describe()` text is unchanged.
+ * One entry of a source→destination tool's `failures[]`. The verb and noun stay
+ * per-op so the `.describe()` text reads correctly for each caller.
  */
 export function pairFailureSchema(verb: 'copied' | 'moved', noun: 'copy' | 'move') {
   return z.strictObject({
@@ -258,8 +230,6 @@ export function validateReadRange(
     tail?: number | undefined;
     startLine?: number | undefined;
     endLine?: number | undefined;
-    offset?: number | undefined;
-    length?: number | undefined;
   },
   ctx: z.RefinementCtx,
 ): void {
@@ -267,7 +237,6 @@ export function validateReadRange(
   const hasTail = value.tail !== undefined;
   const hasStart = value.startLine !== undefined;
   const hasEnd = value.endLine !== undefined;
-  const hasByteRange = value.offset !== undefined || value.length !== undefined;
 
   if (hasHead && (hasStart || hasEnd)) {
     ctx.addIssue({
@@ -321,20 +290,6 @@ export function validateReadRange(
       input: value,
     });
   }
-  if (hasByteRange && (hasHead || hasTail || hasStart || hasEnd)) {
-    const errorPath = value.offset !== undefined ? 'offset' : 'length';
-    ctx.addIssue({
-      code: 'custom',
-      path: [errorPath],
-      message: `Cannot use '${errorPath}' with line-based params (head/tail/startLine/endLine)`,
-      params: {
-        rule: 'byte_range_no_line_params',
-        conflictsWith: ['head', 'tail', 'startLine', 'endLine'],
-        suggestion: "Use 'offset'/'length' alone; do not combine with line-based params.",
-      },
-      input: value,
-    });
-  }
 }
 
 export function defaultFalseBoolean(description: string): z.ZodDefault<z.ZodBoolean> {
@@ -355,95 +310,58 @@ export const maxDepthField = (): z.ZodOptional<z.ZodNumber> =>
 
 const DEFAULT_MAX_BATCH = 1000;
 
-export type SingleOrBatchShape<
-  TExtra extends z.ZodRawShape,
-  TPerFile extends z.ZodRawShape | undefined = undefined,
-> = TExtra & {
+export type SingleOrBatchShape<TExtra extends z.ZodRawShape> = TExtra & {
   path: z.ZodOptional<typeof RequiredPath>;
   paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
-} & (TPerFile extends z.ZodRawShape
-    ? {
-        files: z.ZodOptional<z.ZodArray<z.ZodObject<{ path: typeof RequiredPath } & TPerFile>>>;
-      }
-    : Record<never, never>);
+};
 
-export function singleOrBatchPathsInput<
-  TExtra extends z.ZodRawShape,
-  TPerFile extends z.ZodRawShape | undefined = undefined,
->(opts: {
+export function singleOrBatchPathsInput<TExtra extends z.ZodRawShape>(opts: {
   extra: TExtra;
-  perFile?: TPerFile;
   maxBatch?: number;
-}): z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>> {
+}): z.ZodObject<SingleOrBatchShape<TExtra>> {
   const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
-  const perFileShape = opts.perFile;
-  const triadic = perFileShape !== undefined;
-
-  const filesSchema =
-    perFileShape === undefined
-      ? undefined
-      : z
-          .array(z.strictObject({ path: RequiredPath, ...perFileShape }))
-          .min(1)
-          .max(maxBatch)
-          .describe(`Per-file entries (batch mode; max ${String(maxBatch)})`);
-
-  const filesSuffix = triadic ? ' and files' : '';
 
   const shape: z.ZodRawShape = {
     ...opts.extra,
-    path: RequiredPath.optional().describe(
-      `Single file path; mutually exclusive with paths${filesSuffix}`,
-    ),
+    path: RequiredPath.optional().describe('Single file path; mutually exclusive with paths'),
     paths: z
       .array(RequiredPath)
       .min(1)
       .max(maxBatch)
       .optional()
       .describe(
-        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path${filesSuffix}`,
+        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path`,
       ),
-    ...(filesSchema ? { files: filesSchema.optional() } : {}),
   };
 
   const base = z.strictObject(shape).superRefine((value, ctx) => {
     const hasPath = value['path'] !== undefined;
     const hasPaths = value['paths'] !== undefined;
-    // Safety: z.strictObject above rejects unknown keys (including `files` when !triadic) before this runs.
-    const hasFiles = triadic && value['files'] !== undefined;
-    const provided = [hasPath, hasPaths, hasFiles].filter(Boolean).length;
 
-    if (provided === 0) {
+    if (!hasPath && !hasPaths) {
       ctx.addIssue({
         code: 'custom',
         path: ['path'],
-        message: triadic
-          ? "Provide exactly one of 'path', 'paths', or 'files'"
-          : "Either 'path' or 'paths' must be provided",
+        message: "Either 'path' or 'paths' must be provided",
         input: value,
       });
       return;
     }
-    if (provided > 1) {
+    if (hasPath && hasPaths) {
       ctx.addIssue({
         code: 'custom',
-        path: triadic ? ['path'] : ['paths'],
-        message: triadic
-          ? "Provide exactly one of 'path', 'paths', or 'files'"
-          : "Cannot use both 'path' and 'paths'",
+        path: ['paths'],
+        message: "Cannot use both 'path' and 'paths'",
         input: value,
       });
     }
   });
 
   // Mirror the superRefine above on the wire: exactly one input mode. `{}` and
-  // `path`+`paths` both fail this oneOf, matching the runtime rule. Keep the two
-  // in step — both are keyed off `triadic`.
+  // `path`+`paths` both fail this oneOf, matching the runtime rule.
   return base.meta({
-    oneOf: triadic
-      ? [{ required: ['path'] }, { required: ['paths'] }, { required: ['files'] }]
-      : [{ required: ['path'] }, { required: ['paths'] }],
-  }) as z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>>;
+    oneOf: [{ required: ['path'] }, { required: ['paths'] }],
+  }) as z.ZodObject<SingleOrBatchShape<TExtra>>;
 }
 
 /**
@@ -463,15 +381,13 @@ export function singleOrBatchAccessPaths(args: {
   return [];
 }
 
-export const ContinuationSchema = z
-  .strictObject({
-    tool: z.string().describe('Tool name to call for the next chunk'),
-    args: z
-      .record(z.string(), z.unknown())
-      .describe('Ready-to-use arguments for the next call; pass verbatim'),
-    hint: z.string().describe('One-sentence description of the data still remaining to be read'),
-  })
-  .meta({ id: 'Continuation', title: 'Continuation' });
+export const ContinuationSchema = z.strictObject({
+  tool: z.string().describe('Tool name to call for the next chunk'),
+  args: z
+    .record(z.string(), z.unknown())
+    .describe('Ready-to-use arguments for the next call; pass verbatim'),
+  hint: z.string().describe('One-sentence description of the data still remaining to be read'),
+});
 
 // ponytail: charset regex, not z.base64url() — the SDK's AJV warns on the
 // unknown `base64url` format; the server's own decode (cursor.ts) is the real
