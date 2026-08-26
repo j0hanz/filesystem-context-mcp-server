@@ -170,115 +170,6 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
 // filesystem
 // ═══════════════════════════════════════════════════════════════
 
-function warnWatcherCap(uri: string): void {
-  Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
-}
-
-/**
- * `ok` means a watcher is live for this uri and `notify` is registered. Every
- * other outcome names why, and only `invalid-path` carries what
- * `validateExistingPath` threw — so `error` is unreachable on a branch that has
- * none.
- */
-export type WatcherAttachResult =
-  | { ok: true }
-  | { ok: false; reason: 'stale' | 'capped' | 'bad-uri' | 'attach-failed' }
-  | { ok: false; reason: 'invalid-path'; error: unknown };
-
-/**
- * The one attach ladder both watcher entry points run: `resources/subscribe`
- * (2025 era) and the `subscriptions/listen` filter (modern era, HTTP and
- * stdio). Never throws — it reports the outcome and lets each caller decide
- * what that is worth: subscribe owes its caller a precise error, and listen
- * (`prepareListenWatchers`) treats the batch as all-or-nothing, releasing every
- * lease it already took and rejecting the request. Idempotent per URI — a
- * second call for an already-watched URI re-registers the notify callback (one
- * watcher per URI).
- *
- * `markSubscribe` is the one branch that differs: only `resources/subscribe`
- * declares desired state (what `isStale` aborts against). The listen path must
- * not, or a rejected attach past that point strands a `'subscribing'` entry
- * nothing settles. Whoever declares it, this function settles it: every failing
- * exit past that point cancels the declaration, so no uri is poisoned for a
- * later attach.
- *
- * Every `ok` return takes one lease; lifetime is the caller's to manage, and
- * the legs differ. HTTP releases per stream: the listen stream is the POST's
- * own SSE response, so `transport.ts` calls `registry.release` for each URI
- * this returned `ok` for when that response closes (the registry ref-counts by
- * URI, so a watcher another stream still holds survives). Stdio has no
- * per-stream close hook on the SDK's listen router, so its watchers live for
- * the connection and are freed by the shared registry's `destroy()` at close;
- * that is bounded by MAX_WATCHERS, and a stdio connection has exactly one
- * client.
- */
-export async function attachFileWatcherForUri(
-  registry: WatcherRegistry,
-  pathGuard: PathGuard,
-  uri: string,
-  notify: (uri: string) => void,
-  { markSubscribe = false }: { markSubscribe?: boolean } = {},
-): Promise<WatcherAttachResult> {
-  // Every failing exit below routes through here, so the declaration made by
-  // `startSubscribe` can never outlive the attach that made it.
-  const fail = (result: WatcherAttachResult & { ok: false }): WatcherAttachResult => {
-    if (markSubscribe) registry.cancelSubscribe(uri);
-    return result;
-  };
-
-  if (registry.hasWatcher(uri)) {
-    // A watcher already tracks this uri; just (re)register the callback so its
-    // change events reach the new subscriber. No validation or cap work is
-    // needed for an already-live watcher.
-    registry.addCallback(uri, notify);
-    registry.retain(uri);
-    return { ok: true };
-  }
-  // A cap hit before validation and one found after the await are the same
-  // condition, and both are reported the same way.
-  if (registry.isAtCap()) {
-    warnWatcherCap(uri);
-    return { ok: false, reason: 'capped' };
-  }
-
-  if (markSubscribe) registry.startSubscribe(uri);
-
-  const filePath = extractPath(uri);
-  if (!filePath) return fail({ ok: false, reason: 'bad-uri' });
-
-  let resolved: string;
-  try {
-    resolved = await pathGuard.validateExistingPath(filePath);
-  } catch (error: unknown) {
-    return fail({ ok: false, reason: 'invalid-path', error });
-  }
-
-  // Re-check what the await could have changed. A stale uri is the one failure
-  // that must NOT cancel: an unsubscribe landed mid-await and its
-  // 'unsubscribed' marker is the thing that aborted this attach.
-  if (registry.isStale(uri)) return { ok: false, reason: 'stale' };
-  if (registry.hasWatcher(uri)) {
-    registry.addCallback(uri, notify);
-    registry.retain(uri);
-    return { ok: true };
-  }
-  if (registry.isAtCap()) {
-    warnWatcherCap(uri);
-    return fail({ ok: false, reason: 'capped' });
-  }
-
-  registry.addCallback(uri, notify);
-  if (!registry.attach(uri, resolved)) {
-    // fs.watch threw (inotify exhaustion, or a race deleted the path): roll back
-    // so no dangling callback is left believing a watcher exists. No lease was
-    // taken yet, so `release` drops the entry outright.
-    registry.release(uri);
-    return fail({ ok: false, reason: 'attach-failed' });
-  }
-  registry.retain(uri);
-  return { ok: true };
-}
-
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
   const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
   const registry = options.watcherRegistry ?? createWatcherRegistry();
@@ -355,7 +246,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       // is registered, so this is a no-op success rather than a second lease.
       if (leasedUris.has(uri)) return undefined;
 
-      const result = await attachFileWatcherForUri(registry, options.pathGuard, uri, notify, {
+      const result = await registry.acquire(options.pathGuard, uri, notify, {
         markSubscribe: true,
       });
       if (result.ok) {

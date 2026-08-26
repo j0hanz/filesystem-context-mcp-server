@@ -6,8 +6,11 @@ import type { ServerEventBus } from '@modelcontextprotocol/server';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
-import { MAX_WATCHERS, type WatcherRegistry } from '../core/watcher-registry.js';
-import { attachFileWatcherForUri } from '../resources.js';
+import {
+  MAX_WATCHERS,
+  type WatcherAttachResult,
+  type WatcherRegistry,
+} from '../core/watcher-registry.js';
 
 /**
  * Runtime inputs the CLI resolves once (flag, else the operator's env var) and
@@ -58,7 +61,7 @@ const WATCHER_FAILURE_REASONS = {
 
 function watcherFailureMessage(
   uri: string,
-  result: Exclude<Awaited<ReturnType<typeof attachFileWatcherForUri>>, { ok: true }>,
+  result: Exclude<WatcherAttachResult, { ok: true }>,
 ): string {
   const why =
     result.reason === 'invalid-path'
@@ -80,7 +83,7 @@ export async function prepareListenWatchers(
   const uris = listenSubscriptionUris(parsedBody);
   const acquired: string[] = [];
   for (const uri of uris) {
-    const result = await attachFileWatcherForUri(registry, pathGuard, uri, notify);
+    const result = await registry.acquire(pathGuard, uri, notify);
     if (!result.ok) {
       for (const prior of acquired) registry.release(prior);
       return { ok: false, message: watcherFailureMessage(uri, result) };

@@ -2,18 +2,37 @@ import type { FSWatcher } from 'node:fs';
 import { statSync, watch } from 'node:fs';
 
 import { formatUnknownErrorMessage } from './errors.js';
+import { extractPath } from './file-uri.js';
 import { Logger } from './observability.js';
+import type { PathGuard } from './path.js';
 import { parseEnvInt } from './util.js';
 
 // Cap concurrent file watchers to avoid exhausting OS-level watch handles
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
 export const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
 
+function warnWatcherCap(uri: string): void {
+  Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);
+}
+
+/**
+ * `ok` means a watcher is live for this uri and `notify` is registered. Every
+ * other outcome names why, and only `invalid-path` carries what
+ * `validateExistingPath` threw — so `error` is unreachable on a branch that has
+ * none.
+ */
+export type WatcherAttachResult =
+  | { ok: true }
+  | { ok: false; reason: 'stale' | 'capped' | 'bad-uri' | 'attach-failed' }
+  | { ok: false; reason: 'invalid-path'; error: unknown };
+
 /**
  * Owns the uri → FSWatcher map and the subscription bookkeeping around it:
- * notify callbacks, desired subscribe/unsubscribe state, and the watcher cap.
- * `subscribe` awaits path validation midway, so callers re-check `isStale` and
- * `hasWatcher` after the await before attaching.
+ * notify callbacks, desired subscribe/unsubscribe state, and the watcher cap —
+ * plus `acquire`, the one ladder that sequences them correctly. `acquire` awaits
+ * path validation midway and re-checks `isStale` and `hasWatcher` itself
+ * afterwards, so callers do not: they take a lease and release it. The
+ * individual primitives stay public for the state-machine tests.
  */
 export function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
@@ -109,94 +128,209 @@ export function createWatcherRegistry() {
     debounceTimers.set(uri, timer);
   };
 
-  return {
-    hasWatcher: (uri: string): boolean => watchers.has(uri),
+  // The seven members below are hoisted out of the returned literal so `acquire`
+  // can sequence them from inside the closure. Their signatures and the shape of
+  // the returned object are unchanged — they are still public members, listed
+  // shorthand in the `return` at the bottom.
 
-    isAtCap: (): boolean => watchers.size >= MAX_WATCHERS,
+  const hasWatcher = (uri: string): boolean => watchers.has(uri);
+
+  const isAtCap = (): boolean => watchers.size >= MAX_WATCHERS;
+
+  /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
+  const isStale = (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed';
+
+  const startSubscribe = (uri: string): void => {
+    desiredState.set(uri, 'subscribing');
+  };
+
+  /**
+   * A subscribe that declared intent and then failed — bad URI, unvalidatable
+   * path, cap, fs.watch refusal — drops the entry entirely. Not
+   * `settleDesiredState`: that maps 'subscribing' onto 'unsubscribed' to abort
+   * an attach still mid-await, and a *finished* failure leaving 'unsubscribed'
+   * behind would make `isStale` true forever, so the modern attach path (which
+   * never calls `startSubscribe`) could never watch this uri again. Only
+   * clears its own 'subscribing' — a concurrent unsubscribe that already set
+   * 'unsubscribed' still wins.
+   */
+  const cancelSubscribe = (uri: string): void => {
+    if (desiredState.get(uri) === 'subscribing') desiredState.delete(uri);
+  };
+
+  const addCallback = (uri: string, notify: (uri: string) => void): void => {
+    let callbacks = activeCallbacks.get(uri);
+    if (!callbacks) {
+      callbacks = new Set();
+      activeCallbacks.set(uri, callbacks);
+    }
+    callbacks.add(notify);
+    desiredState.set(uri, 'subscribed');
+  };
+
+  const retain = (uri: string): void => {
+    subscriberCounts.set(uri, (subscriberCounts.get(uri) ?? 0) + 1);
+  };
+
+  /**
+   * Ref-count by URI: only tear down the shared watcher when the last lease
+   * ends. Callback identity is independent from this count. A release with no
+   * lease outstanding (a rolled-back attach) drops the watcher outright.
+   */
+  const release = (uri: string): void => {
+    const remaining = (subscriberCounts.get(uri) ?? 0) - 1;
+    if (remaining > 0) {
+      subscriberCounts.set(uri, remaining);
+      return;
+    }
+    drop(uri);
+  };
+
+  const attach = (uri: string, resolvedPath: string): boolean => {
+    try {
+      // Watch directories recursively (children included) and files as-is.
+      // `fs.watch` async errors arrive via the 'error' event below, not as a
+      // sync throw, so no recursive-fallback try/catch is needed here — the
+      // outer catch handles sync throws (inotify exhaustion, path-race).
+      // `{ recursive: true }` is honored on macOS, Windows, and — since Node
+      // 20.13 — Linux; `engines.node` is >=24, so all three are covered.
+      const recursive = statSync(resolvedPath).isDirectory();
+      const watcher = watch(resolvedPath, recursive ? { recursive: true } : undefined, () => {
+        notifyAll(uri);
+      });
+      watcher.on('error', (err: Error) => {
+        Logger.warn(`Watcher error for ${uri}: ${err.message}`);
+        dropWatcher(uri, watcher);
+      });
+      // Two attaches that both cleared `hasWatcher` before either finished
+      // validating land here for the same uri. Keep the one already wired to
+      // the callback set and close this one — overwriting the map entry would
+      // strand the first watcher's fd with nothing left holding a reference.
+      if (watchers.has(uri)) {
+        watcher.close();
+        return true;
+      }
+      watchers.set(uri, watcher);
+      return true;
+    } catch (err) {
+      Logger.error(`Failed to create watcher for ${uri}: ${formatUnknownErrorMessage(err)}`);
+      return false;
+    }
+  };
+
+  return {
+    hasWatcher,
+
+    isAtCap,
 
     /** Live watcher count, for pre-checking a batched listen against remaining capacity. */
     size: (): number => watchers.size,
 
-    /** The registry was destroyed, or this uri was unsubscribed, mid-await. */
-    isStale: (uri: string): boolean => destroyed || desiredState.get(uri) === 'unsubscribed',
+    isStale,
 
-    startSubscribe(uri: string): void {
-      desiredState.set(uri, 'subscribing');
-    },
+    startSubscribe,
+
+    cancelSubscribe,
+
+    addCallback,
+
+    retain,
+
+    release,
 
     /**
-     * A subscribe that declared intent and then failed — bad URI, unvalidatable
-     * path, cap, fs.watch refusal — drops the entry entirely. Not
-     * `settleDesiredState`: that maps 'subscribing' onto 'unsubscribed' to abort
-     * an attach still mid-await, and a *finished* failure leaving 'unsubscribed'
-     * behind would make `isStale` true forever, so the modern attach path (which
-     * never calls `startSubscribe`) could never watch this uri again. Only
-     * clears its own 'subscribing' — a concurrent unsubscribe that already set
-     * 'unsubscribed' still wins.
+     * The one attach ladder both watcher entry points run: `resources/subscribe`
+     * (2025 era) and the `subscriptions/listen` filter (modern era, HTTP and
+     * stdio). Never throws — it reports the outcome and lets each caller decide
+     * what that is worth: subscribe owes its caller a precise error, and listen
+     * (`prepareListenWatchers`) treats the batch as all-or-nothing, releasing
+     * every lease it already took and rejecting the request. Idempotent per URI
+     * — a second call for an already-watched URI re-registers the notify
+     * callback (one watcher per URI).
+     *
+     * `markSubscribe` is the one branch that differs: only `resources/subscribe`
+     * declares desired state (what `isStale` aborts against). The listen path
+     * must not, or a rejected attach past that point strands a `'subscribing'`
+     * entry nothing settles. Whoever declares it, this function settles it:
+     * every failing exit past that point cancels the declaration, so no uri is
+     * poisoned for a later attach.
+     *
+     * Every `ok` return takes one lease; lifetime is the caller's to manage, and
+     * the legs differ. HTTP releases per stream: the listen stream is the POST's
+     * own SSE response, so `transport/http.ts` calls `release` for each URI this
+     * returned `ok` for when that response closes (the ref-count is by URI, so a
+     * watcher another stream still holds survives). Stdio has no per-stream
+     * close hook on the SDK's listen router, so its watchers live for the
+     * connection and are freed by `destroy()` at close; that is bounded by
+     * MAX_WATCHERS, and a stdio connection has exactly one client.
      */
-    cancelSubscribe(uri: string): void {
-      if (desiredState.get(uri) === 'subscribing') desiredState.delete(uri);
-    },
+    async acquire(
+      pathGuard: PathGuard,
+      uri: string,
+      notify: (uri: string) => void,
+      { markSubscribe = false }: { markSubscribe?: boolean } = {},
+    ): Promise<WatcherAttachResult> {
+      // Every failing exit below routes through here, so the declaration made by
+      // `startSubscribe` can never outlive the attach that made it.
+      const fail = (result: WatcherAttachResult & { ok: false }): WatcherAttachResult => {
+        if (markSubscribe) cancelSubscribe(uri);
+        return result;
+      };
 
-    addCallback(uri: string, notify: (uri: string) => void): void {
-      let callbacks = activeCallbacks.get(uri);
-      if (!callbacks) {
-        callbacks = new Set();
-        activeCallbacks.set(uri, callbacks);
+      if (hasWatcher(uri)) {
+        // A watcher already tracks this uri; just (re)register the callback so
+        // its change events reach the new subscriber. No validation or cap work
+        // is needed for an already-live watcher.
+        addCallback(uri, notify);
+        retain(uri);
+        return { ok: true };
       }
-      callbacks.add(notify);
-      desiredState.set(uri, 'subscribed');
-    },
+      // A cap hit before validation and one found after the await are the same
+      // condition, and both are reported the same way.
+      if (isAtCap()) {
+        warnWatcherCap(uri);
+        return { ok: false, reason: 'capped' };
+      }
 
-    retain(uri: string): void {
-      subscriberCounts.set(uri, (subscriberCounts.get(uri) ?? 0) + 1);
-    },
+      if (markSubscribe) startSubscribe(uri);
 
-    attach(uri: string, resolvedPath: string): boolean {
+      const filePath = extractPath(uri);
+      if (!filePath) return fail({ ok: false, reason: 'bad-uri' });
+
+      let resolved: string;
       try {
-        // Watch directories recursively (children included) and files as-is.
-        // `fs.watch` async errors arrive via the 'error' event below, not as a
-        // sync throw, so no recursive-fallback try/catch is needed here — the
-        // outer catch handles sync throws (inotify exhaustion, path-race).
-        // `{ recursive: true }` is honored on macOS, Windows, and — since Node
-        // 20.13 — Linux; `engines.node` is >=24, so all three are covered.
-        const recursive = statSync(resolvedPath).isDirectory();
-        const watcher = watch(resolvedPath, recursive ? { recursive: true } : undefined, () => {
-          notifyAll(uri);
-        });
-        watcher.on('error', (err: Error) => {
-          Logger.warn(`Watcher error for ${uri}: ${err.message}`);
-          dropWatcher(uri, watcher);
-        });
-        // Two attaches that both cleared `hasWatcher` before either finished
-        // validating land here for the same uri. Keep the one already wired to
-        // the callback set and close this one — overwriting the map entry would
-        // strand the first watcher's fd with nothing left holding a reference.
-        if (watchers.has(uri)) {
-          watcher.close();
-          return true;
-        }
-        watchers.set(uri, watcher);
-        return true;
-      } catch (err) {
-        Logger.error(`Failed to create watcher for ${uri}: ${formatUnknownErrorMessage(err)}`);
-        return false;
+        resolved = await pathGuard.validateExistingPath(filePath);
+      } catch (error: unknown) {
+        return fail({ ok: false, reason: 'invalid-path', error });
       }
+
+      // Re-check what the await could have changed. A stale uri is the one
+      // failure that must NOT cancel: an unsubscribe landed mid-await and its
+      // 'unsubscribed' marker is the thing that aborted this attach.
+      if (isStale(uri)) return { ok: false, reason: 'stale' };
+      if (hasWatcher(uri)) {
+        addCallback(uri, notify);
+        retain(uri);
+        return { ok: true };
+      }
+      if (isAtCap()) {
+        warnWatcherCap(uri);
+        return fail({ ok: false, reason: 'capped' });
+      }
+
+      addCallback(uri, notify);
+      if (!attach(uri, resolved)) {
+        // fs.watch threw (inotify exhaustion, or a race deleted the path): roll
+        // back so no dangling callback is left believing a watcher exists. No
+        // lease was taken yet, so `release` drops the entry outright.
+        release(uri);
+        return fail({ ok: false, reason: 'attach-failed' });
+      }
+      retain(uri);
+      return { ok: true };
     },
 
-    /**
-     * Ref-count by URI: only tear down the shared watcher when the last lease
-     * ends. Callback identity is independent from this count. A release with no
-     * lease outstanding (a rolled-back attach) drops the watcher outright.
-     */
-    release(uri: string): void {
-      const remaining = (subscriberCounts.get(uri) ?? 0) - 1;
-      if (remaining > 0) {
-        subscriberCounts.set(uri, remaining);
-        return;
-      }
-      drop(uri);
-    },
+    attach,
 
     destroy(): void {
       destroyed = true;
