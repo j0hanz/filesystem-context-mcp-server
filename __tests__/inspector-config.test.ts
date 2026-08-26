@@ -4,11 +4,8 @@ import { after, before, describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { normalizePath } from '../src/core/path.js';
-import {
-  cleanupInspectorTestRoot,
-  createInspectorConfigFile,
-  createInspectorTestRoot,
-} from './inspector-fixtures.js';
+import { cleanupTestRoot, createTestRoot } from './helpers.js';
+import { createInspectorConfigFile } from './inspector-fixtures.js';
 import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
 
 describe(
@@ -20,7 +17,7 @@ describe(
     const SERVER_NAME = 'fs_config_test';
 
     before(async () => {
-      tmpDir = await createInspectorTestRoot();
+      tmpDir = await createTestRoot();
       configFile = join(tmpDir, 'test-mcp-config.json');
 
       const repoRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -37,7 +34,7 @@ describe(
     });
 
     after(async () => {
-      await cleanupInspectorTestRoot(tmpDir);
+      await cleanupTestRoot(tmpDir);
     });
 
     it('INSP-CFG-001: connects to server named in --config and executes initialize', async () => {

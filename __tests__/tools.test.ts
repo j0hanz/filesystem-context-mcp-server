@@ -32,6 +32,7 @@ import {
   firstTextBlock,
   type TestClientContext,
   trySymlink,
+  withBoundary,
   writeTestFile,
 } from './helpers.js';
 
@@ -538,7 +539,6 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
   it('TC-FUNC-055: Copy recursive directory via MCP tool call', async () => {
     const srcDir = join(tmpDir, 'copy_src_dir');
     const dstDir = join(tmpDir, 'copy_dst_dir');
-    const { mkdir } = await import('node:fs/promises');
     await mkdir(join(srcDir, 'sub'), { recursive: true });
     await writeFile(join(srcDir, 'file1.txt'), 'file1');
     await writeFile(join(srcDir, 'sub', 'file2.txt'), 'file2');
@@ -604,9 +604,6 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const outsideFile = join(outsideDir, 'file.txt');
     await writeFile(outsideFile, 'test content');
 
-    const prevBoundary = process.env['ROOT_BOUNDARY'];
-    process.env['ROOT_BOUNDARY'] = parentDir;
-
     let notified = false;
     const notifier = {
       resourcesChanged: () => {
@@ -616,42 +613,42 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     };
 
     try {
-      const serverCtx = await createServer({ cliAllowedDirs: [rootDir] }, { notifier });
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client(
-        { name: 'test-harness', version: '1.0.0' },
-        { capabilities: { elicitation: {} } },
-      );
-      client.setRequestHandler('elicitation/create', async () => {
-        return {
-          action: 'accept',
-          content: { confirm: true },
-        };
-      });
-      await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
-
-      try {
-        assert.strictEqual(notified, false);
-        const result = await client.callTool({
-          name: 'read',
-          arguments: { path: outsideFile },
-        });
-        assert.notStrictEqual(result.isError, true);
-        assert.strictEqual(
-          notified,
-          false,
-          'a grant must not announce a resource list that cannot have changed',
+      await withBoundary(parentDir, async () => {
+        const serverCtx = await createServer({ cliAllowedDirs: [rootDir] }, { notifier });
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        const client = new Client(
+          { name: 'test-harness', version: '1.0.0' },
+          { capabilities: { elicitation: {} } },
         );
-      } finally {
-        await client.close();
-        await serverCtx.close();
-      }
+        client.setRequestHandler('elicitation/create', async () => {
+          return {
+            action: 'accept',
+            content: { confirm: true },
+          };
+        });
+        await Promise.all([
+          client.connect(clientTransport),
+          serverCtx.mcp.connect(serverTransport),
+        ]);
+
+        try {
+          assert.strictEqual(notified, false);
+          const result = await client.callTool({
+            name: 'read',
+            arguments: { path: outsideFile },
+          });
+          assert.notStrictEqual(result.isError, true);
+          assert.strictEqual(
+            notified,
+            false,
+            'a grant must not announce a resource list that cannot have changed',
+          );
+        } finally {
+          await client.close();
+          await serverCtx.close();
+        }
+      });
     } finally {
-      if (prevBoundary !== undefined) {
-        process.env['ROOT_BOUNDARY'] = prevBoundary;
-      } else {
-        delete process.env['ROOT_BOUNDARY'];
-      }
       await cleanupTestRoot(parentDir);
     }
   });
@@ -945,51 +942,49 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(srcA, 'A content');
     await writeFile(srcB, 'B content');
 
-    const prevBoundary = process.env['ROOT_BOUNDARY'];
-    process.env['ROOT_BOUNDARY'] = parentDir;
     try {
-      // Two out-of-root source dirs => one multi-select grant round. Accept
-      // only the FIRST offered dir (a subset of one); the other stays denied.
-      const eh = await createElicitationClientPair([rootDir], async (req: unknown) => {
-        const env = req as { params?: { requestedSchema?: unknown } };
-        const schema = env.params?.requestedSchema as
-          | {
-              properties?: { choice?: { items?: { anyOf?: { const?: string }[] } } };
-            }
-          | undefined;
-        const offered = schema?.properties?.choice?.items?.anyOf ?? [];
-        const first = offered[0]?.const;
-        return {
-          action: 'accept' as const,
-          content: { choice: first ? [first] : [] },
-        };
-      });
-      try {
-        const result = await eh.client.callTool({
-          name: 'move',
-          arguments: {
-            moves: [
-              { source: srcA, destination: join(rootDir, 'a_copy.txt') },
-              { source: srcB, destination: join(rootDir, 'b_copy.txt') },
-            ],
-            copy: true,
-          },
+      await withBoundary(parentDir, async () => {
+        // Two out-of-root source dirs => one multi-select grant round. Accept
+        // only the FIRST offered dir (a subset of one); the other stays denied.
+        const eh = await createElicitationClientPair([rootDir], async (req: unknown) => {
+          const env = req as { params?: { requestedSchema?: unknown } };
+          const schema = env.params?.requestedSchema as
+            | {
+                properties?: { choice?: { items?: { anyOf?: { const?: string }[] } } };
+              }
+            | undefined;
+          const offered = schema?.properties?.choice?.items?.anyOf ?? [];
+          const first = offered[0]?.const;
+          return {
+            action: 'accept' as const,
+            content: { choice: first ? [first] : [] },
+          };
         });
-        assert.notStrictEqual(result.isError, true);
-        const s = result.structuredContent as {
-          moves?: { from?: string; to?: string }[];
-          failures?: { source?: string; error?: { code?: string } }[];
-        };
-        // The accepted dir's copy succeeded; the declined dir's failed closed.
-        assert.strictEqual(s.moves?.length, 1, 'exactly one copy (the accepted dir) succeeds');
-        assert.strictEqual(s.failures?.length, 1, 'exactly one failure (the declined dir)');
-        assert.strictEqual(s.failures?.[0]?.error?.code, 'ACCESS_DENIED');
-      } finally {
-        await eh.close();
-      }
+        try {
+          const result = await eh.client.callTool({
+            name: 'move',
+            arguments: {
+              moves: [
+                { source: srcA, destination: join(rootDir, 'a_copy.txt') },
+                { source: srcB, destination: join(rootDir, 'b_copy.txt') },
+              ],
+              copy: true,
+            },
+          });
+          assert.notStrictEqual(result.isError, true);
+          const s = result.structuredContent as {
+            moves?: { from?: string; to?: string }[];
+            failures?: { source?: string; error?: { code?: string } }[];
+          };
+          // The accepted dir's copy succeeded; the declined dir's failed closed.
+          assert.strictEqual(s.moves?.length, 1, 'exactly one copy (the accepted dir) succeeds');
+          assert.strictEqual(s.failures?.length, 1, 'exactly one failure (the declined dir)');
+          assert.strictEqual(s.failures?.[0]?.error?.code, 'ACCESS_DENIED');
+        } finally {
+          await eh.close();
+        }
+      });
     } finally {
-      if (prevBoundary !== undefined) process.env['ROOT_BOUNDARY'] = prevBoundary;
-      else delete process.env['ROOT_BOUNDARY'];
       await cleanupTestRoot(parentDir);
     }
   });
@@ -1010,49 +1005,47 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     await writeFile(srcB, 'B content');
     await writeFile(join(secretDir, 'secret.txt'), 'secret');
 
-    const prevBoundary = process.env['ROOT_BOUNDARY'];
-    process.env['ROOT_BOUNDARY'] = parentDir;
     try {
-      // Malicious client: accept the offered outsideA AND a non-offered
-      // secretDir. Only outsideA/outsideB were in precheckAccess's grantDirs
-      // (two dirs => multi-select branch); secretDir must be filtered out and
-      // stay ungranted.
-      const eh = await createElicitationClientPair([rootDir], async () => ({
-        action: 'accept' as const,
-        content: { choice: [outsideA, secretDir] },
-      }));
-      try {
-        const result = await eh.client.callTool({
-          name: 'move',
-          arguments: {
-            moves: [
-              { source: srcA, destination: join(rootDir, 'a_copy.txt') },
-              { source: srcB, destination: join(rootDir, 'b_copy.txt') },
-            ],
-            copy: true,
-          },
-        });
-        assert.notStrictEqual(result.isError, true);
-        const s = result.structuredContent as { moves?: unknown[] };
-        assert.strictEqual(s.moves?.length, 1, 'offered accepted dir is granted');
+      await withBoundary(parentDir, async () => {
+        // Malicious client: accept the offered outsideA AND a non-offered
+        // secretDir. Only outsideA/outsideB were in precheckAccess's grantDirs
+        // (two dirs => multi-select branch); secretDir must be filtered out and
+        // stay ungranted.
+        const eh = await createElicitationClientPair([rootDir], async () => ({
+          action: 'accept' as const,
+          content: { choice: [outsideA, secretDir] },
+        }));
+        try {
+          const result = await eh.client.callTool({
+            name: 'move',
+            arguments: {
+              moves: [
+                { source: srcA, destination: join(rootDir, 'a_copy.txt') },
+                { source: srcB, destination: join(rootDir, 'b_copy.txt') },
+              ],
+              copy: true,
+            },
+          });
+          assert.notStrictEqual(result.isError, true);
+          const s = result.structuredContent as { moves?: unknown[] };
+          assert.strictEqual(s.moves?.length, 1, 'offered accepted dir is granted');
 
-        // secretDir was never offered -> not granted -> read fails ACCESS_DENIED.
-        const readRes = await eh.client.callTool({
-          name: 'read',
-          arguments: { path: join(secretDir, 'secret.txt') },
-        });
-        const rs = readRes.structuredContent as {
-          results?: { error?: { code?: string } }[];
-          summary?: { failed?: number };
-        };
-        assert.strictEqual(rs.summary?.failed, 1);
-        assert.strictEqual(rs.results?.[0]?.error?.code, 'ACCESS_DENIED');
-      } finally {
-        await eh.close();
-      }
+          // secretDir was never offered -> not granted -> read fails ACCESS_DENIED.
+          const readRes = await eh.client.callTool({
+            name: 'read',
+            arguments: { path: join(secretDir, 'secret.txt') },
+          });
+          const rs = readRes.structuredContent as {
+            results?: { error?: { code?: string } }[];
+            summary?: { failed?: number };
+          };
+          assert.strictEqual(rs.summary?.failed, 1);
+          assert.strictEqual(rs.results?.[0]?.error?.code, 'ACCESS_DENIED');
+        } finally {
+          await eh.close();
+        }
+      });
     } finally {
-      if (prevBoundary !== undefined) process.env['ROOT_BOUNDARY'] = prevBoundary;
-      else delete process.env['ROOT_BOUNDARY'];
       await cleanupTestRoot(parentDir);
     }
   });

@@ -4,11 +4,7 @@ import { after, before, describe, it } from 'node:test';
 
 import { normalizePath } from '../src/core/path.js';
 import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from '../src/tools/index.js';
-import {
-  cleanupInspectorTestRoot,
-  createInspectorTestRoot,
-  getStdioServerCommand,
-} from './inspector-fixtures.js';
+import { cleanupTestRoot, createTestRoot, getStdioServerCommand } from './helpers.js';
 import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
 
 describe(
@@ -19,19 +15,24 @@ describe(
     let serverCmd: string[];
 
     before(async () => {
-      tmpDir = await createInspectorTestRoot();
+      tmpDir = await createTestRoot();
       serverCmd = getStdioServerCommand();
     });
 
     after(async () => {
-      await cleanupInspectorTestRoot(tmpDir);
+      await cleanupTestRoot(tmpDir);
     });
 
     it('INSP-STDIO-001: initialize returns serverInfo and capabilities', async () => {
       const res = await executeInspectorCli<{
         serverInfo?: { name?: string; version?: string };
         protocolVersion?: string;
-        capabilities?: Record<string, unknown>;
+        capabilities?: {
+          tools?: { listChanged?: boolean };
+          resources?: { subscribe?: boolean; listChanged?: boolean };
+          prompts?: { listChanged?: boolean };
+          completions?: Record<string, unknown>;
+        };
         instructions?: string;
       }>({
         method: 'initialize',
@@ -45,6 +46,27 @@ describe(
       assert.ok(res.json?.capabilities?.tools, 'capabilities.tools should be present');
       assert.ok(res.json?.capabilities?.resources, 'capabilities.resources should be present');
       assert.ok(res.json?.capabilities?.prompts, 'capabilities.prompts should be present');
+      assert.strictEqual(
+        res.json?.capabilities?.resources?.subscribe,
+        true,
+        'resources.subscribe should be advertised',
+      );
+      assert.strictEqual(
+        res.json?.capabilities?.resources?.listChanged,
+        true,
+        'resources.listChanged should be advertised',
+      );
+      assert.strictEqual(
+        res.json?.capabilities?.tools?.listChanged,
+        true,
+        'tools.listChanged should be advertised',
+      );
+      assert.strictEqual(
+        res.json?.capabilities?.prompts?.listChanged,
+        true,
+        'prompts.listChanged should be advertised',
+      );
+      assert.ok(res.json?.capabilities?.completions, 'capabilities.completions should be present');
       assert.ok(
         res.json?.instructions?.includes('filesystem-mcp'),
         'instructions should be present',
@@ -292,6 +314,29 @@ describe(
         5,
         `Non-existent tool should exit with code 5. Actual: ${res.exitCode}`,
       );
+    });
+
+    it('INSP-STDIO-011: resources/templates/list returns result and file templates', async () => {
+      const res = await executeInspectorCli<{
+        resourceTemplates?: { name?: string; uriTemplate?: string }[];
+      }>({
+        method: 'resources/templates/list',
+        serverCommand: serverCmd,
+        serverArgs: [tmpDir],
+      });
+
+      assert.strictEqual(
+        res.exitCode,
+        0,
+        `resources/templates/list should exit 0. stderr: ${res.stderr}`,
+      );
+      const templates = res.json?.resourceTemplates ?? [];
+      const resultTemplate = templates.find((t) => t.name === 'filesystem-mcp-result');
+      assert.ok(resultTemplate, 'filesystem-mcp-result template should be listed');
+      assert.strictEqual(resultTemplate.uriTemplate, 'filesystem-mcp://result/{id}');
+      const fileTemplate = templates.find((t) => t.name === 'filesystem-mcp-file');
+      assert.ok(fileTemplate, 'filesystem-mcp-file template should be listed');
+      assert.strictEqual(fileTemplate.uriTemplate, 'filesystem-mcp://file/{+path}');
     });
   },
 );

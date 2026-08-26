@@ -15,7 +15,13 @@ import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/in
 import { getResourceContracts, registerResources } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
-import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
+import {
+  cleanupTestRoot,
+  createTestClientPair,
+  createTestRoot,
+  waitFor,
+  writeTestFile,
+} from './helpers.js';
 
 const dummyContext = { sessionId: 'test-session' } as unknown as ServerContext;
 
@@ -299,10 +305,7 @@ describe('MCP Resources', () => {
       await writeFile(testFile, 'updated content');
 
       // Poll for the debounced notification (50ms debounce) — fixed waits flake on loaded CI.
-      const deadline = Date.now() + 1000;
-      while (notifications.length === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+      await waitFor(() => notifications.length > 0, 1000);
 
       assert.ok(notifications.length >= 1, 'Watcher callback should have received notification');
       assert.strictEqual(notifications[0], testUri);
@@ -343,10 +346,7 @@ describe('MCP Resources', () => {
       assert.strictEqual(registry.attach(testUri, testFile), true);
 
       await writeFile(testFile, 'changed');
-      const deadline = Date.now() + 1000;
-      while (notifications === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+      await waitFor(() => notifications > 0, 1000);
 
       assert.strictEqual(notifications, 1, 'one filesystem event must invoke one callback');
 

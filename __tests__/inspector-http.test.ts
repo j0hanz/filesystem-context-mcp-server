@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  cleanupInspectorTestRoot,
-  createInspectorTestRoot,
-  getInspectorHttpPort,
-  startInspectorHttp,
-  stopInspectorHttp,
-} from './inspector-fixtures.js';
+import { cleanupTestRoot, createTestRoot } from './helpers.js';
+import { startInspectorHttp } from './inspector-fixtures.js';
 import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
 
 describe(
@@ -21,19 +17,19 @@ describe(
     const TEST_API_KEY = 'test-inspector-secret-key-xyz123';
 
     before(async () => {
-      tmpDir = await createInspectorTestRoot();
+      tmpDir = await createTestRoot();
       server = await startInspectorHttp(0, [tmpDir], {
         apiKey: TEST_API_KEY,
       });
-      const port = getInspectorHttpPort(server);
+      const port = (server.address() as AddressInfo).port;
       serverUrl = `http://127.0.0.1:${port}/mcp`;
     });
 
     after(async () => {
       if (server) {
-        await stopInspectorHttp(server);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
       }
-      await cleanupInspectorTestRoot(tmpDir);
+      await cleanupTestRoot(tmpDir);
     });
 
     it('INSP-HTTP-001: unauthenticated request exits with Code 3 (auth_required)', async () => {

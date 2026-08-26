@@ -16,39 +16,21 @@ export type InspectorMethod =
   | 'resources/list'
   | 'resources/read'
   | 'resources/templates/list'
-  | 'prompts/list'
-  | 'prompts/get'
-  | 'logging/setLevel'
-  | 'servers/list'
-  | 'servers/show';
+  | 'prompts/list';
 
 export interface InspectorCliOptions {
   method: InspectorMethod;
   serverCommand?: readonly string[];
   serverUrl?: string;
-  transport?: 'stdio' | 'http' | 'sse';
+  transport?: 'stdio' | 'http';
   configPath?: string;
   serverName?: string;
   toolName?: string;
   toolArgs?: Record<string, unknown>;
   uri?: string;
-  promptName?: string;
-  promptArgs?: Record<string, unknown>;
   headers?: Record<string, string>;
   serverArgs?: readonly string[];
   appInfo?: boolean;
-  timeoutMs?: number;
-  env?: Record<string, string>;
-}
-
-export interface InspectorErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    status?: number;
-    url?: string;
-    [key: string]: unknown;
-  };
 }
 
 export interface InspectorCliResult<T = unknown> {
@@ -56,7 +38,6 @@ export interface InspectorCliResult<T = unknown> {
   stdout: string;
   stderr: string;
   json?: T;
-  errorEnvelope?: InspectorErrorEnvelope;
 }
 
 let resolvedInspectorBin: string | undefined;
@@ -116,7 +97,6 @@ export async function executeInspectorCli<T = unknown>(
               args: [...options.serverCommand.slice(1), ...(options.serverArgs ?? [])],
             }
           : {}),
-      ...(options.env ? { env: options.env } : {}),
     };
 
     await writeFile(
@@ -144,25 +124,13 @@ export async function executeInspectorCli<T = unknown>(
   if (options.uri) {
     args.push('--uri', options.uri);
   }
-  if (options.promptName) {
-    args.push('--prompt-name', options.promptName);
-  }
-  if (options.promptArgs) {
-    args.push('--prompt-args', JSON.stringify(options.promptArgs));
-  }
-
-  if (options.headers && options.configPath) {
-    for (const [k, v] of Object.entries(options.headers)) {
-      args.push('--header', `${k}: ${v}`);
-    }
-  }
 
   args.push('--config', configToUse);
   if (serverNameToUse) {
     args.push('--server', serverNameToUse);
   }
 
-  const timeoutMs = options.timeoutMs ?? 25_000;
+  const timeoutMs = 25_000;
 
   return new Promise((resolve) => {
     let settled = false;
@@ -184,10 +152,6 @@ export async function executeInspectorCli<T = unknown>(
       child = spawn(process.execPath, args, {
         shell: false,
         windowsHide: true,
-        env: {
-          ...process.env,
-          ...options.env,
-        },
         timeout: timeoutMs,
       });
     } catch (err) {
@@ -211,7 +175,6 @@ export async function executeInspectorCli<T = unknown>(
 
     child.on('close', (code) => {
       let json: T | undefined;
-      let errorEnvelope: InspectorErrorEnvelope | undefined;
 
       const trimmedOut = stdout.trim();
       if (trimmedOut.length > 0) {
@@ -223,25 +186,11 @@ export async function executeInspectorCli<T = unknown>(
         }
       }
 
-      const trimmedErr = stderr.trim();
-      if (trimmedErr.length > 0) {
-        const lines = trimmedErr.split('\n');
-        const lastLine = lines[lines.length - 1]?.trim() ?? '';
-        if (lastLine.startsWith('{') && lastLine.endsWith('}')) {
-          try {
-            errorEnvelope = JSON.parse(lastLine) as InspectorErrorEnvelope;
-          } catch {
-            // Not a JSON error line
-          }
-        }
-      }
-
       void settle({
         exitCode: code ?? 1,
         stdout,
         stderr,
         ...(json !== undefined ? { json } : {}),
-        ...(errorEnvelope !== undefined ? { errorEnvelope } : {}),
       });
     });
 

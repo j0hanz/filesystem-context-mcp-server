@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
-import {
-  cleanupInspectorTestRoot,
-  createInspectorTestRoot,
-  getStdioServerCommand,
-} from './inspector-fixtures.js';
+import { cleanupTestRoot, createTestRoot, getStdioServerCommand } from './helpers.js';
 import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
 
 describe(
@@ -16,12 +12,12 @@ describe(
     let serverCmd: string[];
 
     before(async () => {
-      tmpDir = await createInspectorTestRoot();
+      tmpDir = await createTestRoot();
       serverCmd = getStdioServerCommand();
     });
 
     after(async () => {
-      await cleanupInspectorTestRoot(tmpDir);
+      await cleanupTestRoot(tmpDir);
     });
 
     it('INSP-APP-001: tools/list --app-info emits NDJSON with hasApp for all tools', async () => {

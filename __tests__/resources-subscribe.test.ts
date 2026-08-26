@@ -5,7 +5,13 @@ import { after, before, describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
-import { cleanupTestRoot, createTestClientPair, createTestRoot, writeTestFile } from './helpers.js';
+import {
+  cleanupTestRoot,
+  createTestClientPair,
+  createTestRoot,
+  waitFor,
+  writeTestFile,
+} from './helpers.js';
 
 describe('Resource subscriptions round-trip', () => {
   let tmpDir: string;
@@ -37,10 +43,7 @@ describe('Resource subscriptions round-trip', () => {
     await writeFile(filePath, 'changed');
 
     // Poll for the debounced notification (50ms debounce)
-    const deadline = Date.now() + 2000;
-    while (!received && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => received !== undefined, 2000);
 
     assert.strictEqual(received, uri, 'Expected notification with matching uri before 2s deadline');
 
@@ -52,10 +55,7 @@ describe('Resource subscriptions round-trip', () => {
     await writeFile(filePath, 'changed-again');
 
     // Short poll to confirm no notification arrives after unsubscribe
-    const unsubscribeDeadline = Date.now() + 300;
-    while (!received && Date.now() < unsubscribeDeadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => received !== undefined, 300);
 
     assert.strictEqual(received, undefined, 'Should not receive notification after unsubscribe');
   });
@@ -76,10 +76,7 @@ describe('Resource subscriptions round-trip', () => {
     await pair.client.subscribeResource({ uri });
 
     await writeFile(filePath, 'changed');
-    const deadline = Date.now() + 2000;
-    while (count === 0 && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => count > 0, 2000);
     // Settle past the 50ms debounce so a second sink would have fired by now.
     await setTimeout(200);
     assert.strictEqual(count, 1, 'a doubled subscribe must not double the notifications');
@@ -108,10 +105,7 @@ describe('Resource subscriptions round-trip', () => {
     });
 
     await writeFile(held, 'changed');
-    const deadline = Date.now() + 2000;
-    while (count === 0 && Date.now() < deadline) {
-      await setTimeout(20);
-    }
+    await waitFor(() => count > 0, 2000);
     assert.strictEqual(count, 1, 'the live subscription must survive an unrelated unsubscribe');
 
     await pair.client.unsubscribeResource({ uri });

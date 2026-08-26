@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
-import { symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { ErrorCode, isFsError, isNodeError } from '../src/core/errors.js';
+import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { PathGuard } from '../src/core/path.js';
 import { SensitiveMatcher } from '../src/core/sensitive.js';
-import { cleanupTestRoot, createTestRoot, writeTestFile } from './helpers.js';
+import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
 
 describe('Security (P0)', () => {
   let root: string;
@@ -43,22 +42,12 @@ describe('Security (P0)', () => {
       );
     });
 
-    it('TC-SEC-006: Blocks symlink escape', async () => {
+    it('TC-SEC-006: Blocks symlink escape', async (t) => {
       const linkPath = join(root, 'escape_link');
       const outsideTarget = tmpdir();
 
-      try {
-        await symlink(outsideTarget, linkPath, 'junction');
-      } catch (err: unknown) {
-        if (
-          process.platform === 'win32' &&
-          isNodeError(err) &&
-          (err.code === 'EPERM' || err.code === 'EACCES')
-        ) {
-          return;
-        }
-        throw err;
-      }
+      if (!(await trySymlink(outsideTarget, linkPath, () => t.skip('symlink not permitted'))))
+        return;
 
       await assert.rejects(
         guard.validateExistingPath(linkPath),

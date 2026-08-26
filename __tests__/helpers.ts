@@ -62,6 +62,18 @@ export async function waitFor(condition: () => boolean, timeoutMs = 3000): Promi
   }
 }
 
+/** Run `fn` with ROOT_BOUNDARY set to `boundary`, restoring the prior value after. */
+export async function withBoundary<T>(boundary: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env['ROOT_BOUNDARY'];
+  process.env['ROOT_BOUNDARY'] = boundary;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(process.env, 'ROOT_BOUNDARY');
+    else process.env['ROOT_BOUNDARY'] = previous;
+  }
+}
+
 /** Spreadable `readOnly` flag — the one owner of the `--read-only` gate in test setup. */
 export function readOnlyOpts(options: { readOnly?: boolean }): { readOnly?: true } {
   return options.readOnly ? { readOnly: true } : {};
@@ -348,6 +360,12 @@ export interface TestStdioContext {
   close: () => Promise<void>;
 }
 
+/** The `node --import tsx src/index.ts` invocation every stdio entry point spawns. */
+export function getStdioServerCommand(): string[] {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  return [process.execPath, '--import', 'tsx', join(repoRoot, 'src', 'index.ts')];
+}
+
 /**
  * Spawn the real stdio server (via tsx, no build step) and connect a client.
  * stdio has no in-process shortcut — the only honest coverage spawns a real
@@ -355,9 +373,10 @@ export interface TestStdioContext {
  */
 export async function createStdioClient(allowedDir: string): Promise<TestStdioContext> {
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const [command, ...args] = getStdioServerCommand() as [string, ...string[]];
   const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ['--import', 'tsx', 'src/index.ts', allowedDir],
+    command,
+    args: [...args, allowedDir],
     cwd: repoRoot,
   });
   const client = new Client(
