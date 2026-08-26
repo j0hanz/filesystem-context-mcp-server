@@ -208,17 +208,38 @@ function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
 }
 
 /**
- * A batch (`runOverPaths`) result where every path failed. The call produced no
- * work at all, so it is a failed call — `isError` must say so. Partial failure
- * is deliberately NOT an error: the per-path `results` carry which paths failed
- * and the succeeded ones really were done.
+ * A batch result where every path failed. The call produced no work at all, so
+ * it is a failed call — `isError` must say so. Partial failure is deliberately
+ * NOT an error: the per-path entries carry which paths failed and the succeeded
+ * ones really were done.
+ *
+ * Two result shapes reach here. Most batch tools carry a `summary`. `create` and
+ * `move` do not: they publish `{files|moves, failures, skipped}` (see
+ * create.ts's CreateOutputSchema and move.ts's MoveOutputSchema), so a
+ * summary-only check reported a fully-denied write as a successful call. Both
+ * shapes are handled here rather than by growing the two output schemas, which
+ * are the client-facing contract.
  */
 function isTotalBatchFailure(structured: unknown): boolean {
   if (typeof structured !== 'object' || structured === null) return false;
-  const { summary } = structured as { summary?: { total?: number; failed?: number } };
-  return (
-    typeof summary?.total === 'number' && summary.total > 0 && summary.failed === summary.total
-  );
+  const result = structured as {
+    summary?: { total?: number; failed?: number };
+    failures?: unknown;
+    files?: unknown;
+    moves?: unknown;
+    skipped?: unknown;
+  };
+
+  const { summary } = result;
+  if (typeof summary?.total === 'number') {
+    return summary.total > 0 && summary.failed === summary.total;
+  }
+
+  const len = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+  if (len(result.failures) === 0) return false;
+  // A skipped entry is work the caller asked to skip, not work that failed —
+  // a self-move that was silently dropped means the call did something.
+  return len(result.files) + len(result.moves) + len(result.skipped) === 0;
 }
 
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {

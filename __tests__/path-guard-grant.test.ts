@@ -8,9 +8,8 @@ import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { isSamePath, PathGuard } from '../src/core/path.js';
 import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
 
-// Grant round-trip characterization: precheckAccess → applyGrant → the
-// guard's allowed-directory view. These pin the working behavior (and, in
-// TC-PG-005, the known broken case plan 002 fixes) so future regressions fail
+// Grant round-trip: precheckAccess → applyGrant → the guard's
+// allowed-directory view. These pin the behavior so future regressions fail
 // loudly. Real tmpdir paths; no stubbed realpath — the TOCTOU window is real.
 
 const mkDir = async (created: string[], prefix: string): Promise<string> => {
@@ -109,13 +108,13 @@ describe('PathGuard grant round-trip', () => {
     assert.deepStrictEqual(grants, [], 'must never offer the whole filesystem root');
   });
 
-  it('TC-PG-005 (CHARACTERIZATION): with FS_ALLOWED_DIRS-style config and no ROOT_BOUNDARY, applyGrant silently drops the granted dir', async () => {
-    // CHARACTERIZATION: plan 002 flips this — after the fix the granted dir MUST appear in getAllowedDirectories().
+  it('TC-PG-005: with configured allowed dirs and no ROOT_BOUNDARY, an accepted grant lands', async () => {
+    // Regression: the recompute used to filter granted dirs against the
+    // baseline (cliAllowedDirs), which a granted dir is outside by definition.
+    // applyGrant returned true and the allowed set never changed, so the whole
+    // round-trip prompted the user and then did nothing.
     const outOfRoot = await mkDir(createdDirs, 'fsmcp-pg005-');
 
-    // No ROOT_BOUNDARY: isWithinBoundary returns true for everything, so the
-    // grant is "accepted" but the subsequent recompute filters it back out
-    // against the baseline (cliAllowedDirs only).
     delete process.env['ROOT_BOUNDARY'];
     const guard = new PathGuard({ cliAllowedDirs: [root] });
     await guard.recomputeAllowedDirectories();
@@ -126,15 +125,37 @@ describe('PathGuard grant round-trip', () => {
     const grantDir = grants[0];
     assert.ok(grantDir, 'precheck should offer a grant dir');
     const accepted = await guard.applyGrant(grantDir);
-    assert.strictEqual(accepted, true, 'applyGrant reports success');
+    assert.strictEqual(accepted, true, 'applyGrant should accept within no boundary');
 
-    // Pin the broken state: the granted dir is NOT actually present.
     const allowed = guard.getAllowedDirectories();
     assert.ok(
-      !containsPath(allowed, outOfRoot),
-      `granted dir "${outOfRoot}" must be absent in the current (buggy) behavior; ` +
-        `allowed = ${JSON.stringify(allowed)}`,
+      containsPath(allowed, outOfRoot),
+      `granted dir "${outOfRoot}" must be present; allowed = ${JSON.stringify(allowed)}`,
     );
+    assert.ok(containsPath(allowed, root), 'the configured baseline root must survive the grant');
+    await assert.doesNotReject(
+      guard.validateExistingPath(outOfRoot),
+      'granted path should be accessible after applyGrant',
+    );
+  });
+
+  it('TC-PG-005b: a granted dir survives an unrelated later recompute', async () => {
+    // The grant is session-lived (R8): anything that recomputes the allowed set
+    // afterwards — another grant, a roots refresh — must not drop it.
+    const first = await mkDir(createdDirs, 'fsmcp-pg005b1-');
+    const second = await mkDir(createdDirs, 'fsmcp-pg005b2-');
+
+    delete process.env['ROOT_BOUNDARY'];
+    const guard = new PathGuard({ cliAllowedDirs: [root] });
+    await guard.recomputeAllowedDirectories();
+
+    assert.strictEqual(await guard.applyGrant(first), true);
+    assert.strictEqual(await guard.applyGrant(second), true);
+    await guard.recomputeAllowedDirectories();
+
+    const allowed = guard.getAllowedDirectories();
+    assert.ok(containsPath(allowed, first), 'first grant must survive');
+    assert.ok(containsPath(allowed, second), 'second grant must survive');
   });
 
   it('TC-PG-006: two concurrent applyGrant calls on different dirs both land', async () => {

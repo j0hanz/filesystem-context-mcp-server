@@ -48,19 +48,13 @@ export interface ServerOptions {
   readOnly?: boolean;
 }
 
+/** True when `normalizedRoot` really resolves inside `bounds` (ROOT_BOUNDARY). */
 async function isRootWithin(
   normalizedRoot: string,
   bounds: readonly string[],
   label: string,
-  requireRequestedInside: boolean,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  // Baseline checks the requested path too; a ROOT_BOUNDARY only constrains
-  // where the root really resolves to.
-  if (requireRequestedInside && !isPathWithinDirectories(normalizedRoot, bounds)) {
-    return false;
-  }
-
   try {
     signal?.throwIfAborted();
     const realPath = await withAbort(realpath(normalizedRoot), signal);
@@ -82,7 +76,6 @@ async function filterRootsWithin(
   roots: readonly string[],
   bounds: readonly string[],
   label: string,
-  requireRequestedInside: boolean,
   signal?: AbortSignal,
 ): Promise<string[]> {
   const normalizedBounds = normalizeAllowedDirectories(bounds);
@@ -92,9 +85,7 @@ async function filterRootsWithin(
   }
 
   const results = await Promise.allSettled(
-    normalizedRoots.map((root) =>
-      isRootWithin(root, normalizedBounds, label, requireRequestedInside, signal),
-    ),
+    normalizedRoots.map((root) => isRootWithin(root, normalizedBounds, label, signal)),
   );
 
   return normalizedRoots.filter((root, i) => {
@@ -296,7 +287,20 @@ async function resolveAllowedDirectoriesState(
 export class PathGuard {
   private allowedDirectoriesState: AllowedDirectoriesState | undefined;
   private readonly sensitive = new SensitiveMatcher();
-  private rootDirectories: string[] = [];
+  /**
+   * Directories added by an accepted access grant (R8) — from the tool
+   * executor's grant round-trip, or from a client's declared workspace roots on
+   * the legacy stdio leg. Held separately from the configured baseline because
+   * `recomputeAllowedDirectories` rebuilds that baseline from CLI args and env
+   * on every call: anything merged into it would be recomputed away.
+   *
+   * These are NOT filtered against the baseline. A granted directory is
+   * out-of-baseline by definition, so a baseline filter dropped every one while
+   * `applyGrant` still reported success — the whole round-trip prompted the
+   * user and then changed nothing. ROOT_BOUNDARY and the unsafe-path denylist
+   * remain the limits, checked in `applyGrant` and re-applied in the recompute.
+   */
+  private grantedDirectories: string[] = [];
   private rootBoundaries: string[] = [];
 
   // ponytail: one mutex per PathGuard. If per-session grant throughput ever
@@ -339,9 +343,9 @@ export class PathGuard {
   }
 
   /**
-   * Run `fn` as the next holder of the guard's single mutation lock. Every root
-   * change goes through this so concurrent grants (and concurrent root refreshes)
-   * cannot interleave their read-`await`-write and lose a grant (GRANT-1).
+   * Run `fn` as the next holder of the guard's single mutation lock. Every
+   * change to the allowed set goes through this so concurrent grants cannot
+   * interleave their read-`await`-write and lose a grant (GRANT-1).
    */
   private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
     const result = this.#mutex.then(fn, fn);
@@ -350,25 +354,6 @@ export class PathGuard {
       () => undefined,
     );
     return result;
-  }
-
-  async #setRootsLocked(resolvedRoots: readonly string[]): Promise<void> {
-    const next = [...resolvedRoots];
-    const previous = this.rootDirectories;
-    this.rootDirectories = next;
-    try {
-      await this.recomputeAllowedDirectories();
-    } catch (error) {
-      // Roll back: a failed recompute leaves the guard with the old roots and
-      // its old, consistent allowed-directory view.
-      this.rootDirectories = previous;
-      throw error;
-    }
-  }
-
-  /** Set the allowed roots under the mutation lock. */
-  async setRoots(resolvedRoots: readonly string[]): Promise<void> {
-    return this.runExclusive(() => this.#setRootsLocked(resolvedRoots));
   }
 
   getAllowedDirectories(): string[] {
@@ -505,9 +490,12 @@ export class PathGuard {
    * Apply an accepted access grant: enforce ROOT_BOUNDARY again (a TOCTOU
    * re-check against the boundary resolved at config time), then extend the
    * allowed roots for the remainder of the session (R8, A4). Returns false when
-   * the boundary blocks the grant; the caller leaves the path to fail with
+   * the boundary or the unsafe-path denylist blocks the grant, AND when the
+   * recompute did not actually admit the directory — the return value now
+   * reports what the guard's allowed set really holds, not merely that the
+   * pre-checks passed. The caller leaves a refused path to fail with
    * ACCESS_DENIED during the operation. Idempotent: re-granting an already
-   * allowed directory is a no-op via `setRoots` dedup.
+   * allowed directory is a no-op via the dedup in `initialize`.
    */
   async applyGrant(targetDir: string): Promise<boolean> {
     // Defense-in-depth: even a tampered/accepted grant cannot extend roots into
@@ -520,11 +508,27 @@ export class PathGuard {
       return false;
     }
     // Read + write under the mutation lock so a concurrent grant cannot
-    // interleave and lose this grant (GRANT-1). #setRootsLocked (not the
-    // locked public setRoots) — runExclusive is not reentrant.
+    // interleave and lose this grant (GRANT-1). runExclusive is not reentrant:
+    // nothing in this body may take the lock again.
     return this.runExclusive(async () => {
-      await this.#setRootsLocked([...this.getAllowedDirectories(), targetDir]);
-      return true;
+      const previous = this.grantedDirectories;
+      this.grantedDirectories = [...previous, normalizePath(targetDir)];
+      try {
+        await this.recomputeAllowedDirectories();
+      } catch (error) {
+        // A failed recompute leaves the guard with its previous, consistent view.
+        this.grantedDirectories = previous;
+        throw error;
+      }
+      // Verify rather than assume: a boundary that no longer covers this
+      // directory would drop it in the recompute above, and reporting success
+      // for a grant that did not land is exactly the failure this replaces.
+      if (isPathWithinDirectories(normalizePath(targetDir), this.getAllowedDirectories())) {
+        return true;
+      }
+      this.grantedDirectories = previous;
+      await this.recomputeAllowedDirectories();
+      return false;
     });
   }
 
@@ -859,6 +863,20 @@ export class PathGuard {
     const { normalizedRequested, allowedDirs, accessDeniedHint } =
       this.validateAccessAndSensitivity(requestedPath);
 
+    // A workspace root is refused here, before the parent-containment check
+    // below reaches for a parent that is out-of-root by construction and
+    // reports "Outside allowed directories" for the one directory the caller
+    // can see IS allowed. delete-file.ts keeps its own root check for the
+    // nested-root case, where the parent is itself an allowed root and this
+    // path is never taken.
+    if (this.isAllowedRoot(normalizedRequested)) {
+      throw new FsError(
+        ErrorCode.ACCESS_DENIED,
+        'Deleting a workspace root directory is not allowed',
+        requestedPath,
+      );
+    }
+
     const parent = dirname(normalizedRequested);
     let realParent: string;
     try {
@@ -945,14 +963,14 @@ export class PathGuard {
     const baseline = [...cliAllowedDirs, ...envAllowedDirs, ...allowCwdDirs];
 
     const signal = timedSignal(undefined, ROOTS_TIMEOUT_MS);
-    const rootsToInclude =
+    // ROOT_BOUNDARY is the only filter grants answer to (see
+    // `grantedDirectories`); without one they pass through as accepted.
+    const grantsToInclude =
       boundaries.length > 0
-        ? await filterRootsWithin(this.rootDirectories, boundaries, 'rootBoundary', false, signal)
-        : baseline.length > 0
-          ? await filterRootsWithin(this.rootDirectories, baseline, 'baseline', true, signal)
-          : this.rootDirectories;
+        ? await filterRootsWithin(this.grantedDirectories, boundaries, 'grantBoundary', signal)
+        : this.grantedDirectories;
 
-    const combined = [...baseline, ...rootsToInclude];
+    const combined = [...baseline, ...grantsToInclude];
     const nextState = await resolveAllowedDirectoriesState(combined, signal);
     // Commit both fields together, after every await has resolved, so a
     // rejecting recompute leaves the guard's previous, consistent view intact.

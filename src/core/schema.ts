@@ -384,10 +384,16 @@ export function singleOrBatchAccessPaths(args: {
   return [];
 }
 
+// `args` is the exact argument object the one producer (read's
+// buildReadContinuation) emits, not a free-form record: a bare
+// `z.record(z.string(), z.unknown())` renders as `additionalProperties: {}`,
+// which carries no validation keyword and constrains nothing — the Inspector's
+// portability check flags it, and a client cannot tell what to pass. Widen this
+// (to a union) only when a second tool starts emitting continuations.
 export const ContinuationSchema = z.strictObject({
   tool: z.string().describe('Tool name to call for the next chunk'),
   args: z
-    .record(z.string(), z.unknown())
+    .strictObject({ path: z.string(), startLine: PositiveInt, endLine: PositiveInt })
     .describe('Ready-to-use arguments for the next call; pass verbatim'),
   hint: z.string().describe('One-sentence description of the data still remaining to be read'),
 });

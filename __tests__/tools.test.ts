@@ -127,6 +127,73 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(content, 'new content');
   });
 
+  // An out-of-root path the access-grant pre-check refuses to even offer
+  // (isUnsafeCwdPath), so the call reaches the plain ACCESS_DENIED envelope
+  // instead of the "this client cannot show a confirmation" one. A grantable
+  // out-of-root path (anything under tmpdir) would test the other branch.
+  const UNGRANTABLE_DIR = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+
+  it('TC-FUNC-009b: create reports isError when every requested file was denied', async () => {
+    // Regression: create publishes {files, failures} with no `summary`, so the
+    // total-failure check keyed on `summary` never fired and a fully-denied
+    // write returned a success envelope.
+    const outside = join(UNGRANTABLE_DIR, 'fsmcp_create_denied.txt');
+    const result = await harness.client.callTool({
+      name: 'create',
+      arguments: { files: [{ path: outside, content: 'nope' }] },
+    });
+
+    assert.strictEqual(result.isError, true);
+    await assert.rejects(access(outside), 'the denied file must not exist');
+  });
+
+  it('TC-FUNC-009c: create stays a success when only some files were denied', async () => {
+    const ok = join(tmpDir, 'partial.txt');
+    const outside = join(UNGRANTABLE_DIR, 'fsmcp_create_partial.txt');
+    const result = await harness.client.callTool({
+      name: 'create',
+      arguments: {
+        files: [
+          { path: ok, content: 'written' },
+          { path: outside, content: 'nope' },
+        ],
+      },
+    });
+
+    assert.notStrictEqual(result.isError, true);
+    assert.strictEqual(await readFile(ok, 'utf-8'), 'written');
+    await assert.rejects(access(outside), 'the denied file must not exist');
+  });
+
+  it('TC-FUNC-009d: move reports isError when every requested move was denied', async () => {
+    const source = join(tmpDir, 'movable.txt');
+    await writeFile(source, 'body');
+    const result = await harness.client.callTool({
+      name: 'move',
+      arguments: {
+        moves: [{ source, destination: join(UNGRANTABLE_DIR, 'fsmcp_move_denied.txt') }],
+        copy: true,
+      },
+    });
+
+    assert.strictEqual(result.isError, true);
+  });
+
+  it('TC-FUNC-010b: deleting a workspace root names the root, not the parent', async () => {
+    // The parent of a root is out-of-root by construction, so the containment
+    // check used to answer "Outside allowed directories" for the one directory
+    // list_roots reports as allowed.
+    const result = await harness.client.callTool({
+      name: 'delete',
+      arguments: { paths: [tmpDir], recursive: true },
+    });
+
+    assert.strictEqual(result.isError, true);
+    const text = firstTextBlock(result).text ?? '';
+    assert.match(text, /workspace root/i);
+    await access(tmpDir);
+  });
+
   it('TC-FUNC-012: --read-only suppresses mutating tools on client.listTools()', async () => {
     const readOnlyHarness = await createTestClientPair([tmpDir], { readOnly: true });
     try {
@@ -1237,8 +1304,12 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
   // `{ results, summary }` envelope, whose value-XOR-error union a sample
   // response cannot convey. `list` was considered and refused — its fields are
   // plain scalars, so its 1599 chars bought nothing.
+  // Raised again, deliberately: read's `continuation.args` was a free-form
+  // record rendering as `additionalProperties: {}` — no validation keyword, so
+  // it told a client nothing about what to pass back. Spelling out the three
+  // fields it actually carries costs +42.
   it('TOOL-SURFACE-002: tools/list stays within the session-start budget', async () => {
-    const BUDGET_CHARS = 26_800;
+    const BUDGET_CHARS = 26_900;
     const BUDGET_CHARS_READ_ONLY = 12_000;
 
     const full = await createTestClientPair([tmpDir]);
