@@ -594,7 +594,7 @@ async function handleSearchAndReplace(
   if (!args.dryRun && summary.totalMatches > 0) {
     ctx.log?.(
       'info',
-      `search_and_replace: ${summary.filesChanged} file(s), ${summary.totalMatches} match(es)`,
+      `${summary.filesChanged} file(s) changed, ${summary.totalMatches} match(es)`,
       'replace_text',
     );
   }
@@ -679,13 +679,6 @@ export const SEARCH_AND_REPLACE = defineTool({
   run: async (args, ctx) => {
     const truncatedPattern = truncateProgressPattern(args.searchPattern);
     const { structured, link } = await handleSearchAndReplace(args, ctx);
-    if (!args.dryRun) {
-      ctx.log?.(
-        'info',
-        `search_and_replace: ${String(structured.totalMatches)} matches in ${String(structured.filesModified)} files`,
-        'search_and_replace',
-      );
-    }
     const dryLabel = args.dryRun ? ' [dry run]' : '';
     const summaryText =
       `replace_text: '${truncatedPattern}'${dryLabel}` +

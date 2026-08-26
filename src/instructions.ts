@@ -41,8 +41,8 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     guidelines: [
       'Guidelines:',
       '```',
-      'root_access: When using filesystem tools, operate strictly within allowed roots.',
-      'path_resolution: Always resolve paths before acting — never assume.',
+      `root_access: Call ${LIST_ALLOWED_DIRECTORIES.name} first; every other tool is scoped to those roots.`,
+      `path_resolution: Confirm a path with ${LIST.name} or ${SEARCH_FILES.name} before acting on it.`,
       '```',
     ].join('\n'),
     tools_overview: [
@@ -54,7 +54,7 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     constraints: [
       'Constraints:',
       '```',
-      'allowed_roots: Operate within allowed roots only (negotiated at startup via CLI).',
+      `allowed_roots: Operate within allowed roots only (from the client roots capability, CLI paths, or FS_ALLOWED_DIRS). Call ${LIST_ALLOWED_DIRECTORIES.name} to read them.`,
       'sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.',
       `enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.`,
       'ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after ~60 seconds, eviction, or restart.',
@@ -63,9 +63,9 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     error_recovery: [
       'Error Recovery:',
       '```',
-      'ACCESS_DENIED: Run list_roots to list allowed directories, retry with a valid path.',
-      'NOT_FOUND: Run list or find_files to verify the path.',
-      'TOO_LARGE: Use read with head/tail or startLine/endLine, or split across several read calls.',
+      `ACCESS_DENIED: Run ${LIST_ALLOWED_DIRECTORIES.name} to list allowed directories, retry with a valid path.`,
+      `NOT_FOUND: Run ${LIST.name} or ${SEARCH_FILES.name} to verify the path.`,
+      `TOO_LARGE: Use ${READ_FILE.name} with head/tail or startLine/endLine, or split across several calls.`,
       'TIMEOUT: Reduce scope, depth, or maxResults.',
       'INVALID_INPUT: Re-read the tool schema in tools/list.',
       '```',

@@ -109,7 +109,7 @@ const GET_HELP: PromptEntry = {
         argsSchema: z.strictObject({
           topic: topicArg(
             topics,
-            'Section key to filter instructions (e.g. "tools", "paths"); omit to return all instructions.',
+            `Section key to filter instructions (one of: ${topics.join(', ')}); omit to return all instructions.`,
           ).optional(),
         }),
       },

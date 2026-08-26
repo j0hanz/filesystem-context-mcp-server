@@ -6,15 +6,15 @@
 
 ## Overview
 
-Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants read and write files within explicitly allowed directories. Sensitive file patterns (.env, *.pem,*id_rsa\*) are blocked by default. It exposes filesystem tools, resources, and prompts over stdio or Streamable HTTP transport.
+Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants read and write files within explicitly allowed directories. Sensitive file patterns (`.env`, `*.pem`, `*id_rsa*`) are blocked by default. It exposes filesystem tools, resources, and prompts over stdio or Streamable HTTP transport.
 
-| Aspect       | Details             |
-| :----------- | :------------------ |
-| **Status**   | Active — v1.19.1    |
-| **Language** | TypeScript (strict) |
-| **Runtime**  | Node.js >= 24       |
-| **Package**  | npm                 |
-| **License**  | MIT                 |
+| Aspect       | Details                                        |
+| :----------- | :--------------------------------------------- |
+| **Status**   | Active (see npm badge for the current version) |
+| **Language** | TypeScript (strict)                            |
+| **Runtime**  | Node.js >= 24                                  |
+| **Package**  | npm                                            |
+| **License**  | MIT                                            |
 
 ## Features
 
@@ -196,7 +196,7 @@ Claude Desktop (`claude_desktop_config.json`) and Cursor (`mcp.json`):
 ```
 
 > [!NOTE]
-> Add `:ro` to the volume mount (e.g. `/path/to/project:/workspace:ro`) to restrict the server to read-only access. Write tools (`create`, `edit`, `move`, `delete`, `replace_text`) will be unavailable in that mode.
+> Add `:ro` to the volume mount (e.g. `/path/to/project:/workspace:ro`) to restrict the server to read-only access. Write tools (`create`, `edit`, `move`, `delete`, `patch`, `replace_text`) are unavailable in that mode.
 
 ## Usage
 
@@ -218,6 +218,7 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 | :------------ | :---------------------------------------------------------------------------------------- |
 | `stat`        | Get file/directory metadata: size, modified time, permissions, MIME type, token estimate. |
 | `search_text` | Search file contents for text (grep-like). Returns matching lines with context.           |
+| `diff`        | Compare two files and return a unified diff with added/removed line counts.               |
 
 #### Read
 
@@ -234,6 +235,7 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 | `move`         | Move, rename, or copy (`copy: true`) one or more files/directories to explicit destinations.      |
 | `delete`       | Permanently delete one or more files or directories. This action is irreversible.                 |
 | `replace_text` | Bulk search-and-replace across files matching a glob pattern.                                     |
+| `patch`        | Apply a single-file unified diff and write the result.                                            |
 
 ### Resources
 
@@ -281,7 +283,7 @@ the narrow dependency contract it consumes.
 
 ## Configuration
 
-Install it globally once and it works across all your workspaces with no per-project config needed. The server determines which directories are allowed using three methods, tried in this order:
+Install it globally once and it works across every workspace without per-project config. The server resolves allowed directories from three sources, tried in this order:
 
 1. **MCP Roots Protocol**: VS Code, Cursor, and Claude Code support the roots capability, so the server queries allowed folders from the client directly.
 2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
@@ -352,7 +354,7 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `--port <n>`              | —       | Enable Streamable HTTP transport on the given port                                 |
 | `--http-host <host>`      | —       | HTTP server bind address (env: `HTTP_HOST`)                                        |
 | `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `API_KEY`)                             |
-| `--read-only`             | `false` | Disable write tools: `create`, `edit`, `delete`, `move`, `replace_text`            |
+| `--read-only`             | `false` | Disable write tools: `create`, `edit`, `delete`, `move`, `patch`, `replace_text`   |
 | `--safe`                  | `false` | Alias for `--read-only`                                                            |
 | `--deny <pattern>`        | —       | Block paths matching this pattern; repeatable                                      |
 | `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `ALLOW_SENSITIVE`)                    |
@@ -402,8 +404,8 @@ filesystem-mcp /path/to/project1 /path/to/project2
 Each instance delivers `subscriptions/listen` change events (`resources/updated`,
 `tools/list_changed`, etc.) on an in-process bus by default. Behind a load
 balancer with more than one instance, a listener on instance A will not see an
-event published on instance B — the server logs a warning at boot when
-`API_KEY` is set for this reason.
+event published on instance B. The server logs a warning at boot when `API_KEY`
+is set for this reason.
 
 To fan events out across instances, implement the SDK's `ServerEventBus`
 interface (two methods: `publish`/`subscribe`) over whatever pub/sub you
@@ -447,7 +449,7 @@ if (!apiKey) throw new Error('API_KEY is required for a multi-instance HTTP depl
 await startHttpServer(3000, { cliAllowedDirs: ['/workspace'] }, { apiKey, eventBus });
 ```
 
-This project ships no bus adapter and no pub/sub dependency — a single
+This project ships no bus adapter and no pub/sub dependency. A single
 in-process instance (the common case) needs nothing extra.
 
 ### Examples

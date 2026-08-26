@@ -234,7 +234,7 @@ export const ENV_HELP: HelpRow[] = [
   { flags: 'FS_INIT_TIMEOUT_CLOSE', desc: 'Truthy value closes the server on handshake timeout' },
   {
     flags: 'MAX_READ_MANY_TOTAL_SIZE',
-    desc: 'Max total bytes across read_many (default 524288, 10240–104857600)',
+    desc: 'Max total bytes across one batch read (default 524288, 10240–104857600)',
   },
   { flags: 'DEFAULT_SEARCH_TIMEOUT', desc: 'Search timeout in ms (default 5000, 100–60000)' },
   { flags: 'NO_COLOR', desc: 'Any value disables ANSI color output' },

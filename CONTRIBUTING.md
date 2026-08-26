@@ -1,6 +1,6 @@
 # Contributing to Filesystem MCP Server
 
-Thank you for contributing! Here's how to get started.
+How to set up, branch, and test.
 
 ## Setup
 
@@ -9,14 +9,14 @@ Thank you for contributing! Here's how to get started.
 3. Add upstream remote: `git remote add upstream https://github.com/j0hanz/filesystem-mcp.git`
 4. Install dependencies: `npm install`
 
-## Branch Workflow
+## Branch workflow
 
 1. Create a feature branch from `main`: `git checkout -b feat/your-feature`
 2. Make commits with clear messages.
 3. Push to your fork: `git push origin feat/your-feature`
 4. Open a pull request against the upstream repository.
 
-## Running Tests Locally
+## Running tests locally
 
 This project uses a thin task wrapper around the npm scripts and Node test runner:
 
@@ -27,7 +27,7 @@ node scripts/tasks.mjs test
 
 Tests must pass before your PR is merged.
 
-## PR Checklist
+## PR checklist
 
 - [ ] Tests pass locally (`node scripts/tasks.mjs`)
 - [ ] No new console warnings or errors
@@ -35,7 +35,7 @@ Tests must pass before your PR is merged.
 - [ ] Code follows the project's style guide (run `node scripts/tasks.mjs fix`)
 - [ ] Related issues are referenced in the PR description
 
-## Code Style
+## Code style
 
 Use the task runner to check formatting and apply auto-fixes:
 
@@ -47,6 +47,6 @@ node scripts/tasks.mjs fix
 node scripts/tasks.mjs --quick
 ```
 
-## Commit Messages
+## Commit messages
 
-We use free-form commit messages. However, when making breaking changes, clearly note this in your commit message. Ensure your message describes both what the commit does and why.
+Commit messages are free-form. Describe what the commit does and why, and call out breaking changes explicitly.
