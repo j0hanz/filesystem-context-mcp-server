@@ -10,9 +10,7 @@ RUN npm ci --ignore-scripts
 
 # Copy source and build
 COPY src/ ./src/
-COPY tsconfig.json tsconfig.build.json ./
-COPY scripts/ ./scripts/
-COPY assets/ ./assets/
+COPY tsconfig.json ./
 RUN npm run build
 
 # Remove dev dependencies
@@ -39,7 +37,6 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist/
 COPY --from=builder /app/node_modules ./node_modules/
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/assets ./assets/
 
 USER mcp
 
