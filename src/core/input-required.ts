@@ -11,7 +11,11 @@
 // R10); the handler additionally rejects any retry whose decoded paths do not
 // match the retried request's parameters (the codec only proves the state was
 // not tampered — it cannot see the current args).
-import type { InputRequest, InputRequiredResult } from '@modelcontextprotocol/server';
+import type {
+  ClientCapabilities,
+  InputRequest,
+  InputRequiredResult,
+} from '@modelcontextprotocol/server';
 import {
   acceptedContent,
   createRequestStateCodec,
@@ -230,7 +234,51 @@ export interface PendingRoundTripOpts {
   readonly op: PendingOp;
   readonly pending: readonly string[];
   readonly requestState: (() => PendingState | undefined) | undefined;
+  /**
+   * What the client declared it can do, or `undefined` when this connection
+   * cannot say. Only a positively-absent `elicitation` short-circuits; see
+   * {@link assertCanElicit}.
+   */
+  readonly clientCapabilities?: ClientCapabilities | undefined;
   readonly buildInputs: (pending: readonly string[]) => readonly PendingInput[];
+}
+
+/**
+ * What to tell the model when the round-trip cannot happen. Each names the way
+ * forward that does not need a confirmation, or says plainly that there is
+ * none — a dead end the model can report is worth more than a retry loop.
+ */
+const NO_ELICITATION_HINT: Readonly<Record<PendingOp, string>> = {
+  delete:
+    'Deleting a non-empty directory needs a confirmation this client cannot show. ' +
+    'Delete the entries inside it individually, or connect a client that declares the elicitation capability.',
+  move:
+    'Overwriting an existing destination needs a confirmation this client cannot show. ' +
+    'Delete the destination first, or move to a path that does not exist yet.',
+  copy:
+    'Overwriting an existing destination needs a confirmation this client cannot show. ' +
+    'Pass overwrite=true to replace it without confirming, or copy to a path that does not exist yet.',
+  grant:
+    'Granting access to a directory outside the allowed roots needs a confirmation this client cannot show. ' +
+    'Call list_roots and use a path under one of the roots it returns.',
+};
+
+/**
+ * Fail early, and legibly, when the client cannot answer an embedded request.
+ * The SDK checks each `inputRequests` entry against the declared client
+ * capabilities and rejects the whole call with `-32021` before anything reaches
+ * the wire — a protocol error the model never sees. Throwing `FsError` here
+ * instead lands in the tool executor's catch and reaches the model as an
+ * `isError` result carrying the workaround.
+ *
+ * `undefined` capabilities mean the connection cannot report them, NOT that the
+ * client has none: proceed and let the SDK decide, exactly as before this check
+ * existed.
+ */
+function assertCanElicit(op: PendingOp, capabilities: ClientCapabilities | undefined): void {
+  if (capabilities === undefined) return;
+  if (capabilities.elicitation !== undefined) return;
+  throw new FsError(ErrorCode.INVALID_INPUT, `${op}: ${NO_ELICITATION_HINT[op]}`);
 }
 
 export async function pendingRoundTrip(
@@ -245,6 +293,7 @@ export async function pendingRoundTrip(
   // input_required rather than treating a foreign-but-valid state as a
   // tamper/mismatch error.
   if (state?.op !== opts.op) {
+    assertCanElicit(opts.op, opts.clientCapabilities);
     return buildInputRequired({ op: opts.op, paths: opts.pending }, opts.buildInputs(opts.pending));
   }
   // Retry for THIS op (R9): the verified state must bind the same pending set.

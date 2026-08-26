@@ -136,7 +136,13 @@ export interface ElicitationTestContext {
 export async function createElicitationClientPair(
   allowedDirs: string[],
   elicitHandler: ElicitHandler,
-  options: { readOnly?: boolean } = {},
+  /**
+   * `noElicitation` connects a client that declares no elicitation capability
+   * and registers no handler — the shape every host without a confirmation UI
+   * presents. Handlers that would ask for one must detect it and answer with a
+   * tool error naming the way around it.
+   */
+  options: { readOnly?: boolean; noElicitation?: boolean } = {},
 ): Promise<ElicitationTestContext> {
   const sharedRegistry = createWatcherRegistry();
   const sharedPathGuard = new PathGuard(
@@ -164,10 +170,12 @@ export async function createElicitationClientPair(
     { name: 'test-elicit', version: '1.0.0' },
     {
       versionNegotiation: { mode: 'auto' },
-      capabilities: { elicitation: { form: {} } },
+      capabilities: options.noElicitation ? {} : { elicitation: { form: {} } },
     },
   );
-  client.setRequestHandler('elicitation/create', elicitHandler);
+  if (!options.noElicitation) {
+    client.setRequestHandler('elicitation/create', elicitHandler);
+  }
 
   await client.connect(transport);
   assert.strictEqual(

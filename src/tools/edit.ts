@@ -107,8 +107,11 @@ const EditFileInputSchema = z
       });
     }
   })
-  // Mirror the superRefine on the wire: exactly one input mode.
-  .meta({ oneOf: [{ required: ['path'] }, { required: ['files'] }] });
+  // Mirror the superRefine on the wire: exactly one input mode, and single-file
+  // mode carries its own `edits`. Without `edits` in the first branch, `{ path }`
+  // alone validated against the published schema and was then rejected at
+  // runtime — the model had no way to see that coming.
+  .meta({ oneOf: [{ required: ['path', 'edits'] }, { required: ['files'] }] });
 
 const PerFileResultSchema = z.strictObject({
   path: z.string().describe('Resolved absolute path of the edited file'),
@@ -116,7 +119,12 @@ const PerFileResultSchema = z.strictObject({
   lineCount: NonNegInt.describe('Number of lines in the file after edits'),
   mimeType: z.string().describe('Detected MIME type of the file'),
   kind: FileKind.describe('Broad file kind: text, binary, image, audio, or pdf'),
-  resourceUri: z.string().describe('Resource URI pointing to the updated file content'),
+  resourceUri: z
+    .string()
+    .optional()
+    .describe(
+      'Resource URI pointing to the updated file content; omitted when no edit matched (appliedEdits is 0) and the file was left untouched',
+    ),
   modified: IsoDateTime.describe('Last modification timestamp after edits (ISO 8601 UTC)'),
   appliedEdits: NonNegInt.describe('Number of edits successfully applied'),
   linesAdded: NonNegInt.optional().describe('Net lines added by all applied edits'),
@@ -291,7 +299,7 @@ function buildEditFileValue(
     lineCount: meta.lineCount,
     mimeType: meta.mimeType,
     kind: meta.kind,
-    resourceUri: meta.resourceUri,
+    ...(meta.resourceUri !== undefined ? { resourceUri: meta.resourceUri } : {}),
     modified,
     appliedEdits: result.appliedEdits,
     ...(result.appliedEdits > 0
@@ -330,7 +338,8 @@ interface EditFileMetadata {
   lineCount: number;
   mimeType: string;
   kind: FileKind;
-  resourceUri: string;
+  /** Undefined when no edit matched: there is no updated content to point at. */
+  resourceUri: string | undefined;
   resourceLink: ContentBlock | undefined;
 }
 
@@ -343,7 +352,9 @@ function buildEditFileMetadata(
   const bytesWritten = Buffer.byteLength(content, 'utf-8');
   const lineCount = countLines(content);
   const mimeInfo = detectMimeFromContent(validPath, content);
-  const resourceUri = appliedEdits > 0 ? buildFileResourceUri(validPath) : '';
+  // Omitted rather than empty-stringed when nothing matched: `""` satisfied the
+  // schema's `string` and then failed every resources/read a client tried it on.
+  const resourceUri = appliedEdits > 0 ? buildFileResourceUri(validPath) : undefined;
   const resourceLink =
     appliedEdits > 0 && resourceStore
       ? buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten)

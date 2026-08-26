@@ -1,6 +1,7 @@
 import type {
   AuthInfo,
   CallToolResult,
+  ClientCapabilities,
   ContentBlock,
   InputRequiredResult,
   JsonSchemaType,
@@ -12,10 +13,13 @@ import type {
   RequestMeta,
   RequestStateAccessor,
   ServerContext,
-  ServerNotifier,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { fromJsonSchema, isInputRequiredResult } from '@modelcontextprotocol/server';
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  fromJsonSchema,
+  isInputRequiredResult,
+} from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
@@ -63,15 +67,26 @@ export interface ToolCtx {
    * live request context is available.
    */
   readonly requestState?: RequestStateAccessor | undefined;
+  /**
+   * What the connected client declared it can do, or `undefined` when this
+   * connection cannot say. Read by the `input_required` flows: an embedded
+   * elicitation sent to a client that never declared `elicitation` is rejected
+   * by the SDK with `-32021` before it reaches the wire, so the handlers check
+   * first and answer with an actionable tool error instead.
+   *
+   * Two sources, because the eras differ: a legacy connection negotiated them
+   * at `initialize` (`Server.getClientCapabilities()`), a modern one carries
+   * them per request in the `_meta` envelope and never runs `initialize` at
+   * all. `undefined` means "cannot tell" — never "no capabilities".
+   */
+  readonly clientCapabilities?: ClientCapabilities | undefined;
   readonly server?: McpServer;
-  readonly notifier?: ServerNotifier | undefined;
 }
 
 interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore | undefined;
-  readonly notifier?: ServerNotifier | undefined;
 }
 
 interface RunResult<T> {
@@ -122,7 +137,7 @@ export interface DefinedTool {
 
 function toToolCtx(
   ctx: ServerContext | undefined,
-  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server' | 'notifier'>,
+  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server'>,
 ): ToolCtx {
   if (!ctx) {
     const signal = new AbortController().signal;
@@ -131,9 +146,26 @@ function toToolCtx(
       fs: new GuardedFileSystem(deps.pathGuard),
       resourceStore: deps.resourceStore,
       server: deps.server,
-      ...(deps.notifier ? { notifier: deps.notifier } : {}),
     };
   }
+  // Envelope first, accessor second — the two eras carry this differently.
+  // A modern request states the capabilities in its own `_meta` envelope; a
+  // legacy connection fixed them at `initialize` and has no envelope at all.
+  // The deprecated accessor still answers for both today (the SDK backfills it
+  // per request from the validated envelope on modern instances), but reading
+  // the envelope directly is the supported path, so it leads: when the accessor
+  // goes, legacy degrades to "cannot tell", which fails open to the behavior
+  // that predates this check.
+  //
+  // The cast is the SDK's shipped `RequestMetaEnvelope` declaration collapsing
+  // to `{}` — the reserved keys survive at runtime but not in the .d.ts, so the
+  // key constant cannot index the declared type.
+  const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined;
+  const clientCapabilities =
+    (envelope?.[CLIENT_CAPABILITIES_META_KEY] as ClientCapabilities | undefined) ??
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- the only source of client capabilities on a legacy connection, where no envelope exists.
+    deps.server.server.getClientCapabilities();
+
   return {
     signal: ctx.mcpReq.signal,
     ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
@@ -144,8 +176,8 @@ function toToolCtx(
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
     inputResponses: ctx.mcpReq.inputResponses,
     requestState: ctx.mcpReq.requestState,
+    ...(clientCapabilities ? { clientCapabilities } : {}),
     server: deps.server,
-    ...(deps.notifier ? { notifier: deps.notifier } : {}),
   };
 }
 
@@ -162,7 +194,6 @@ function buildExecutionCtx(
     fs: ctx.fs,
     resourceStore: ctx.resourceStore,
     ...(ctx.server ? { server: ctx.server } : {}),
-    ...(ctx.notifier ? { notifier: ctx.notifier } : {}),
     log: (level: LoggingLevel, data: unknown, logger?: string) => {
       const msg = typeof data === 'string' ? data : String(data);
       const prefix = logger ? `[${logger}] ` : '';
@@ -172,6 +203,7 @@ function buildExecutionCtx(
     onProgress,
     inputResponses: ctx.inputResponses,
     requestState: ctx.requestState,
+    ...(ctx.clientCapabilities ? { clientCapabilities: ctx.clientCapabilities } : {}),
   };
 }
 
@@ -313,6 +345,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       op: 'grant',
       pending: grantDirs,
       requestState: this.toolCtx.requestState,
+      clientCapabilities: this.toolCtx.clientCapabilities,
       buildInputs: (dirs) =>
         multi
           ? [
@@ -329,7 +362,13 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     if (round !== undefined) return round;
     // Apply accepted grants for the session (R8). Declined/missing dirs are
     // skipped here; their paths fail with ACCESS_DENIED during the operation.
-    let appliedAny = false;
+    //
+    // No list-changed notification follows: a grant widens the allowed roots,
+    // and no resource list reads them. The instructions resource has a fixed
+    // URI, the result template lists the ResourceStore, and the file template
+    // lists nothing at all (see resources.ts). Notifying here only bought the
+    // client a round trip to re-fetch a list that could not have changed.
+    //
     // `readAcceptedMultiChoice` does NOT validate against the offered choices
     // (attacker-controlled inputResponses on re-entry). Only grant dirs that
     // were actually offered by precheckAccess — a value outside grantDirs is
@@ -344,22 +383,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     for (const dir of accepted) {
       if (!grantDirs.some((g) => isSamePath(g, dir))) continue;
       await this.toolCtx.fs.pathGuard.applyGrant(dir);
-      appliedAny = true;
-    }
-    if (appliedAny) {
-      if (this.toolCtx.notifier) {
-        try {
-          this.toolCtx.notifier.resourcesChanged();
-        } catch (err) {
-          Logger.debug('notifier.resourcesChanged error on grant', { error: String(err) });
-        }
-      } else {
-        try {
-          await this.toolCtx.server?.server.sendResourceListChanged();
-        } catch (err) {
-          Logger.debug('sendResourceListChanged error on grant', { error: String(err) });
-        }
-      }
     }
     return undefined;
   }
@@ -441,8 +464,13 @@ function zodJsonSchemaValidator(schema: z.ZodType): jsonSchemaValidator {
  *
  * - `$schema` and `title` carry no information the host uses.
  * - `maximum: Number.MAX_SAFE_INTEGER` is zod's int() artifact, not a bound.
- * - Output schemas additionally drop `description`/`examples`: the model reads
- *   real values at call time; only inputs need prose to be filled in.
+ * - Output schemas additionally drop `examples`: an example value for a field
+ *   the server itself fills in teaches the model nothing.
+ *
+ * Output `description`s are NOT dropped. They were, and the result was a wire
+ * contract the model had to guess at: `delete` returns `path` XOR `paths`,
+ * `edit.diff` appears only under dryRun, `read.value` has no required field at
+ * all. None of that is inferable from types alone.
  *
  * No shared subschema carries a `.meta({ id })`, so zod inlines every one of
  * them and the emitted document has no `$defs`/`$ref` to dereference.
@@ -455,10 +483,7 @@ function toDraft202012(schema: z.ZodType, io: 'input' | 'output'): JsonSchemaTyp
       const node = jsonSchema as Record<string, unknown>;
       delete node['title'];
       if (node['maximum'] === Number.MAX_SAFE_INTEGER) delete node['maximum'];
-      if (io === 'output') {
-        delete node['description'];
-        delete node['examples'];
-      }
+      if (io === 'output') delete node['examples'];
     },
   }) as Record<string, unknown>;
   delete generated['$schema'];

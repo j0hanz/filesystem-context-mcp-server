@@ -115,7 +115,11 @@ export async function createServer(
     cacheHints: {
       'tools/list': { ttlMs: 60_000, cacheScope },
       'prompts/list': { ttlMs: 60_000, cacheScope },
-      'resources/list': { ttlMs: 30_000, cacheScope },
+      // Always private, never `cacheScope`: this list enumerates the
+      // ResourceStore, so its entries are one caller's externalized tool output
+      // — the same entries whose own read hint is `private` (resources.ts). The
+      // other four lists are the same for every caller and follow the key.
+      'resources/list': { ttlMs: 30_000, cacheScope: 'private' },
       'resources/templates/list': { ttlMs: 60_000, cacheScope },
       'server/discover': { ttlMs: 60_000, cacheScope },
     },

@@ -52,17 +52,38 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
     ),
     ...readRangeFields,
   },
-}).superRefine((value, ctx) => {
-  validateReadRange(
-    {
-      head: value.head,
-      tail: value.tail,
-      startLine: value.startLine,
-      endLine: value.endLine,
+})
+  .superRefine((value, ctx) => {
+    validateReadRange(
+      {
+        head: value.head,
+        tail: value.tail,
+        startLine: value.startLine,
+        endLine: value.endLine,
+      },
+      ctx,
+    );
+  })
+  // Mirror `validateReadRange` on the wire. Without this the four line params
+  // published as four independent optional integers, so `{ path, head, tail }`
+  // passed the advertised schema and was rejected only at call time.
+  //
+  // `oneOf` is restated because `.meta()` replaces the entry
+  // `singleOrBatchPathsInput` set rather than merging into it — dropping it here
+  // would silently un-publish the path/paths rule.
+  .meta({
+    oneOf: [{ required: ['path'] }, { required: ['paths'] }],
+    not: {
+      anyOf: [
+        { required: ['head', 'tail'] },
+        { required: ['head', 'startLine'] },
+        { required: ['head', 'endLine'] },
+        { required: ['tail', 'startLine'] },
+        { required: ['tail', 'endLine'] },
+      ],
     },
-    ctx,
-  );
-});
+    dependentRequired: { endLine: ['startLine'] },
+  });
 
 const ReadPerPathValueSchema = z.strictObject({
   content: z.string().optional().describe('File text content'),

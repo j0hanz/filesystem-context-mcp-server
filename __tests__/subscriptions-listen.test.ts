@@ -355,7 +355,7 @@ describe('HTTP resourcesListChanged listen filter', () => {
     await cleanupTestRoot(rootDir);
   });
 
-  it('a resourcesListChanged listen receives notifications/resources/list_changed on grant', async () => {
+  it('a grant sends no notifications/resources/list_changed', async () => {
     let received = false;
     client.setNotificationHandler('notifications/resources/list_changed', () => {
       received = true;
@@ -363,12 +363,19 @@ describe('HTTP resourcesListChanged listen filter', () => {
     sub = await client.listen({ resourcesListChanged: true });
     try {
       // Trigger a grant: read an out-of-root file; the elicitation handler
-      // accepts, applyGrant runs notifier.resourcesChanged() -> bus.publish
-      // resources_list_changed -> the listen router delivers the notification.
+      // accepts and applyGrant widens the allowed roots. Nothing announces that,
+      // because no resource list reads the roots — the instructions resource has
+      // a fixed URI, the result template lists the ResourceStore, and the file
+      // template lists nothing. The listener itself is known-good: the next test
+      // proves it fires for a store insertion, which does change the list.
       const r = await client.callTool({ name: 'read', arguments: { path: outFile } });
       assert.notStrictEqual(r.isError, true, 'granted read must succeed');
-      await waitFor(() => received);
-      assert.strictEqual(received, true, 'list-changed listener must be notified on grant');
+      await setTimeout(150);
+      assert.strictEqual(
+        received,
+        false,
+        'a grant must not announce a resource list that cannot have changed',
+      );
     } finally {
       await sub.close().catch(() => {});
       sub = undefined;

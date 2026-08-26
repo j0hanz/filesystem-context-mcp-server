@@ -296,6 +296,7 @@ async function handleDelete(
       op: 'delete',
       pending: pendingSorted,
       requestState: ctx.requestState,
+      clientCapabilities: ctx.clientCapabilities,
       buildInputs: (ps) =>
         ps.map((p, i) =>
           choiceInput(
@@ -361,7 +362,9 @@ export const DELETE_FILE = defineTool({
   title: 'Delete File',
   description:
     'Permanently delete one or more files, directories, or symlinks (max 1000 per call). This action is irreversible. ' +
-    'Non-empty directories require recursive=true. ' +
+    'Non-empty directories require recursive=true and additionally prompt the user to confirm each one, ' +
+    'so the call returns without deleting anything until that confirmation comes back; ' +
+    'a client that cannot prompt gets an error naming the alternative. ' +
     'Workspace root directories cannot be deleted.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,

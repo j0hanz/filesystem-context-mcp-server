@@ -1,4 +1,4 @@
-import type { McpServer, ServerNotifier } from '@modelcontextprotocol/server';
+import type { McpServer } from '@modelcontextprotocol/server';
 
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -56,7 +56,6 @@ interface ToolRegistrarDeps {
   readonly pathGuard: PathGuard;
   readonly resourceStore: ResourceStore;
   readonly readOnly?: boolean;
-  readonly notifier?: ServerNotifier;
 }
 
 export function registerTools(deps: ToolRegistrarDeps): void {
@@ -64,7 +63,6 @@ export function registerTools(deps: ToolRegistrarDeps): void {
     server: deps.server,
     pathGuard: deps.pathGuard,
     resourceStore: deps.resourceStore,
-    ...(deps.notifier ? { notifier: deps.notifier } : {}),
   };
   for (const tool of registeredTools(deps.readOnly ?? false)) {
     tool.register(toolDeps);

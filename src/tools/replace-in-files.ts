@@ -47,7 +47,10 @@ import {
 import { defineTool, type ToolCtx } from './define.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: OptionalPath.describe(
+    'File to rewrite, or directory to rewrite under. Omitting it targets the ENTIRE first allowed root — ' +
+      'scope it deliberately, and pair a wide scope with dryRun=true first',
+  ),
   pattern: SafeGlobPattern.optional().describe(
     'Glob to restrict replacements to specific file types (e.g. **/*.ts); default: all text files',
   ),

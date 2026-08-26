@@ -459,7 +459,11 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(listTool.annotations.idempotentHint, true);
   });
 
-  it('TC-FUNC-059: createServer wires notifier to tool context on grant', async () => {
+  // A grant widens the allowed roots, and no resource list reads them: the
+  // instructions resource has a fixed URI, the result template lists the
+  // ResourceStore, and the file template lists nothing. Notifying here only
+  // bought the client a re-fetch of a list that could not have changed.
+  it('TC-FUNC-059: an access grant sends no resources/list_changed', async () => {
     const parentDir = await createTestRoot();
     const rootDir = join(parentDir, 'root');
     const outsideDir = join(parentDir, 'outside');
@@ -501,7 +505,11 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
           arguments: { path: outsideFile },
         });
         assert.notStrictEqual(result.isError, true);
-        assert.strictEqual(notified, true, 'notifier.resourcesChanged should be called on grant');
+        assert.strictEqual(
+          notified,
+          false,
+          'a grant must not announce a resource list that cannot have changed',
+        );
       } finally {
         await client.close();
         await serverCtx.close();
@@ -747,6 +755,40 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       assert.strictEqual(s.path?.toLowerCase(), dir.toLowerCase());
       assert.strictEqual(s.skipped, undefined);
       await assert.rejects(() => access(dir));
+    } finally {
+      await eh.close();
+    }
+  });
+
+  // Without this guard the SDK rejects the whole call with `-32021`
+  // MissingRequiredClientCapability — a protocol error the model never sees, on
+  // a tool whose description promised only that recursive=true was needed.
+  it('TC-FUNC-069b: a client without elicitation gets a tool error, not a protocol error', async () => {
+    const eh = await createElicitationClientPair(
+      [tmpDir],
+      async () => {
+        throw new Error('the server must not ask a client that cannot answer');
+      },
+      { noElicitation: true },
+    );
+    try {
+      const dir = join(tmpDir, 'del_no_elicit_dir');
+      await mkdir(join(dir, 'sub'), { recursive: true });
+      await writeFile(join(dir, 'sub', 'f.txt'), 'x');
+
+      const result = await eh.client.callTool({
+        name: 'delete',
+        arguments: { paths: [dir], recursive: true },
+      });
+
+      assert.strictEqual(result.isError, true, 'must surface as a tool error');
+      const text = (result.content as { type: string; text?: string }[])
+        .map((block) => block.text ?? '')
+        .join('\n');
+      assert.match(text, /confirmation this client cannot show/i);
+      assert.match(text, /individually|elicitation capability/i);
+      // R7/R14: the refusal must not have deleted anything on the way out.
+      await access(join(dir, 'sub', 'f.txt'));
     } finally {
       await eh.close();
     }
@@ -1044,21 +1086,46 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     );
 
     // `oneOf` (not `anyOf`): `{path, paths}` matches two branches and so fails,
-    // mirroring the superRefine in singleOrBatchPathsInput. It mirrors that
-    // builder only — `edit` layers a second superRefine (its `edits`/`files`
-    // pairing) that stays runtime-only, so `edit`'s wire schema is deliberately
-    // looser than its runtime gate.
-    const modeBranches = (name: string, keys: string[]) => {
+    // mirroring the superRefine in singleOrBatchPathsInput. `edit`'s single-file
+    // branch additionally requires `edits`, so `{ path }` alone fails the wire
+    // schema the same way it fails the runtime gate — it used to pass the first
+    // and fail the second, which the model had no way to anticipate.
+    const modeBranches = (name: string, branches: string[][]) => {
       const tool = tools.find((t) => t.name === name);
       assert.ok(tool, `${name} must be registered`);
       assert.deepStrictEqual(
         (tool.inputSchema as { oneOf?: unknown }).oneOf,
-        keys.map((k) => ({ required: [k] })),
+        branches.map((required) => ({ required })),
         `${name} must advertise its input modes as oneOf`,
       );
     };
-    modeBranches('read', ['path', 'paths']);
-    modeBranches('stat', ['path', 'paths']);
-    modeBranches('edit', ['path', 'files']);
+    modeBranches('read', [['path'], ['paths']]);
+    modeBranches('stat', [['path'], ['paths']]);
+    modeBranches('edit', [['path', 'edits'], ['files']]);
+
+    // `read`'s line-mode exclusivity is published too, not just enforced in
+    // validateReadRange: `{ path, head, tail }` must fail the advertised schema.
+    const readTool = tools.find((t) => t.name === 'read');
+    assert.ok(readTool, 'read must be registered');
+    const readSchema = readTool.inputSchema as {
+      not?: { anyOf?: { required: string[] }[] };
+      dependentRequired?: Record<string, string[]>;
+    };
+    assert.deepStrictEqual(
+      readSchema.not?.anyOf,
+      [
+        { required: ['head', 'tail'] },
+        { required: ['head', 'startLine'] },
+        { required: ['head', 'endLine'] },
+        { required: ['tail', 'startLine'] },
+        { required: ['tail', 'endLine'] },
+      ],
+      'read must advertise every conflicting line-param pair',
+    );
+    assert.deepStrictEqual(
+      readSchema.dependentRequired,
+      { endLine: ['startLine'] },
+      'read must advertise that endLine needs startLine',
+    );
   });
 });

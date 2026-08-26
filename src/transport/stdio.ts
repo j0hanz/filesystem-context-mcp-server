@@ -58,14 +58,12 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
       });
     }
   }
+  // No list-changed notification follows a grant. Allowed roots were once listed
+  // as concrete resources, and are not any more: the file template's `list()`
+  // returns nothing and the other two lists never read the roots at all (see
+  // resources.ts). Notifying bought the client a re-fetch of an unchanged list.
   if (granted > 0) {
     Logger.info(`[Stdio] allowed ${granted} client-declared workspace root(s)`);
-    // Allowed roots are listed as resources; tell the client the list grew.
-    void ctx.mcp.server.sendResourceListChanged().catch((err: unknown) => {
-      Logger.debug('[Stdio] resource list_changed not delivered', {
-        error: formatUnknownErrorMessage(err),
-      });
-    });
   }
   return granted;
 }

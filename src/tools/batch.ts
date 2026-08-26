@@ -214,6 +214,7 @@ export async function runOverPairs<TItem, TPlan extends PairPlan, TResult>(
       op: opts.op,
       pending: pendingSorted,
       requestState: ctx.requestState,
+      clientCapabilities: ctx.clientCapabilities,
       buildInputs: (dests) =>
         dests.map((dest, i) =>
           choiceInput(

@@ -78,7 +78,9 @@ function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewS
 }
 
 const GrepInputSchema = z.strictObject({
-  path: OptionalPath,
+  path: OptionalPath.describe(
+    'File to search, or directory to search under (default: the whole first allowed root)',
+  ),
   pattern: SafeGlobPattern.optional().describe(
     'Glob to restrict search to specific file types (e.g. **/*.ts); default: all text files',
   ),
