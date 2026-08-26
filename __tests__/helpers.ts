@@ -5,13 +5,14 @@ import type { ElicitRequestParams, ElicitResult } from '@modelcontextprotocol/cl
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { isNodeError } from '../src/core/errors.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
@@ -26,6 +27,29 @@ export async function createTestRoot(): Promise<string> {
 /** Remove a test root directory. */
 export async function cleanupTestRoot(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
+}
+
+/** Create a symlink, skipping when Windows permissions do not allow it. */
+export async function trySymlink(
+  target: string,
+  linkPath: string,
+  skip: () => void,
+  type: 'junction' | 'file' | undefined = 'junction',
+): Promise<boolean> {
+  try {
+    await symlink(target, linkPath, type);
+    return true;
+  } catch (error: unknown) {
+    if (
+      process.platform === 'win32' &&
+      isNodeError(error) &&
+      (error.code === 'EPERM' || error.code === 'EACCES')
+    ) {
+      skip();
+      return false;
+    }
+    throw error;
+  }
 }
 
 /** Poll until `condition` holds or `timeoutMs` elapses; for debounced notifications. */

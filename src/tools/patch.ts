@@ -17,7 +17,6 @@ import {
   RequiredPath,
 } from '../core/schema.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { loadEditableFile } from './edit.js';
 
 const PatchInputSchema = z.strictObject({
   path: RequiredPath.describe('File to apply the diff to'),
@@ -98,12 +97,10 @@ async function handlePatch(
   text: string;
   resources?: ContentBlock[];
 }> {
-  const { validPath, content, stats } = await loadEditableFile(
-    args.path,
-    ctx.fs,
-    ctx.signal,
-    'patch',
-  );
+  const { validPath, content, stats } = await ctx.fs.readEditableText(args.path, {
+    signal: ctx.signal,
+    tool: 'patch',
+  });
 
   // patch is single-file only: a multi-file unified diff (parsePatch length > 1)
   // is rejected. Multi-file application needs per-file PathGuard-resolved loaders

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants read and write files within explicitly allowed directories. Sensitive file patterns (.env, *.pem,*id_rsa\*) are blocked by default. It exposes 12 tools, 3 resources, and 4 prompts over stdio or Streamable HTTP transport.
+Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants read and write files within explicitly allowed directories. Sensitive file patterns (.env, *.pem,*id_rsa\*) are blocked by default. It exposes filesystem tools, resources, and prompts over stdio or Streamable HTTP transport.
 
 | Aspect       | Details             |
 | :----------- | :------------------ |
@@ -18,14 +18,14 @@ Filesystem-MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 
 ## Features
 
-| Feature                 | Description                                                                                                |
-| :---------------------- | :--------------------------------------------------------------------------------------------------------- |
-| **Path guarding**       | Every path is validated against allowed roots; `.env`, `*.pem`, `*id_rsa*` and similar patterns are denied |
-| **12 filesystem tools** | Navigate, inspect, read, and write across all major file operations                                        |
-| **Batch operations**    | Most tools accept `path`, `paths[]`, or `files[]` for parallel execution                                   |
-| **Dual transport**      | stdio by default; `--port` enables Streamable HTTP                                                         |
-| **File subscriptions**  | Resource subscriptions push change notifications when watched files update                                 |
-| **Regex safety**        | RE2 in all search tools: linear-time matching, so no pattern can ReDoS the server                          |
+| Feature                | Description                                                                                                |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Path guarding**      | Every path is validated against allowed roots; `.env`, `*.pem`, `*id_rsa*` and similar patterns are denied |
+| **Filesystem tools**   | Navigate, inspect, read, and write across all major file operations                                        |
+| **Batch operations**   | Most tools accept `path`, `paths[]`, or `files[]` for parallel execution                                   |
+| **Dual transport**     | stdio by default; `--port` enables Streamable HTTP                                                         |
+| **File subscriptions** | Resource subscriptions push change notifications when watched files update                                 |
+| **Regex safety**       | RE2 in all search tools: linear-time matching, so no pattern can ReDoS the server                          |
 
 ## Built with
 
@@ -257,25 +257,31 @@ All tools are scoped to the configured roots. Call `list_roots` first to discove
 
 ```text
 filesystem-mcp/
-├── __tests__/        Test suites (unit/, tools/, resources/, schemas/, contract, security, http)
+├── __tests__/        Test suites
 ├── scripts/          Build and task utilities
 ├── src/
 │   ├── core/         Path guarding, filesystem abstraction, concurrency, observability
-│   ├── tools/        12 tool definitions (one file per tool)
-│   ├── server.ts     Server factory and registration of all tools/resources/prompts
+│   ├── tools/        Tool definitions and registration
+│   ├── index.ts      Process entrypoint and transport selection
+│   ├── server.ts     Server factory and registrar composition
 │   ├── transport.ts  stdio and Streamable HTTP transport setup
-│   ├── prompts.ts    4 built-in prompt definitions
-│   └── resources.ts  3 built-in resource definitions
+│   ├── prompts.ts    Prompt definitions and registration
+│   └── resources.ts  Resource definitions and registration
 └── Dockerfile        Multi-stage alpine build, non-root user
 ```
 
-| Path                  | Purpose                                                      |
-| :-------------------- | :----------------------------------------------------------- |
-| `src/core/path.ts`    | `PathGuard` — validates every path against allowed roots     |
-| `src/core/fs.ts`      | `GuardedFileSystem` — all filesystem I/O flows through this  |
-| `src/tools/define.ts` | Tool registration and execution framework                    |
-| `src/tools/batch.ts`  | Batch helpers (runOverPaths, normalizeBatchItems)            |
-| `src/server.ts`       | Wires together all tools, resources, prompts, and transports |
+Runtime composition flows from `src/index.ts` to `src/transport.ts`, then to
+`src/server.ts`, the registrars, and finally `src/core/`. Each registrar owns
+the narrow dependency contract it consumes.
+
+| Path                  | Purpose                                                        |
+| :-------------------- | :------------------------------------------------------------- |
+| `src/core/path.ts`    | `PathGuard` — validates every path against allowed roots       |
+| `src/core/fs.ts`      | `GuardedFileSystem` — guarded filesystem facade                |
+| `src/tools/define.ts` | Tool registration and execution framework                      |
+| `src/tools/batch.ts`  | Batch helpers (runOverPaths, normalizeBatchItems)              |
+| `src/server.ts`       | Builds shared dependencies and invokes the three registrars    |
+| `src/transport.ts`    | Owns stdio and Streamable HTTP setup around the server factory |
 
 ## Configuration
 

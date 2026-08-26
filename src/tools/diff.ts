@@ -8,7 +8,6 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 import { NonNegInt, PositiveInt, RequiredPath } from '../core/schema.js';
 import { putJsonResource } from '../core/store.js';
 import { defineTool, type ToolCtx } from './define.js';
-import { loadEditableFile } from './edit.js';
 
 const DiffInputSchema = z.strictObject({
   a: RequiredPath.describe('First file to compare'),
@@ -43,8 +42,8 @@ async function handleDiff(
 }> {
   const [{ validPath: validA, content: contentA }, { validPath: validB, content: contentB }] =
     await Promise.all([
-      loadEditableFile(args.a, ctx.fs, ctx.signal, 'diff'),
-      loadEditableFile(args.b, ctx.fs, ctx.signal, 'diff'),
+      ctx.fs.readEditableText(args.a, { signal: ctx.signal, tool: 'diff' }),
+      ctx.fs.readEditableText(args.b, { signal: ctx.signal, tool: 'diff' }),
     ]);
 
   // createTwoFilesPatch returns the unified diff string synchronously on diff v9

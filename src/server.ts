@@ -21,19 +21,6 @@ import { registerTools } from './tools/index.js';
 export type { ServerNotifier };
 export type { ServerOptions };
 
-export interface ServerDeps {
-  readonly server: McpServer;
-  readonly pathGuard: PathGuard;
-  readonly resourceStore: ResourceStore;
-  readonly readOnly?: boolean;
-  /** Shared file-watcher registry for the modern HTTP leg; omitted on stdio. */
-  readonly watcherRegistry?: WatcherRegistry;
-  /** Modern-leg typed notification publisher. */
-  readonly notifier?: ServerNotifier;
-  /** The protocol era this instance serves; omitted where the caller does not know. */
-  readonly era?: 'legacy' | 'modern';
-}
-
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
 // ═══════════════════════════════════════════════════════════════
@@ -177,7 +164,7 @@ export async function createServer(
   // commits under a mutation lock this call does not take.
   if (!pathGuard.isInitialized()) await pathGuard.recomputeAllowedDirectories();
 
-  const deps: ServerDeps = {
+  const deps = {
     server,
     pathGuard,
     resourceStore,

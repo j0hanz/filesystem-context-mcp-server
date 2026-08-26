@@ -12,6 +12,7 @@ import type {
   RequestMeta,
   RequestStateAccessor,
   ServerContext,
+  ServerNotifier,
   ToolAnnotations,
 } from '@modelcontextprotocol/server';
 import { fromJsonSchema, isInputRequiredResult } from '@modelcontextprotocol/server';
@@ -34,7 +35,6 @@ import type { LoggingLevel } from '../core/observability.js';
 import type { PathGuard } from '../core/path.js';
 import { isSamePath } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import type { ServerNotifier } from '../server.js';
 import type { ProgressSink } from './progress.js';
 import { McpProgressSink, ProgressSession, StderrProgressSink } from './progress.js';
 

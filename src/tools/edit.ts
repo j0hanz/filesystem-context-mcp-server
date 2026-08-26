@@ -7,10 +7,9 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import type { GuardedFileSystem, Stats } from '../core/fs.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import { countLines, readFileWithStats } from '../core/read.js';
+import { countLines } from '../core/read.js';
 import {
   defaultFalseBoolean,
   FileKind,
@@ -26,7 +25,6 @@ import {
 import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
-import { getMaxTextFileSize } from '../core/util.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
@@ -345,36 +343,6 @@ function buildEditFileMetadata(
   };
 }
 
-// Shared by diff.ts and patch.ts. Returns stats so callers that need mtime
-// (patch's dryRun) don't re-stat. `tool` labels the TOO_LARGE message.
-export async function loadEditableFile(
-  requestedPath: string,
-  fs: GuardedFileSystem,
-  signal: AbortSignal | undefined,
-  tool = 'edit',
-): Promise<{ validPath: string; content: string; stats: Stats }> {
-  const { stats, validPath } = await fs.stat(requestedPath, signal ? { signal } : undefined);
-  const maxTextFileSize = getMaxTextFileSize();
-
-  if (stats.size > maxTextFileSize) {
-    throw new FsError(
-      ErrorCode.TOO_LARGE,
-      `File too large for ${tool} (${stats.size} bytes > ${maxTextFileSize} bytes)`,
-      requestedPath,
-      { size: stats.size, maxFileSize: maxTextFileSize },
-    );
-  }
-
-  const { content } = await readFileWithStats(requestedPath, validPath, stats, {
-    kind: 'full',
-    encoding: 'utf-8',
-    maxSize: maxTextFileSize,
-    skipBinary: true,
-    ...(signal ? { signal } : {}),
-  });
-  return { validPath, content, stats };
-}
-
 async function applyEdits(
   content: string,
   edits: z.infer<typeof EditSpecSchema>[],
@@ -422,7 +390,9 @@ async function handleEditFile(
   options: EditFileOptions,
   ctx: ToolCtx,
 ): Promise<{ file: EditFileValue; resourceLink?: ContentBlock }> {
-  const { validPath, content } = await loadEditableFile(filePath, ctx.fs, ctx.signal);
+  const { validPath, content } = await ctx.fs.readEditableText(filePath, {
+    signal: ctx.signal,
+  });
   const editResult = await applyEdits(content, edits, options.ignoreWhitespace);
 
   if (options.dryRun) {

@@ -10,6 +10,10 @@ const jsConfigFiles = ['**/*.js', '**/*.mjs'];
 
 // Dynamically filter builtin modules instead of hardcoding a massive array
 const nodeBuiltins = builtinModules.filter((m) => !m.startsWith('node:') && !m.startsWith('_'));
+const nodeBuiltinImportRestrictions = nodeBuiltins.map((name) => ({
+  name,
+  message: `Use the node: protocol for Node.js built-ins, e.g. node:${name}.`,
+}));
 
 export default tseslint.config(
   {
@@ -89,10 +93,7 @@ export default tseslint.config(
       'no-restricted-imports': [
         'error',
         {
-          paths: nodeBuiltins.map((name) => ({
-            name,
-            message: `Use the node: protocol for Node.js built-ins, e.g. node:${name}.`,
-          })),
+          paths: nodeBuiltinImportRestrictions,
         },
       ],
 
@@ -151,6 +152,25 @@ export default tseslint.config(
         {
           allowDefaultCaseForExhaustiveSwitch: true,
           requireDefaultForNonUnion: false,
+        },
+      ],
+    },
+  },
+
+  {
+    name: 'project/registrar-boundaries',
+    files: ['src/prompts.ts', 'src/resources.ts', 'src/tools/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: nodeBuiltinImportRestrictions,
+          patterns: [
+            {
+              regex: '^(?:\\.\\.?/)+server\\.js$',
+              message: 'Registrars own local dependency contracts; do not import server.ts.',
+            },
+          ],
         },
       ],
     },

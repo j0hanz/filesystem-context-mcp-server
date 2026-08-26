@@ -1,4 +1,7 @@
-import type { ServerDeps } from '../server.js';
+import type { McpServer, ServerNotifier } from '@modelcontextprotocol/server';
+
+import type { PathGuard } from '../core/path.js';
+import type { ResourceStore } from '../core/store.js';
 import { CALCULATE_HASH } from './calculate-hash.js';
 import { COPY_FILES } from './copy.js';
 import { CREATE } from './create.js';
@@ -60,7 +63,15 @@ export {
   GET_FILE_INFO,
 };
 
-export function registerTools(deps: ServerDeps): void {
+interface ToolRegistrarDeps {
+  readonly server: McpServer;
+  readonly pathGuard: PathGuard;
+  readonly resourceStore: ResourceStore;
+  readonly readOnly?: boolean;
+  readonly notifier?: ServerNotifier;
+}
+
+export function registerTools(deps: ToolRegistrarDeps): void {
   const toolDeps = {
     server: deps.server,
     pathGuard: deps.pathGuard,

@@ -22,7 +22,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import { withAbort } from './concurrency.js';
-import { ErrorCode, formatUnknownErrorMessage, isFsError, isNodeError } from './errors.js';
+import { ErrorCode, formatUnknownErrorMessage, FsError, isFsError, isNodeError } from './errors.js';
 import { detectMimeFromContent } from './mime.js';
 import { Logger } from './observability.js';
 import type { PathGuard } from './path.js';
@@ -32,6 +32,7 @@ import {
   assertFileStats,
   createTooLargeError,
   normalizeSpec,
+  readFileWithStats,
   readNormalized,
   STREAM_CHUNK_SIZE,
 } from './read.js';
@@ -246,6 +247,31 @@ export class GuardedFileSystem {
     normalized.signal?.throwIfAborted();
     const stats = await withAbort(fsStat(validPath), normalized.signal);
     return readNormalized(filePath, validPath, stats, normalized);
+  }
+
+  async readEditableText(
+    filePath: string,
+    options?: { signal?: AbortSignal; tool?: string },
+  ): Promise<{ validPath: string; content: string; stats: Stats }> {
+    const { stats, validPath } = await this.stat(filePath, options);
+    const maxSize = getMaxTextFileSize();
+    if (stats.size > maxSize) {
+      // `tool` labels the TOO_LARGE message so the client sees which tool refused.
+      throw new FsError(
+        ErrorCode.TOO_LARGE,
+        `File too large for ${options?.tool ?? 'edit'} (${stats.size} bytes > ${maxSize} bytes)`,
+        filePath,
+        { size: stats.size, maxFileSize: maxSize },
+      );
+    }
+    const { content } = await readFileWithStats(filePath, validPath, stats, {
+      kind: 'full',
+      encoding: 'utf-8',
+      maxSize,
+      skipBinary: true,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+    return { validPath, content, stats };
   }
 
   async readRaw(

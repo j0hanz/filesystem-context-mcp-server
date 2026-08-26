@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, symlink } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { ErrorCode, isFsError, isNodeError } from '../src/core/errors.js';
+import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { isSamePath, PathGuard } from '../src/core/path.js';
-import { cleanupTestRoot, createTestRoot, writeTestFile } from './helpers.js';
+import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
 
 // Grant round-trip characterization: precheckAccess → applyGrant → the
 // guard's allowed-directory view. These pin the working behavior (and, in
@@ -186,33 +186,6 @@ const assertAccessDenied = async (p: Promise<unknown>, msg: string): Promise<voi
     },
     msg,
   );
-};
-
-// Some symlink creations need elevated privileges on Windows; skip those
-// tests when the platform refuses. Mirrors TC-SEC-006 at security.test.ts:46.
-// `type` is only honored on Windows: 'junction' for directory targets (no
-// admin needed); 'file' for file symlinks (needs developer mode). On posix
-// the type is ignored.
-const trySymlink = async (
-  target: string,
-  linkPath: string,
-  skip: () => void,
-  type: 'junction' | 'file' | undefined = 'junction',
-): Promise<boolean> => {
-  try {
-    await symlink(target, linkPath, type);
-    return true;
-  } catch (err: unknown) {
-    if (
-      process.platform === 'win32' &&
-      isNodeError(err) &&
-      (err.code === 'EPERM' || err.code === 'EACCES')
-    ) {
-      skip();
-      return false;
-    }
-    throw err;
-  }
 };
 
 describe('Write/Delete PathGuard', () => {

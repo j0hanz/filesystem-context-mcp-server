@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
+import { normalizePath } from '../src/core/path.js';
 import { searchContent, searchFiles } from '../src/core/search.js';
 import type { FilesystemServerContext } from '../src/server.js';
 import {
@@ -96,6 +98,52 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
     });
   });
 
+  describe('Editable text loading', () => {
+    it('readEditableText returns validated path, content, and stats', async () => {
+      const filePath = await writeTestFile(tmpDir, 'editable.txt', 'editable content');
+
+      const result = await ctx.fs.readEditableText(filePath);
+
+      assert.strictEqual(result.validPath, normalizePath(filePath));
+      assert.strictEqual(result.content, 'editable content');
+      assert.strictEqual(result.stats.size, Buffer.byteLength('editable content'));
+    });
+
+    it('readEditableText rejects files above the configured text limit', async () => {
+      const previous = process.env['MAX_FILE_SIZE'];
+      const limit = 1024 * 1024;
+      process.env['MAX_FILE_SIZE'] = String(limit);
+      try {
+        const filePath = join(tmpDir, 'too-large.txt');
+        await writeFile(filePath, Buffer.alloc(limit + 1, 0x61));
+
+        await assert.rejects(
+          ctx.fs.readEditableText(filePath),
+          (error) =>
+            isFsError(error) &&
+            error.code === ErrorCode.TOO_LARGE &&
+            error.message.includes('File too large for edit'),
+        );
+      } finally {
+        if (previous === undefined) delete process.env['MAX_FILE_SIZE'];
+        else process.env['MAX_FILE_SIZE'] = previous;
+      }
+    });
+
+    it('readEditableText rejects binary files', async () => {
+      const filePath = join(tmpDir, 'editable.png');
+      await writeFile(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+      await assert.rejects(
+        ctx.fs.readEditableText(filePath),
+        (error) =>
+          isFsError(error) &&
+          error.code === ErrorCode.INVALID_INPUT &&
+          error.message === 'Binary file detected.',
+      );
+    });
+  });
+
   describe('Create nested & overwrite (TC-FUNC-010–011)', () => {
     it('TC-FUNC-010: writeFile in deep nested path after creating parent directories', async () => {
       const nestedPath = join(tmpDir, 'deep', 'nested', 'subfolder', 'file.txt');
@@ -140,6 +188,18 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
       assert.strictEqual(detail.isSymlink, false);
       assert.strictEqual(detail.stats.isDirectory(), true);
       assert.strictEqual(detail.stats.isFile(), false);
+    });
+
+    it('lstat propagates an already-aborted signal', async () => {
+      const filePath = await writeTestFile(tmpDir, 'aborted-lstat.txt', 'content');
+      const reason = new Error('lstat aborted');
+      const controller = new AbortController();
+      controller.abort(reason);
+
+      await assert.rejects(ctx.fs.lstat(filePath, { signal: controller.signal }), (error) => {
+        assert.strictEqual(error, reason);
+        return true;
+      });
     });
   });
 

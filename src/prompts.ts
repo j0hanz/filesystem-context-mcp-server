@@ -28,7 +28,6 @@ import {
   linkToInstructions,
   renderSections,
 } from './instructions.js';
-import type { ServerDeps } from './server.js';
 
 // --- Types ---
 
@@ -36,6 +35,12 @@ interface PromptContract {
   readonly name: string;
   readonly title: string;
   readonly description: string;
+}
+
+interface PromptRegistrarDeps {
+  readonly server: McpServer;
+  readonly pathGuard: PathGuard;
+  readonly readOnly?: boolean;
 }
 
 interface PromptRegistrationOptions {
@@ -473,7 +478,7 @@ const PROMPT_ENTRIES: PromptEntry[] = [
   REFACTOR_WORKFLOW,
 ];
 
-export function registerPrompts(deps: ServerDeps): void {
+export function registerPrompts(deps: PromptRegistrarDeps): void {
   const sections = buildSectionsRecord(deps.readOnly ?? false);
   const options = {
     pathGuard: deps.pathGuard,

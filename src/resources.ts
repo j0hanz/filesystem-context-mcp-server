@@ -1,10 +1,12 @@
 import type {
   CacheHint,
+  McpServer,
   ReadResourceResult,
   Resource,
   ResourceUpdatedNotificationParams,
   Role,
   ServerContext,
+  ServerNotifier,
   SubscribeRequestParams,
   UnsubscribeRequestParams,
 } from '@modelcontextprotocol/server';
@@ -44,7 +46,6 @@ import {
   type WatcherRegistry,
 } from './core/watcher-registry.js';
 import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from './instructions.js';
-import type { ServerDeps, ServerNotifier } from './server.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -67,6 +68,12 @@ export interface ResourceRegistrationOptions {
   /** The protocol era this instance serves; omitted where the caller does not know. */
   era?: 'legacy' | 'modern';
 }
+
+type ResourceRegistrarDeps = Omit<ResourceRegistrationOptions, 'pathGuard' | 'readOnly'> & {
+  readonly server: McpServer;
+  readonly pathGuard: PathGuard;
+  readonly readOnly?: boolean;
+};
 
 /**
  * A filesystem failure that reads as not-found on the resource wire, for both
@@ -496,7 +503,7 @@ function wrapRead(contract: ResourceContract) {
   };
 }
 
-export function registerResources(deps: ServerDeps): { dispose(): void } {
+export function registerResources(deps: ResourceRegistrarDeps): { dispose(): void } {
   const server = deps.server;
   const resourceContracts = getResourceContracts({ ...deps, readOnly: deps.readOnly ?? false });
 

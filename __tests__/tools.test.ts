@@ -31,6 +31,7 @@ import {
   failedSummary,
   firstTextBlock,
   type TestClientContext,
+  trySymlink,
   writeTestFile,
 } from './helpers.js';
 
@@ -901,6 +902,47 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.ok(value, 'stat must return a value');
     assert.strictEqual(value.type, 'file');
     assert.ok(typeof value.size === 'number' && value.size > 0);
+  });
+
+  it('stat reports an own symlink and its target', async (t) => {
+    const target = await writeTestFile(tmpDir, 'stat-link-target.txt', 'target');
+    const linkPath = join(tmpDir, 'stat-link.txt');
+    if (!(await trySymlink(target, linkPath, () => t.skip('symlink not permitted'), 'file')))
+      return;
+
+    const result = await harness.client.callTool({
+      name: 'stat',
+      arguments: { path: linkPath },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const structured = result.structuredContent as {
+      results?: { value?: { type?: string; symlinkTarget?: string } }[];
+    };
+    const value = structured.results?.[0]?.value;
+    assert.ok(value, 'stat must return a value');
+    assert.strictEqual(value.type, 'symlink');
+    assert.strictEqual(value.symlinkTarget, target);
+  });
+
+  it('stat reports a regular file under a symlinked parent as a file', async (t) => {
+    const targetDir = join(tmpDir, 'stat-real-parent');
+    await mkdir(targetDir);
+    await writeFile(join(targetDir, 'child.txt'), 'child');
+    const linkDir = join(tmpDir, 'stat-linked-parent');
+    if (!(await trySymlink(targetDir, linkDir, () => t.skip('symlink not permitted')))) return;
+
+    const result = await harness.client.callTool({
+      name: 'stat',
+      arguments: { path: join(linkDir, 'child.txt') },
+    });
+    assert.notStrictEqual(result.isError, true);
+    const structured = result.structuredContent as {
+      results?: { value?: { type?: string; symlinkTarget?: string } }[];
+    };
+    const value = structured.results?.[0]?.value;
+    assert.ok(value, 'stat must return a value');
+    assert.strictEqual(value.type, 'file');
+    assert.strictEqual(value.symlinkTarget, undefined);
   });
 
   it('TC-FUNC-072: search_text finds a literal match via callTool', async () => {

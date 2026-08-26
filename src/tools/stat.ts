@@ -1,6 +1,5 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { lstat as fsLstat } from 'node:fs/promises';
 import { parse } from 'node:path';
 
 import * as z from 'zod/v4';
@@ -129,10 +128,15 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   let stats = followedStats;
   if (isSymlink) {
     try {
-      stats = await fsLstat(requestedPath);
+      ({ stats } = await fs.lstat(requestedPath, signal ? { signal } : undefined));
     } catch (error) {
       // A cancelled request is not a "link metadata unavailable" fallback.
       rethrowIfAborted(error);
+      // Guarded lstat can be refused where raw lstat succeeded (e.g. an allowed
+      // root that is itself a symlink, whose parent sits outside the roots).
+      // Falling back to the followed stats degrades the report to the target's
+      // metadata, so leave a trace instead of degrading silently.
+      log?.('warning', `stat: lstat failed for "${requestedPath}": ${String(error)}`, 'stat');
       stats = followedStats;
     }
   }
