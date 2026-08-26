@@ -417,9 +417,13 @@ describe('HTTP Policy & Security', () => {
       );
       assert.strictEqual(resLocalhost.headers['vary'], 'Origin');
       assert.strictEqual(resLocalhost.headers['access-control-allow-methods'], 'POST, OPTIONS');
+      // Pins the SEP-2243 standard headers (mcp-protocol-version, mcp-method,
+      // mcp-name): the SDK sends all three on every modern request POST and
+      // createMcpHandler requires them, so a stale allow-list breaks every
+      // browser client. mcp-session-id must NOT reappear (2025-era only).
       assert.strictEqual(
         resLocalhost.headers['access-control-allow-headers'],
-        'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',
+        'Content-Type, Authorization, mcp-protocol-version, mcp-method, mcp-name',
       );
 
       // 2. Allowed remote origin

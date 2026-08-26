@@ -68,4 +68,22 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
     assert.strictEqual(structured?.summary?.failed, 1);
     assert.strictEqual(structured?.results?.[0]?.error?.code, 'NOT_FOUND');
   });
+
+  it('HTTP-005: modern discover carries the serverInfo _meta stamp and cache hints on the wire', () => {
+    // Spec PR #3002: server identity rides _meta['io.modelcontextprotocol/serverInfo']
+    // on 2026-era responses; getServerVersion() reads the discover result's stamp.
+    const version = httpHarness.client.getServerVersion();
+    assert.strictEqual(version?.name, 'filesystem-mcp');
+    assert.ok(version.version, 'the _meta serverInfo stamp must carry a version');
+
+    // ttlMs/cacheScope are hidden from the public DiscoverResult type but kept
+    // at runtime; the cast reads what serverConfig.cacheHints actually emitted
+    // (the wire parse defaults an OMITTED hint to 0/'private', so these values
+    // prove the advertised policy reached the wire).
+    const discover = httpHarness.client.getDiscoverResult() as
+      { ttlMs?: number; cacheScope?: string } | undefined;
+    assert.ok(discover, 'a modern connection must retain its discover result');
+    assert.strictEqual(discover.ttlMs, 60_000);
+    assert.strictEqual(discover.cacheScope, 'public');
+  });
 });

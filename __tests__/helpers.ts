@@ -5,6 +5,7 @@ import type { ElicitRequestParams, ElicitResult } from '@modelcontextprotocol/cl
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
 
+import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { isNodeError } from '../src/core/errors.js';
+import { PathGuard } from '../src/core/path.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
@@ -111,18 +113,52 @@ export async function createTestClientPair(
  */
 export type ElicitHandler = (params: ElicitRequestParams) => Promise<ElicitResult> | ElicitResult;
 
+/** An elicitation-capable modern-era client and its teardown. */
+export interface ElicitationTestContext {
+  client: Client;
+  close: () => Promise<void>;
+}
+
 /**
- * Like `createTestClientPair`, but the client negotiates the 2026 era and
- * declares form-mode elicitation, registering `elicitHandler` for
- * `elicitation/create` so an `input_required` round-trip is auto-fulfilled.
+ * A client/server pair pinned to the 2026-07-28 era, with form-mode
+ * elicitation declared and `elicitHandler` registered for `elicitation/create`
+ * so an `input_required` round-trip is auto-fulfilled on the modern in-band
+ * wire (retry with `inputResponses` + byte-exact `requestState` echo).
+ *
+ * There is no in-memory serving entry — `InMemoryTransport.createLinkedPair()`
+ * connects 2025-era instances only, which silently routed these flows through
+ * the legacy shim — so this drives `createMcpHandler` through its fetch
+ * function; the URL is never dialed. `legacy: 'reject'` plus the era assertion
+ * below make a silent legacy fallback impossible. One `PathGuard` is shared
+ * across the per-request instances, like the production HTTP leg, so an
+ * accepted access grant survives the request that accepted it.
  */
 export async function createElicitationClientPair(
   allowedDirs: string[],
   elicitHandler: ElicitHandler,
   options: { readOnly?: boolean } = {},
-): Promise<TestClientContext> {
-  const serverCtx = await createTestServer(allowedDirs, options);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+): Promise<ElicitationTestContext> {
+  const sharedRegistry = createWatcherRegistry();
+  const sharedPathGuard = new PathGuard(
+    { cliAllowedDirs: allowedDirs, ...readOnlyOpts(options) },
+    true,
+  );
+  await sharedPathGuard.recomputeAllowedDirectories();
+
+  const handler = createMcpHandler(
+    async () => {
+      const serverCtx = await createServer(
+        { cliAllowedDirs: allowedDirs, ...readOnlyOpts(options) },
+        { watcherRegistry: sharedRegistry, pathGuard: sharedPathGuard },
+      );
+      return serverCtx.mcp;
+    },
+    { legacy: 'reject' },
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL('http://test.local/mcp'), {
+    fetch: (url, init) => handler.fetch(new Request(url, init)),
+  });
 
   const client = new Client(
     { name: 'test-elicit', version: '1.0.0' },
@@ -133,14 +169,19 @@ export async function createElicitationClientPair(
   );
   client.setRequestHandler('elicitation/create', elicitHandler);
 
-  await Promise.all([client.connect(clientTransport), serverCtx.mcp.connect(serverTransport)]);
+  await client.connect(transport);
+  assert.strictEqual(
+    client.getProtocolEra(),
+    'modern',
+    'elicitation pair must negotiate the 2026-07-28 era — a legacy fallback would test the shim instead of the modern in-band input_required wire',
+  );
 
   return {
     client,
-    serverCtx,
     close: async () => {
       await client.close();
-      await serverCtx.close();
+      await handler.close();
+      sharedRegistry.destroy();
     },
   };
 }

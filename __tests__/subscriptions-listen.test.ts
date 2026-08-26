@@ -14,6 +14,7 @@ import { listenSubscriptionUris } from '../src/transport.js';
 import {
   bootHttpTest,
   cleanupTestRoot,
+  createTestHttpHarness,
   createTestRoot,
   type HttpTestContext,
   waitFor,
@@ -516,5 +517,28 @@ describe('HTTP re-listen after full release', () => {
     await writeFile(filePath, 'changed-after-relisten');
     await waitFor(() => received !== undefined);
     assert.strictEqual(received, uri, 're-listen after release must receive updates');
+  });
+});
+
+// Graceful close (2026-07-28): when the server closes a listen stream
+// deliberately (entry close()/shutdown), it sends the empty
+// `subscriptions/listen` JSON-RPC result before closing the stream, and the
+// client's `McpSubscription.closed` resolves 'graceful'. A close without that
+// result resolves 'remote' (unexpected disconnect) — so this pins the
+// deliberate-shutdown path clients use to decide against re-listening.
+describe('subscriptions/listen graceful close', () => {
+  it("handler close() resolves the subscription's closed promise 'graceful'", async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createTestHttpHarness([tmpDir]);
+    try {
+      const sub = await harness.client.listen({ resourcesListChanged: true });
+      await harness.handler.close();
+      assert.strictEqual(await sub.closed, 'graceful');
+    } finally {
+      // handler.close() already ran; harness.close() re-runs it (idempotent)
+      // and tears down the client.
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
   });
 });

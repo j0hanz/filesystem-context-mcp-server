@@ -354,14 +354,22 @@ export function corsOriginMiddleware(allowedOriginHostnames: readonly string[]):
   };
 }
 
-/** OPTIONS preflight for `/mcp`. */
+/**
+ * OPTIONS preflight for `/mcp`. The allow-list carries the SEP-2243 standard
+ * headers (`mcp-protocol-version`, `mcp-method`, `mcp-name`): SDK clients send
+ * all three on every modern request POST and `createMcpHandler` requires them
+ * (400 / -32020), so omitting them here would fail every browser preflight —
+ * and the HTTP leg is modern-only, so there is no legacy path to fall back to.
+ * `mcp-session-id` is deliberately absent: it is 2025-era only and this
+ * endpoint rejects legacy traffic.
+ */
 export function corsPreflightHandler(allowedOriginHostnames: readonly string[]): RequestHandler {
   return (req: Request, res: Response): void => {
     reflectAllowedOrigin(req, res, allowedOriginHostnames);
     res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.header(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version',
+      'Content-Type, Authorization, mcp-protocol-version, mcp-method, mcp-name',
     );
     res.status(204).end();
   };
