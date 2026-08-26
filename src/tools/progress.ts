@@ -1,7 +1,6 @@
 import type { Notification, ProgressNotificationParams } from '@modelcontextprotocol/server';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
-import { ansiLine, type Phase, type ProgressCtx } from '../core/fmt.js';
 import { Logger } from '../core/observability.js';
 
 function reportDetachedError(toolName: string, context: string, error: unknown): void {
@@ -31,8 +30,6 @@ interface ProgressSessionOptions {
   sinks: ProgressSink[];
   /** Override the rate limit window. Default: 50ms. */
   rateLimitMs?: number;
-  /** If true, rate limit window increases after 5 seconds of execution. */
-  dynamicRateLimit?: boolean;
 }
 
 const DEFAULT_RATE_LIMIT_MS = 50;
@@ -42,7 +39,6 @@ export class ProgressSession {
   readonly #total: number | undefined;
   readonly #sinks: ProgressSink[];
   readonly #rateLimitMs: number;
-  readonly #dynamicRateLimit: boolean;
   readonly #startTime: number;
 
   #cursor = 0;
@@ -54,7 +50,6 @@ export class ProgressSession {
     this.#total = opts.total;
     this.#sinks = opts.sinks;
     this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
-    this.#dynamicRateLimit = opts.dynamicRateLimit ?? false;
 
     const now = Date.now();
     this.#startTime = now;
@@ -125,11 +120,11 @@ export class ProgressSession {
       return false;
     }
 
+    // Widen the window after 5s of execution; a rateLimitMs of 0 (tests) stays 0
+    // only inside the first 5s, which every test run fits in.
     const now = Date.now();
     const effectiveRateLimit =
-      this.#dynamicRateLimit && now - this.#startTime > 5000
-        ? Math.max(this.#rateLimitMs, 250)
-        : this.#rateLimitMs;
+      now - this.#startTime > 5000 ? Math.max(this.#rateLimitMs, 250) : this.#rateLimitMs;
 
     const elapsed = now - this.#lastSentMs;
     return elapsed < effectiveRateLimit;
@@ -153,50 +148,6 @@ export class ProgressSession {
         eventKind: event.kind,
         err,
       });
-    }
-  }
-}
-
-export class StderrProgressSink implements ProgressSink {
-  readonly name = 'stderr';
-  readonly #startMs: number;
-  #ctx: ProgressCtx;
-
-  constructor(ctx: ProgressCtx) {
-    this.#ctx = ctx;
-    this.#startMs = Date.now();
-  }
-
-  updateCtx(extra: Partial<ProgressCtx>): void {
-    this.#ctx = { ...this.#ctx, ...extra };
-  }
-
-  emit(event: ProgressEvent): void {
-    if (!process.stderr.isTTY) return;
-
-    const phase: Phase =
-      event.kind === 'complete'
-        ? 'done'
-        : event.kind === 'fail'
-          ? 'fail'
-          : event.current === 0
-            ? 'start'
-            : 'tick';
-
-    const merged: ProgressCtx = {
-      ...this.#ctx,
-      ...(event.kind === 'tick' || event.kind === 'complete'
-        ? { current: event.current, total: event.total }
-        : {}),
-      ...(event.kind === 'fail' ? { error: formatUnknownErrorMessage(event.error) } : {}),
-      durationMs: Date.now() - this.#startMs,
-    };
-
-    try {
-      process.stderr.write(`${ansiLine(phase, merged)}
-`);
-    } catch {
-      // never allow observability failures to affect tool execution
     }
   }
 }

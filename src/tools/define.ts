@@ -40,7 +40,7 @@ import type { PathGuard } from '../core/path.js';
 import { isSamePath } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import type { ProgressSink } from './progress.js';
-import { McpProgressSink, ProgressSession, StderrProgressSink } from './progress.js';
+import { McpProgressSink, ProgressSession } from './progress.js';
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
@@ -266,7 +266,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
   #progressClosed = false;
   readonly #progressCtx: ProgressCtx;
   readonly #mcpSink?: McpProgressSink;
-  readonly #stderrSink: StderrProgressSink;
   readonly #progressSession: ProgressSession;
 
   constructor(toolName: string, ctx: ToolCtx, def: ToolDef<I, O>, parsedArgs: z.infer<I>) {
@@ -274,8 +273,7 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     this.parsedArgs = parsedArgs;
     this.signal = composeSignal(ctx.signal, def.timeoutMs);
     this.#progressCtx = resolveProgressCtx(def, parsedArgs);
-    this.#stderrSink = new StderrProgressSink(this.#progressCtx);
-    const sinks: ProgressSink[] = [this.#stderrSink];
+    const sinks: ProgressSink[] = [];
     if (ctx._meta?.progressToken !== undefined && ctx.sendNotification !== undefined) {
       this.#mcpSink = new McpProgressSink(toolName, ctx._meta.progressToken, ctx.sendNotification);
       sinks.push(this.#mcpSink);
@@ -285,7 +283,6 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       label: this.#progressCtx.label,
       sinks,
       ...(isTest ? { rateLimitMs: 0 } : {}),
-      dynamicRateLimit: !isTest,
     });
     this.toolCtx = buildExecutionCtx(ctx, this.signal, (p) => {
       this.#tick(p);
@@ -322,13 +319,11 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     const doneCtx: ProgressCtx = this.def.progressDone
       ? { ...this.#progressCtx, ...this.def.progressDone(this.parsedArgs, result) }
       : this.#progressCtx;
-    this.#stderrSink.updateCtx(doneCtx);
     await this.#closeWithDone(plainMessage('done', doneCtx));
   }
 
   private async failProgress(error: unknown): Promise<{ isError: true; content: ContentBlock[] }> {
     const errMsg = formatUnknownErrorMessage(error);
-    this.#stderrSink.updateCtx({ error: errMsg });
     const message = plainMessage('fail', { ...this.#progressCtx, error: errMsg });
     await this.#closeWithFail(error, message);
     const { text: errorText } = Problem.toText(

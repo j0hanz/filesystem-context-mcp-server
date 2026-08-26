@@ -576,9 +576,21 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
       async (req: { params: SubscribeRequestParams }) => {
         const requestedResource = resourceUrlFromServerUrl(req.params.uri);
         let foundMatch = false;
+        // A resource that exists but has no watcher (the instructions text, a
+        // cached result) is NOT a not-found: reporting it as one told clients a
+        // URI they can list and read does not exist. Track the two cases apart.
+        let knownButNotSubscribable = false;
         for (const contract of resourceContracts) {
-          if (!contract.subscribe) continue;
           const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
+          if (!contract.subscribe) {
+            if (
+              configured &&
+              checkResourceAllowed({ requestedResource, configuredResource: configured })
+            ) {
+              knownButNotSubscribable = true;
+            }
+            continue;
+          }
           if (!configured) continue;
           if (
             checkResourceAllowed({
@@ -601,6 +613,12 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
           }
         }
         if (!foundMatch) {
+          if (knownButNotSubscribable) {
+            throw new ProtocolError(
+              ProtocolErrorCode.InvalidParams,
+              `Resource ${requestedResource.toString()} does not support subscriptions; only ${FILESYSTEM_FILE_URI_TEMPLATE} does. Read it again for the current contents.`,
+            );
+          }
           throw new ResourceNotFoundError(
             requestedResource.toString(),
             `Resource not found: ${requestedResource.toString()}`,

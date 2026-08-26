@@ -1,6 +1,6 @@
 import type { ContentBlock } from '@modelcontextprotocol/server';
 
-import { hash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { ErrorCode, FsError } from './errors.js';
 import { Logger } from './observability.js';
@@ -10,7 +10,6 @@ interface ResourceEntry {
   uri: string;
   name: string;
   mimeType: string;
-  hash: string;
   size: number;
   storedAt: string;
   expiresAt: string;
@@ -138,7 +137,6 @@ export class ResourceStore {
       uri: `filesystem-mcp://result/${randomUUID()}`,
       name: params.name,
       mimeType: params.mimeType ?? 'text/plain',
-      hash: hash('sha256', params.text, 'hex'),
       size: entryBytes,
       storedAt: storedAt.toISOString(),
       expiresAt: new Date(storedAt.getTime() + ENTRY_TTL_MS).toISOString(),

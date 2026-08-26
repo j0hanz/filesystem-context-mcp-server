@@ -6,11 +6,24 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
-import { ErrorCode, isFsError, isNodeError, isNotFoundErrno, Problem } from '../core/errors.js';
+import {
+  ErrorCode,
+  FsError,
+  isFsError,
+  isNodeError,
+  isNotFoundErrno,
+  Problem,
+} from '../core/errors.js';
+import { joinRoster, pathLabel } from '../core/fmt.js';
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
 import { getFileType } from '../core/fs.js';
 import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
-import { defaultFalseBoolean, PathFailureSchema, RequiredPath } from '../core/schema.js';
+import {
+  defaultFalseBoolean,
+  OperationSummarySchema,
+  PerFileErrorSchema,
+  RequiredPath,
+} from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
@@ -29,27 +42,31 @@ const DeleteInputSchema = z.strictObject({
   ),
 });
 
+const DeletePerPathValueSchema = z.strictObject({
+  deleted: z.boolean().describe('True when the path was removed; false when the user chose Skip'),
+});
+
+const DeletePerPathSchema = z.strictObject({
+  path: z.string().describe('Requested path'),
+  value: DeletePerPathValueSchema.optional().describe('Delete outcome; present on success'),
+  error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
+});
+
+// One envelope for every batch tool: `read` and `stat` already answer with
+// `{ results, summary }`, so `delete` does too. The old shape switched between
+// `{ ok, path }` and `{ ok: false, failures }` depending on the outcome, which
+// left a caller parsing two schemas for one tool and never named the paths in a
+// multi-delete's text.
 const DeleteOutputSchema = z.strictObject({
-  ok: z
-    .boolean()
-    .describe(
-      'True only when all requested paths were deleted successfully; false if any path failed',
-    ),
-  path: z.string().optional().describe('Deleted path (present when exactly one path was deleted)'),
-  paths: z
-    .array(z.string())
-    .optional()
-    .describe('Deleted paths (present when multiple paths were deleted)'),
-  failures: z
-    .array(PathFailureSchema)
-    .optional()
-    .describe('Per-path error details for paths that could not be deleted'),
-  skipped: z.array(z.string()).optional().describe('Paths skipped because the user chose Skip'),
+  results: z
+    .array(DeletePerPathSchema)
+    .describe('Per-path results ordered to match the input paths'),
+  summary: OperationSummarySchema,
 });
 
 type DeleteInput = z.infer<typeof DeleteInputSchema>;
 type DeleteOutput = z.infer<typeof DeleteOutputSchema>;
-type DeleteFailureItem = z.infer<typeof PathFailureSchema>;
+type DeletePerPathResult = z.infer<typeof DeletePerPathSchema>;
 
 // Internal types for error handling
 interface DeletedItem {
@@ -68,6 +85,20 @@ interface DeleteFailure {
 const ERR_NOT_EMPTY = new Error('Directory not empty. Set recursive: true.');
 
 function toDeleteFailure(path: string, error: unknown): DeleteFailure {
+  // A missing path reached here as the raw errno text ("ENOENT: no such file or
+  // directory, lstat 'c:\...'"), while `stat` reported the same condition as
+  // "Path not found". One condition, one message — and the syscall name stays
+  // off the wire.
+  if (isNotFoundErrno(error)) {
+    return {
+      path,
+      error: Problem.toPerFileError(
+        new FsError(ErrorCode.NOT_FOUND, 'Path not found', path),
+        ErrorCode.NOT_FOUND,
+        path,
+      ),
+    };
+  }
   if (
     isNodeError(error) &&
     (error.code === 'ENOTEMPTY' || error.code === 'EISDIR' || error.code === 'EEXIST')
@@ -124,8 +155,11 @@ async function planPath(
   if (fs.pathGuard.isAllowedRoot(validPath)) {
     return {
       status: 'fail',
+      // Keyed by the REQUESTED path, like every other failure here: handleDelete
+      // orders results by input path, and a resolved key would not be found for
+      // a relative request.
       failure: {
-        path: validPath,
+        path: inputPath,
         error: Problem.accessDenied('Deleting a workspace root directory is not allowed', {
           path: validPath,
         }),
@@ -138,7 +172,7 @@ async function planPath(
     firstStats = await fs.lstat(validPath);
   } catch (error) {
     if (isNotFoundErrno(error) && args.ignoreIfNotExists) {
-      return { status: 'noop', item: { path: validPath } };
+      return { status: 'noop', item: { path: inputPath } };
     }
     return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
@@ -260,9 +294,13 @@ async function handleDelete(
   args: DeleteInput,
   ctx: ToolCtx,
 ): Promise<DeleteOutput | InputRequiredResult> {
+  // Duplicate paths collapse: results are keyed by path, so a repeated entry
+  // would emit two rows for one deletion and inflate `summary.total`.
+  const paths = [...new Set(args.paths)];
+
   // Phase 1 (no mutation): plan every path.
   const planned = await processInParallel(
-    args.paths,
+    paths,
     (inputPath) => planPath(inputPath, args, ctx.fs),
     PARALLEL_CONCURRENCY,
     ctx.signal,
@@ -277,7 +315,7 @@ async function handleDelete(
     else plans.push(r.plan);
   }
   for (const { index, error } of planned.errors) {
-    const path = args.paths[index] ?? '(unknown)';
+    const path = paths[index] ?? '(unknown)';
     earlyFailures.push({ path, error: { code: ErrorCode.UNKNOWN, message: error.message } });
   }
 
@@ -320,41 +358,52 @@ async function handleDelete(
     ctx.signal,
   );
 
-  const successPaths: string[] = earlyNoop.map((n) => n.path);
-  const failures: DeleteFailureItem[] = [];
-  const skipped: string[] = [];
-  for (const f of earlyFailures) {
-    failures.push({ path: f.path, error: f.error });
-  }
+  // Collect by path first, then emit in the caller's input order so
+  // `results[i]` lines up with `paths[i]` the way read/stat guarantee.
+  const byPath = new Map<string, DeletePerPathResult>();
+  const record = (path: string, entry: DeletePerPathResult): void => {
+    byPath.set(path, entry);
+  };
+  for (const n of earlyNoop) record(n.path, { path: n.path, value: { deleted: true } });
+  for (const f of earlyFailures) record(f.path, { path: f.path, error: f.error });
   for (const { value: r } of executed.results) {
     if ('skipped' in r) {
-      skipped.push(r.path);
+      record(r.path, { path: r.path, value: { deleted: false } });
     } else if ('failure' in r) {
-      failures.push({ path: r.failure.path, error: r.failure.error });
+      record(r.failure.path, { path: r.failure.path, error: r.failure.error });
     } else if (r.item.path) {
-      successPaths.push(r.item.path);
+      record(r.item.path, { path: r.item.path, value: { deleted: true } });
     }
   }
   for (const { index, error } of executed.errors) {
     const plan = plans[index];
     const path = plan?.validPath ?? '(unknown)';
-    failures.push({ path, error: { code: ErrorCode.UNKNOWN, message: error.message } });
+    record(path, {
+      path,
+      error: { code: ErrorCode.UNKNOWN, message: error.message },
+    });
   }
 
-  const ok = failures.length === 0;
-  const output: DeleteOutput = { ok };
-  if (successPaths.length === 1) {
-    output.path = successPaths[0];
-  } else if (successPaths.length > 1) {
-    output.paths = successPaths;
-  }
-  if (failures.length > 0) {
-    output.failures = failures;
-  }
-  if (skipped.length > 0) {
-    output.skipped = skipped;
-  }
-  return output;
+  // A plan's `validPath` is the resolved absolute path, so a requested relative
+  // path will not find itself in the map by name — fall back through the plan.
+  const planByRequested = new Map(plans.map((p) => [p.inputPath, p.validPath]));
+  const results: DeletePerPathResult[] = paths.map((requested) => {
+    const resolved = planByRequested.get(requested);
+    const entry =
+      byPath.get(requested) ?? (resolved !== undefined ? byPath.get(resolved) : undefined);
+    return (
+      entry ?? {
+        path: requested,
+        error: { code: ErrorCode.UNKNOWN, message: 'Unknown delete failure' },
+      }
+    );
+  });
+
+  const failed = results.filter((r) => r.error !== undefined).length;
+  return {
+    results,
+    summary: { total: results.length, succeeded: results.length - failed, failed },
+  };
 }
 
 export const DELETE_FILE = defineTool({
@@ -362,13 +411,15 @@ export const DELETE_FILE = defineTool({
   title: 'Delete File',
   description:
     'Permanently delete one or more files, directories, or symlinks (max 1000 per call). This action is irreversible. ' +
+    'Pass paths: [...] — there is no single-path form. ' +
     'Non-empty directories require recursive=true and additionally prompt the user to confirm each one, ' +
     'so the call returns without deleting anything until that confirmation comes back; ' +
     'a client that cannot prompt gets an error naming the alternative. ' +
     'Workspace root directories cannot be deleted.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,
-  // Returns path XOR paths depending on how many the caller passed.
+  // results[].value XOR results[].error, and `deleted: false` means the user
+  // chose Skip rather than a failure — not inferable from the description.
   publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
@@ -390,15 +441,26 @@ export const DELETE_FILE = defineTool({
     // input_required is a return value, not a completed call: surface it
     // verbatim so the executor short-circuits before building a CallToolResult.
     if (isInputRequiredResult(structured)) return structured;
-    const deleted = structured.paths ?? (structured.path ? [structured.path] : []);
-    const failCount = structured.failures?.length ?? 0;
-    const delCount = deleted.length;
-    const failSuffix =
-      failCount > 0 ? `, ${String(failCount)} failure${failCount === 1 ? '' : 's'}` : '';
-    const summary =
-      delCount > 0
-        ? `delete: deleted ${delCount === 1 ? (deleted[0] ?? '') : `${String(delCount)} paths`}${failSuffix}`
-        : `delete: ${String(failCount)} failure${failCount === 1 ? '' : 's'}`;
-    return { structured, text: summary };
+    // Name every path and its outcome. The old text said "deleted 2 paths"
+    // without saying which two, so a partial failure was unreadable without
+    // parsing the structured half.
+    const { failed, total } = structured.summary;
+    // A lone failure carries its reason in the text. "delete: . FAILED (0/1 ok)"
+    // made the model re-read structuredContent to learn it was ACCESS_DENIED;
+    // with one path there is no ambiguity about which message applies.
+    if (total === 1 && failed === 1) {
+      const only = structured.results[0];
+      return {
+        structured,
+        text: `delete: ${only?.path ?? ''} FAILED — ${only?.error?.message ?? 'unknown error'}`,
+      };
+    }
+    const tokens = structured.results.map((r) => {
+      const label = pathLabel(r.path);
+      if (r.error) return `${label} FAILED`;
+      return r.value?.deleted ? label : `${label} SKIPPED`;
+    });
+    const ratio = failed > 0 ? ` (${String(total - failed)}/${String(total)} ok)` : '';
+    return { structured, text: `delete: ${joinRoster(tokens)}${ratio}` };
   },
 });

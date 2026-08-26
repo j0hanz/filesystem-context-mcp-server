@@ -2,7 +2,6 @@ import { McpServer, ProtocolErrorCode, ResourceNotFoundError } from '@modelconte
 import type { ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -112,10 +111,9 @@ describe('MCP Resources', () => {
   });
 
   describe('filesystem-mcp://result/{id} (TC-FUNC-058–060)', () => {
-    it('TC-FUNC-058: Store a text entry in ResourceStore and verify text, hash, mimeType', () => {
+    it('TC-FUNC-058: Store a text entry in ResourceStore and verify text, mimeType', () => {
       const store = new ResourceStore();
       const content = 'Sample calculation result content\nLine 2';
-      const expectedHash = createHash('sha256').update(content).digest('hex');
 
       const entry = store.putText({
         name: 'test_calc',
@@ -127,12 +125,11 @@ describe('MCP Resources', () => {
       assert.strictEqual(entry.name, 'test_calc');
       assert.strictEqual(entry.mimeType, 'text/plain');
       assert.strictEqual(entry.text, content);
-      assert.strictEqual(entry.hash, expectedHash);
 
       // Retrieve via getEntry
       const retrievedEntry = store.getEntry(entry.uri);
       assert.strictEqual(retrievedEntry.uri, entry.uri);
-      assert.strictEqual(retrievedEntry.hash, expectedHash);
+      assert.strictEqual(retrievedEntry.text, content);
     });
 
     it('TC-FUNC-059: Read cached result via resource contract', async () => {

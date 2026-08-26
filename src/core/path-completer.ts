@@ -27,33 +27,6 @@ interface CacheEntry {
 // touch no state, so they read as plain functions rather than a class used as
 // a namespace. PathCompleter keeps only the cache and the path guard.
 
-function buildCacheKey(
-  argumentName: string,
-  value: string,
-  contextArguments?: Record<string, string>,
-): string {
-  const base = `${argumentName.toLowerCase()}:${value}`;
-  if (!contextArguments) return base;
-  const keys = Object.keys(contextArguments);
-  if (keys.length === 0) return base;
-  return `${base}:${JSON.stringify(contextArguments)}`;
-}
-
-function chooseContextKeys(argumentName: string): readonly string[] {
-  const normalized = argumentName.toLowerCase();
-  if (normalized === 'destination') return ['source', 'path', 'cwd', 'root'];
-  if (
-    normalized === 'path' ||
-    normalized === 'source' ||
-    normalized === 'original' ||
-    normalized === 'modified' ||
-    normalized === 'file'
-  ) {
-    return ['path', 'cwd', 'root'];
-  }
-  return ['path', 'source', 'cwd', 'root'];
-}
-
 function hasTrailingSeparator(value: string): boolean {
   return value.length > 0 && isSlash(value.charCodeAt(value.length - 1));
 }
@@ -84,14 +57,6 @@ function parseNamedRootInput(value: string): { rootName: string; remainder: stri
 function findAllowedRootByName(rootName: string, allowed: readonly string[]): string | undefined {
   const normalizedRootName = rootName.toLowerCase();
   return allowed.find((candidate) => basename(candidate).toLowerCase() === normalizedRootName);
-}
-
-function resolveNamedRootPath(value: string, allowed: readonly string[]): string | undefined {
-  const parsed = parseNamedRootInput(value);
-  if (!parsed) return undefined;
-  const root = findAllowedRootByName(parsed.rootName, allowed);
-  if (!root) return undefined;
-  return normalizePath(resolve(root, parsed.remainder));
 }
 
 function resolveNamedRootContext(
@@ -125,53 +90,6 @@ async function isAllowedCompletionDirectory(
     }
     return false;
   }
-}
-
-async function toAllowedContextDirectory(
-  resolved: string,
-  allowed: readonly string[],
-): Promise<string | undefined> {
-  const parent = dirname(resolved);
-  const [resolvedOk, parentOk] = await Promise.all([
-    isAllowedCompletionDirectory(resolved, allowed),
-    isAllowedCompletionDirectory(parent, allowed),
-  ]);
-  if (resolvedOk) return resolved;
-  if (parentOk) return parent;
-  return undefined;
-}
-
-function resolveContextCandidatePath(
-  candidate: string,
-  allowed: readonly string[],
-): string | undefined {
-  if (isAbsolute(candidate)) return normalizePath(candidate);
-  if (allowed.length === 1) {
-    const base = allowed[0];
-    if (!base) return undefined;
-    return normalizePath(resolve(base, candidate));
-  }
-  return resolveNamedRootPath(candidate, allowed);
-}
-
-async function resolveContextBaseDirectory(
-  argumentName: string,
-  contextArguments: Record<string, string> | undefined,
-  allowed: readonly string[],
-): Promise<string | undefined> {
-  if (!contextArguments || Object.keys(contextArguments).length === 0) {
-    return undefined;
-  }
-  const keys = chooseContextKeys(argumentName);
-  for (const key of keys) {
-    const candidate = contextArguments[key];
-    if (!candidate || candidate.trim().length === 0) continue;
-    const resolved = resolveContextCandidatePath(candidate, allowed);
-    if (!resolved) continue;
-    const baseDirectory = await toAllowedContextDirectory(resolved, allowed);
-    if (baseDirectory) return baseDirectory;
-  }
-  return undefined;
 }
 
 function withDirectorySeparator(value: string): string {
@@ -280,7 +198,6 @@ async function findMatchesInDirectory(
 function getSearchContext(
   currentValue: string,
   allowed: readonly string[],
-  contextBase?: string,
 ): { searchDir: string; prefix: string } | undefined {
   const trailingSeparator = hasTrailingSeparator(currentValue);
   if (isAbsolute(currentValue)) {
@@ -288,10 +205,6 @@ function getSearchContext(
   }
   const namedRootContext = resolveNamedRootContext(currentValue, allowed);
   if (namedRootContext) return namedRootContext;
-  if (contextBase) {
-    if (currentValue.length === 0) return { searchDir: contextBase, prefix: '' };
-    return resolveFromBase(contextBase, currentValue, trailingSeparator);
-  }
   if (allowed.length === 1) {
     const base = allowed[0];
     if (base) return resolveFromBase(base, currentValue, trailingSeparator);
@@ -309,21 +222,16 @@ export class PathCompleter {
     this.pathGuard = pathGuard;
   }
 
-  async suggest(
-    value: string,
-    argumentName = '',
-    contextArguments?: Record<string, string>,
-  ): Promise<string[]> {
-    const cacheKey = buildCacheKey(argumentName, value, contextArguments);
+  async suggest(value: string): Promise<string[]> {
     const now = Date.now();
-    const cacheEntry = this.cache.get(cacheKey);
+    const cacheEntry = this.cache.get(value);
 
     if (cacheEntry && now - cacheEntry.ms < COMPLETION_RATE_LIMIT_MS) {
       return cacheEntry.result;
     }
 
-    const results = await this.completePath(value, argumentName, contextArguments);
-    this.setCacheValue(cacheKey, { ms: now, result: results });
+    const results = await this.completePath(value);
+    this.setCacheValue(value, { ms: now, result: results });
     return results;
   }
 
@@ -334,25 +242,15 @@ export class PathCompleter {
     this.cache.set(key, entry);
   }
 
-  private async completePath(
-    value: string,
-    argumentName: string,
-    contextArguments?: Record<string, string>,
-  ): Promise<string[]> {
+  private async completePath(value: string): Promise<string[]> {
     const allowed = this.pathGuard.getAllowedDirectories();
 
     try {
-      const contextBase = await resolveContextBaseDirectory(
-        argumentName,
-        contextArguments,
-        allowed,
-      );
-
-      if (!value && !contextBase) {
+      if (!value) {
         return allowed.slice(0, MAX_COMPLETION_ITEMS);
       }
 
-      const context = getSearchContext(value, allowed, contextBase);
+      const context = getSearchContext(value, allowed);
       if (!context) {
         return findRootPrefixMatches(value, allowed).slice(0, MAX_COMPLETION_ITEMS);
       }

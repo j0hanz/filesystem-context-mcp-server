@@ -6,7 +6,7 @@ import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { formatBytes } from '../core/fmt.js';
+import { formatBytes, joinRoster } from '../core/fmt.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { countLines } from '../core/read.js';
 import {
@@ -74,7 +74,11 @@ function buildSummary(results: readonly CreateFileResult[], failCount: number): 
       ].join(' \u00b7 ');
     }
   }
-  const parts = [`create: ${String(results.length)} file${results.length === 1 ? '' : 's'}`];
+  // Name what was written. "create: 3 files" made the caller open
+  // structuredContent to learn which three \u2014 every other write tool answers
+  // with its roster.
+  const names = joinRoster(results.map((r) => basename(r.path)));
+  const parts = [`create: ${names || 'nothing'}`];
   if (failCount > 0) parts.push(`${String(failCount)} failed`);
   return parts.join(' \u00b7 ');
 }
@@ -84,6 +88,7 @@ export const CREATE = defineTool({
   title: 'Create Files',
   description:
     'Create one or more files (max 100), writing or overwriting content and creating parent directories as needed. ' +
+    'Pass files: [{ path, content }] — there is no single-path form. ' +
     'Silently overwrites existing files — read first if you need to preserve existing content.',
   input: CreateInputSchema,
   output: CreateOutputSchema,

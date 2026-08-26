@@ -132,6 +132,11 @@ async function handlePatch(
   }
 
   const { linesAdded, linesRemoved } = countAddedRemoved(parsedPatch);
+  // The patched file used to come back whole in the text block, so a one-line
+  // hunk against a 5000-line file returned 5000 lines. Every other write tool
+  // answers with a summary; the result is reachable via `resourceUri` or a
+  // follow-up `read` when the caller actually wants the bytes.
+  const summaryText = `patch: ${basename(args.path)} +${String(linesAdded)} -${String(linesRemoved)}`;
 
   if (args.dryRun) {
     const meta = buildPatchMeta(validPath, patched, ctx.resourceStore);
@@ -148,6 +153,8 @@ async function handlePatch(
         linesRemoved,
         diff: args.diff,
       },
+      // A dry run exists to be previewed, so it keeps returning the patched
+      // text; only the write path summarizes, where the bytes are on disk.
       text: patched,
       ...(meta.link !== undefined ? { resources: [meta.link] } : {}),
     };
@@ -173,7 +180,7 @@ async function handlePatch(
       linesAdded,
       linesRemoved,
     },
-    text: patched,
+    text: summaryText,
     ...(meta.link !== undefined ? { resources: [meta.link] } : {}),
   };
 }
@@ -182,7 +189,7 @@ export const PATCH = defineTool({
   name: 'patch',
   title: 'Patch',
   description:
-    'Apply a single-file unified diff to one file and write the result. ' +
+    'Apply a single-file unified diff to one file and write the result. Pass { path, diff }. ' +
     'Use after inspecting a diff tool dry-run: pass the diff blob directly instead of re-expressing it as line edits. ' +
     'Rejects multi-file diffs and diffs whose hunk context does not match the file. ' +
     'Set dryRun=true to preview the result without writing.',

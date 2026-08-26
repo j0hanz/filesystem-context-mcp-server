@@ -13,6 +13,7 @@ import {
   Problem,
   rethrowIfAborted,
 } from '../core/errors.js';
+import { joinRoster, pathLabel } from '../core/fmt.js';
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { readAcceptedChoice } from '../core/input-required.js';
@@ -320,16 +321,25 @@ function buildSummary(
   verb: 'move' | 'copy',
   results: readonly MoveItemResult[],
   failures: readonly MoveFailureItem[],
+  skipped: readonly string[] = [],
 ): string {
   const successCount = results.length;
   const failCount = failures.length;
-  if (failCount === 0 && successCount === 1) {
+  if (failCount === 0 && skipped.length === 0 && successCount === 1) {
     const result = results[0];
     if (result) {
-      return `${verb}: ${basename(result.from)} → ${basename(result.to)}`;
+      return `${verb}: ${pathLabel(result.from)} → ${pathLabel(result.to)}`;
     }
   }
-  const parts = [`${verb}: ${String(successCount)} item${successCount === 1 ? '' : 's'}`];
+  // Name each pair. "move: 2 items" left the caller to open structuredContent
+  // to learn which two, and a partial failure was unreadable without it.
+  // Skipped destinations are an outcome the user chose, not a failure — name
+  // them, or an all-skipped call reads as "copy: nothing".
+  const tokens = [
+    ...results.map((r) => `${pathLabel(r.from)} → ${pathLabel(r.to)}`),
+    ...skipped.map((dest) => `${pathLabel(dest)} SKIPPED`),
+  ];
+  const parts = [`${verb}: ${joinRoster(tokens) || 'nothing'}`];
   if (failCount > 0) parts.push(`${String(failCount)} failed`);
   return parts.join(' · ');
 }
@@ -415,6 +425,7 @@ export const MOVE = defineTool({
   title: 'Move or Copy Files',
   description:
     'Move, rename, or copy files and directories to explicit destination paths (max 100 operations per call). ' +
+    'Pass moves: [{ source, destination }] — there is no single-pair form. ' +
     'Parent directories are created automatically. Set copy=true to copy instead of move (sources are kept). ' +
     'An existing destination prompts the user to confirm the overwrite, so the call returns without moving ' +
     'anything until that confirmation comes back; copy=true with overwrite=true skips the prompt, move has no ' +
@@ -447,7 +458,12 @@ export const MOVE = defineTool({
     if (isInputRequiredResult(output)) return output;
     return {
       structured: output,
-      text: buildSummary(args.copy ? 'copy' : 'move', output.moves, output.failures ?? []),
+      text: buildSummary(
+        args.copy ? 'copy' : 'move',
+        output.moves,
+        output.failures ?? [],
+        output.skipped ?? [],
+      ),
     };
   },
 });

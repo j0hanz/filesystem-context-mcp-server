@@ -249,6 +249,11 @@ export const GET_FILE_INFO = defineTool({
       .map((r) => {
         if (r.value) {
           const { name, type, size } = r.value;
+          // A directory's own inode size says nothing about what is inside it
+          // (0 on Windows, 4096 on ext4), and "directory, 0 B" reads as empty.
+          // Use `list` for contents; report the byte size only where it means
+          // something.
+          if (type === 'directory') return `${name}: directory`;
           return `${name}: ${type}, ${formatBytes(size)}`;
         }
         return `${r.path}: ${r.error?.message ?? 'error'}`;

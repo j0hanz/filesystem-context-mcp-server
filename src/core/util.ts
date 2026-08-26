@@ -2,7 +2,6 @@ import { availableParallelism } from 'node:os';
 
 import { cli } from './config.js';
 import { Logger } from './observability.js';
-import { parseTrueEnvFlag } from './primitives.js';
 
 export const KIB = 1024;
 export const MIB = 1024 * KIB;
@@ -73,10 +72,6 @@ export function splitCsvList(value: string | undefined): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
-}
-
-export function getInitTimeoutClose(): boolean {
-  return parseTrueEnvFlag(process.env['FS_INIT_TIMEOUT_CLOSE']);
 }
 
 export const PARALLEL_CONCURRENCY = Math.min(Math.max(availableParallelism(), 4), 32);

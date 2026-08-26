@@ -1,8 +1,11 @@
+import { stat } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
+
 import * as z from 'zod/v4';
 
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
-import { ErrorCode } from '../core/errors.js';
+import { ErrorCode, FsError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
@@ -84,7 +87,7 @@ function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewS
 
 const GrepInputSchema = z.strictObject({
   path: OptionalPath.describe(
-    'File to search, or directory to search under (default: the whole first allowed root)',
+    'File to search, or directory to search under (default: the whole first allowed root). Naming a file searches that file alone: pattern is ignored and hidden/ignored filtering does not apply.',
   ),
   pattern: SafeGlobPattern.optional().describe(
     'Glob to restrict search to specific file types (e.g. **/*.ts); default: all text files',
@@ -320,6 +323,37 @@ function finalizeSearchOutput(
   return { structured: fullStructured };
 }
 
+/**
+ * `path` is documented as "file to search, or directory to search under", but
+ * the scan itself only walks directories. A file path is therefore rewritten
+ * into the scan it means: its parent as the base, its own name as the glob.
+ * Naming a file is an explicit request for that file, so hidden/ignored
+ * filtering is lifted for it — otherwise `search_text` on a path the caller can
+ * see returned nothing.
+ */
+async function resolveSearchScope(
+  args: SearchInput,
+  ctx: ToolCtx,
+): Promise<{ basePath: string; args: SearchInput }> {
+  const requested = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
+  // One resolution, one stat: validateExistingDirectory would redo both.
+  const resolved = await ctx.fs.pathGuard.validateExistingPath(requested);
+  const stats = await stat(resolved);
+  if (!stats.isFile()) {
+    if (!stats.isDirectory()) {
+      throw new FsError(ErrorCode.NOT_DIRECTORY, 'Not a directory', requested);
+    }
+    return { basePath: resolved, args };
+  }
+  return {
+    basePath: dirname(resolved),
+    // ponytail: the name goes through as a glob, so a file whose name contains
+    // glob metacharacters (`[id].ts`) matches as a pattern rather than
+    // literally. Escape it here if that ever bites.
+    args: { ...args, pattern: basename(resolved), includeHidden: true, includeIgnored: true },
+  };
+}
+
 async function handleSearchContent(
   args: SearchInput,
   ctx: ToolCtx,
@@ -327,20 +361,18 @@ async function handleSearchContent(
   structured: SearchOutput;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
-  const basePath = await ctx.fs.pathGuard.validateExistingDirectory(
-    ctx.fs.pathGuard.resolvePathOrRoot(args.path),
-  );
-  const regexMatcher = createSearchMatcher(args);
+  const { basePath, args: scoped } = await resolveSearchScope(args, ctx);
+  const regexMatcher = createSearchMatcher(scoped);
 
   const { offset: cursorOffset, fetchMax } = openPage({
-    cursor: args.cursor,
+    cursor: scoped.cursor,
     max: MAX_SEARCH_RESULTS,
   });
 
   const result = await searchContent(
     basePath,
-    args.searchPattern,
-    buildSearchContentOptions({ ...args, maxResults: fetchMax }, ctx.signal),
+    scoped.searchPattern,
+    buildSearchContentOptions({ ...scoped, maxResults: fetchMax }, ctx.signal),
     ctx.fs.pathGuard,
   );
 
@@ -348,7 +380,7 @@ async function handleSearchContent(
   let matchPayloads: SearchMatchPayload[];
   let nextCursor: string | undefined;
   try {
-    ({ matchPayloads, nextCursor } = getPagedPayloads(result, args, regexMatcher, cursorOffset));
+    ({ matchPayloads, nextCursor } = getPagedPayloads(result, scoped, regexMatcher, cursorOffset));
   } finally {
     freeRegex(regexMatcher);
   }

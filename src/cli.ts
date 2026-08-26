@@ -231,7 +231,6 @@ export const ENV_HELP: HelpRow[] = [
     flags: 'FS_INIT_HANDSHAKE_TIMEOUT_MS',
     desc: 'Init handshake timeout in ms (default 30000, 1000–300000)',
   },
-  { flags: 'FS_INIT_TIMEOUT_CLOSE', desc: 'Truthy value closes the server on handshake timeout' },
   {
     flags: 'MAX_READ_MANY_TOTAL_SIZE',
     desc: 'Max total bytes across one batch read (default 524288, 10240–104857600)',

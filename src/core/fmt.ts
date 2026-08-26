@@ -1,10 +1,7 @@
+import { basename } from 'node:path';
 import { stripVTControlCharacters, styleText } from 'node:util';
 
 import { GIB, KIB, MIB } from './util.js';
-
-const PLUS_PATTERN = /\+(\d+)/g;
-const MINUS_PATTERN = /-(\d+)/g;
-const MS_PER_SECOND = 1000;
 
 export interface ProgressCtx {
   label: string;
@@ -14,7 +11,6 @@ export interface ProgressCtx {
   total?: number;
   detail?: string;
   error?: string;
-  durationMs?: number;
 }
 
 export type Phase = 'start' | 'tick' | 'done' | 'fail';
@@ -61,37 +57,6 @@ export function plainMessage(phase: Phase, ctx: ProgressCtx): string {
   return body ? `${ctx.label}: ${body}` : `${ctx.label}:`;
 }
 
-const SYMBOL_ANSI = {
-  start: styleText(['cyan', 'dim'], '→'),
-  tick: styleText('gray', '·'),
-  done: styleText('green', '✓'),
-  fail: styleText('red', '✗'),
-} satisfies Record<Phase, string>;
-
-function colorizeStats(text: string): string {
-  return text
-    .replace(PLUS_PATTERN, styleText('green', '+$1'))
-    .replace(MINUS_PATTERN, styleText('red', '-$1'));
-}
-
-function formatDuration(ms: number): string {
-  return ms < MS_PER_SECOND ? `${Math.round(ms)}ms` : `${(ms / MS_PER_SECOND).toFixed(1)}s`;
-}
-
-export function ansiLine(phase: Phase, ctx: ProgressCtx): string {
-  const body = buildBody(ctx, phase);
-  const label = styleText('bold', `${ctx.label}:`);
-  const content = body ? `${label} ${colorizeStats(body)}` : label;
-
-  if (phase === 'done' || phase === 'fail') {
-    return content;
-  }
-
-  const timing =
-    ctx.durationMs !== undefined ? `  ${styleText('dim', formatDuration(ctx.durationMs))}` : '';
-  return `${SYMBOL_ANSI[phase]}  ${content}${timing}`;
-}
-
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return '0 B';
@@ -110,6 +75,29 @@ export function formatBytes(bytes: number): string {
 
 export function formatCount(count: number, singular: string, plural = `${singular}s`): string {
   return `${String(count)} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * Short label for a path in summary text. `basename` returns '' for a root
+ * (`C:\`, `/`) and for a trailing-slash path, which rendered as a bare
+ * separator in the per-path summaries, so fall back to the full path.
+ */
+export function pathLabel(path: string): string {
+  return basename(path) || path;
+}
+
+/** Names past this point are noise in a summary line; structuredContent holds them all. */
+const MAX_ROSTER_ITEMS = 20;
+
+/**
+ * Join a per-path summary roster, capped. A 1000-path delete would otherwise
+ * name every entry in the text block that `structuredContent` already carries
+ * in full.
+ */
+export function joinRoster(items: readonly string[], separator = ' · '): string {
+  if (items.length <= MAX_ROSTER_ITEMS) return items.join(separator);
+  const shown = items.slice(0, MAX_ROSTER_ITEMS).join(separator);
+  return `${shown}${separator}+${String(items.length - MAX_ROSTER_ITEMS)} more`;
 }
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {

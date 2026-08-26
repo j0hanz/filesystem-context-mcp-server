@@ -20,7 +20,8 @@ const DiffInputSchema = z.strictObject({
 const DiffOutputSchema = z.strictObject({
   a: z.string().describe('Resolved absolute path of the first file'),
   b: z.string().describe('Resolved absolute path of the second file'),
-  diff: z.string().describe('Unified diff of the two files'),
+  // The unified diff itself rides the text content block; `resourceUri` holds
+  // the full copy for a client that wants to fetch it separately.
   linesAdded: NonNegInt.describe('Number of lines added'),
   linesRemoved: NonNegInt.describe('Number of lines removed'),
   resourceUri: z
@@ -81,11 +82,14 @@ async function handleDiff(
     link = result.link;
   }
 
+  // The diff shipped three times: this text block, `structured.diff`, and the
+  // externalized store entry. The text block is the one a model reads, so the
+  // structured copy goes — `resourceUri` still holds the full diff for a client
+  // that wants to fetch it separately.
   return {
     structured: {
       a: validA,
       b: validB,
-      diff: diffText,
       linesAdded,
       linesRemoved,
       ...(resourceUri !== undefined ? { resourceUri } : {}),
@@ -99,7 +103,7 @@ export const DIFF = defineTool({
   name: 'diff',
   title: 'Diff',
   description:
-    'Compare two files and return a unified diff with line counts. ' +
+    'Compare two files and return a unified diff with line counts. Pass the two paths as a and b. ' +
     'Use after an edit dry-run to compare against another file, or to inspect changes between two paths.',
   input: DiffInputSchema,
   output: DiffOutputSchema,

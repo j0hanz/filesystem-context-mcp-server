@@ -332,8 +332,14 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { paths: [file] },
     });
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as { ok?: boolean } | undefined;
-    assert.strictEqual(structured?.ok, true);
+    const structured = result.structuredContent as
+      | {
+          results?: { path?: string; value?: { deleted?: boolean } }[];
+          summary?: { failed?: number };
+        }
+      | undefined;
+    assert.strictEqual(structured?.summary?.failed, 0);
+    assert.strictEqual(structured?.results?.[0]?.value?.deleted, true);
 
     const readRes = await harness.client.callTool({
       name: 'read',
@@ -596,11 +602,15 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const structured = result.structuredContent as {
       linesAdded?: number;
       linesRemoved?: number;
-      diff?: string;
     };
     assert.strictEqual(structured.linesAdded, 1);
     assert.strictEqual(structured.linesRemoved, 1);
-    assert.ok(structured.diff?.includes('-y') && structured.diff?.includes('+Y'));
+    // The diff itself rides the text content block, not structuredContent.
+    const diffText = (result.content as { type: string; text?: string }[])
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('\n');
+    assert.ok(diffText.includes('-y') && diffText.includes('+Y'));
   });
 
   it('TC-FUNC-061: patch applies a unified diff', async () => {
@@ -778,13 +788,16 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       });
       assert.notStrictEqual(result.isError, true);
       const s = result.structuredContent as {
-        ok?: boolean;
-        failures?: { path?: string }[];
-        skipped?: string[];
+        results?: { path?: string; value?: { deleted?: boolean }; error?: unknown }[];
+        summary?: { failed?: number };
       };
-      assert.strictEqual(s.ok, true);
-      assert.ok((s.failures?.length ?? 0) === 0);
-      assert.ok(s.skipped?.some((p) => p.toLowerCase() === dir.toLowerCase()));
+      assert.strictEqual(s.summary?.failed, 0);
+      // Skip is a successful outcome with `deleted: false`, not a failure.
+      assert.ok(
+        s.results?.some(
+          (r) => r.path?.toLowerCase() === dir.toLowerCase() && r.value?.deleted === false,
+        ),
+      );
       await access(dir); // still exists
     } finally {
       await eh.close();
@@ -806,13 +819,12 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       });
       assert.notStrictEqual(result.isError, true);
       const s = result.structuredContent as {
-        ok?: boolean;
-        path?: string;
-        skipped?: string[];
+        results?: { path?: string; value?: { deleted?: boolean } }[];
+        summary?: { failed?: number };
       };
-      assert.strictEqual(s.ok, true);
-      assert.strictEqual(s.path?.toLowerCase(), dir.toLowerCase());
-      assert.strictEqual(s.skipped, undefined);
+      assert.strictEqual(s.summary?.failed, 0);
+      assert.strictEqual(s.results?.[0]?.path?.toLowerCase(), dir.toLowerCase());
+      assert.strictEqual(s.results?.[0]?.value?.deleted, true);
       await assert.rejects(() => access(dir));
     } finally {
       await eh.close();
@@ -1220,8 +1232,13 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
   // 6334 of the full figure (read 2806, edit 2554, delete 974) — the plan's
   // projection put that add-back at ~4000, which is the whole of the gap
   // against its 18500 target.
+  // Raised once since, deliberately: `replace_text` joined the tools that
+  // publish an output schema (+2042) when its result moved to the shared
+  // `{ results, summary }` envelope, whose value-XOR-error union a sample
+  // response cannot convey. `list` was considered and refused — its fields are
+  // plain scalars, so its 1599 chars bought nothing.
   it('TOOL-SURFACE-002: tools/list stays within the session-start budget', async () => {
-    const BUDGET_CHARS = 24_750;
+    const BUDGET_CHARS = 26_800;
     const BUDGET_CHARS_READ_ONLY = 12_000;
 
     const full = await createTestClientPair([tmpDir]);

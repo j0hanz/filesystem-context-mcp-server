@@ -15,24 +15,24 @@ import {
   Problem,
   rethrowIfAborted,
 } from '../core/errors.js';
-import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLink } from '../core/file-uri.js';
 import { truncateProgressPattern } from '../core/fmt.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { DEFAULT_EXCLUDE_PATTERNS, globEntries } from '../core/glob.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import { countLines, readFileBufferWithLimit } from '../core/read.js';
+import { readFileBufferWithLimit } from '../core/read.js';
 import {
   defaultFalseBoolean,
-  FileKind,
   includeHiddenField,
   includeIgnoredField,
   isBlank,
   maxDepthField,
   NonNegInt,
+  OperationSummarySchema,
   OptionalPath,
-  PathFailureSchema,
+  PerFileErrorSchema,
   SafeGlobPattern,
 } from '../core/schema.js';
 import type { Regex } from '../core/search.js';
@@ -97,34 +97,33 @@ const SearchAndReplaceInputSchema = z.strictObject({
   maxDepth: maxDepthField(),
 });
 
+const ReplacePerPathSchema = z.strictObject({
+  path: z.string().describe('File path relative to the search root'),
+  value: z
+    .strictObject({ matches: NonNegInt.describe('Replacements applied in this file') })
+    .optional()
+    .describe('Replacement outcome; present on success'),
+  error: PerFileErrorSchema.optional().describe('Error details; present on failure'),
+});
+
+// The same `{ results, summary }` envelope `read`, `stat`, and `delete` use, so
+// a caller learns one shape for every tool that spans many paths. The former
+// `filesModified` / `failedFiles` counters are `summary.succeeded` / `.failed`,
+// and the old `primaryFile` block is gone — the resource_link content block
+// already points at the first modified file.
 const SearchAndReplaceOutputSchema = z.strictObject({
-  filesModified: NonNegInt.describe('Number of files that had at least one replacement applied'),
-  totalMatches: NonNegInt.describe('Total number of replacements made across all files'),
-  processedFiles: NonNegInt.describe('Total number of files examined'),
-  failedFiles: NonNegInt.optional().describe('Number of files that could not be processed'),
-  failures: z
-    .array(PathFailureSchema)
-    .optional()
-    .describe('Per-file error details for files that could not be processed'),
-  primaryFile: z
-    .strictObject({
-      path: z.string(),
-      size: NonNegInt,
-      lineCount: NonNegInt,
-      mimeType: z.string(),
-      kind: FileKind,
-      resourceUri: z.string(),
-    })
-    .optional()
-    .describe('Metadata for the first modified file including its resource URI'),
   results: z
-    .array(z.strictObject({ path: z.string(), matches: NonNegInt }))
-    .optional()
-    .describe('List of modified files with their replacement counts'),
+    .array(ReplacePerPathSchema)
+    .describe('Per-file results: modified files, then any that could not be processed'),
+  summary: OperationSummarySchema,
+  totalMatches: NonNegInt.describe('Total number of replacements made across all files'),
+  filesScanned: NonNegInt.describe('Total number of files examined'),
   resultsTruncated: z
     .boolean()
     .optional()
-    .describe('True when the results list was cut due to the MAX_CHANGED_FILES cap'),
+    .describe(
+      'True when the results list holds fewer entries than summary.total: the changed-file or failed-file cap was hit. Trust summary over results.length.',
+    ),
   diff: z
     .string()
     .optional()
@@ -146,7 +145,7 @@ const DIFF_APPEND_BUFFER = 1024;
 
 interface Failure {
   path: string;
-  error: NonNullable<z.infer<typeof SearchAndReplaceOutputSchema>['failures']>[number]['error'];
+  error: NonNullable<z.infer<typeof ReplacePerPathSchema>['error']>;
 }
 
 function recordFailure(failures: Failure[], failure: Failure): void {
@@ -501,14 +500,26 @@ function buildSearchAndReplaceStructuredResult(
   summary: ReplaceSummary,
   args: SearchAndReplaceArgs,
 ): SearchAndReplaceOutput {
+  const results = [
+    ...summary.changedFiles.map((f) => ({ path: f.path, value: { matches: f.matches } })),
+    ...summary.failures.map((f) => ({ path: f.path, error: f.error })),
+  ];
   return {
-    filesModified: summary.filesChanged,
+    results,
+    // `failedFiles` counts every failure; `failures` itself is capped at
+    // MAX_FAILURES, so the summary must not be derived from the array length.
+    summary: {
+      total: summary.filesChanged + summary.failedFiles,
+      succeeded: summary.filesChanged,
+      failed: summary.failedFiles,
+    },
     totalMatches: summary.totalMatches,
-    processedFiles: summary.processedFiles,
-    ...(summary.failedFiles > 0 ? { failedFiles: summary.failedFiles } : {}),
-    ...(summary.failures.length > 0 ? { failures: summary.failures } : {}),
-    ...(summary.changedFiles.length > 0 ? { results: summary.changedFiles } : {}),
-    ...(summary.changedFilesTruncated ? { resultsTruncated: true } : {}),
+    filesScanned: summary.processedFiles,
+    // Failures are capped at MAX_FAILURES independently of the changed-file
+    // cap, so either cap can leave `results` shorter than `summary.total`.
+    ...(summary.changedFilesTruncated || summary.failures.length < summary.failedFiles
+      ? { resultsTruncated: true }
+      : {}),
     ...((args.dryRun || args.returnDiff) && summary.diff ? { diff: summary.diff } : {}),
     ...(summary.diffTruncated ? { diffTruncated: true } : {}),
     ...(summary.stoppedReason ? { stoppedReason: summary.stoppedReason } : {}),
@@ -621,23 +632,8 @@ async function handleSearchAndReplace(
       const { content: rawBuffer } = await ctx.fs.readRaw(fullPath, {
         signal: ctx.signal,
       });
-      const content = rawBuffer.toString('utf-8');
-      const mimeInfo = detectMimeFromContent(fullPath, content);
-      const lineCount = countLines(content);
-      const size = rawBuffer.length;
-
-      const fileUri = buildFileResourceUri(fullPath);
-      const link = buildFileResourceLink(fullPath, mimeInfo.mimeType, size);
-
-      structured.primaryFile = {
-        path: primaryFilePath,
-        size,
-        lineCount,
-        mimeType: mimeInfo.mimeType,
-        kind: mimeInfo.kind,
-        resourceUri: fileUri,
-      };
-
+      const mimeInfo = detectMimeFromContent(fullPath, rawBuffer.toString('utf-8'));
+      const link = buildFileResourceLink(fullPath, mimeInfo.mimeType, rawBuffer.length);
       return { structured, link };
     } catch (error) {
       rethrowIfAborted(error);
@@ -663,6 +659,9 @@ export const SEARCH_AND_REPLACE = defineTool({
     'Literal matching by default; set isRegex=true to enable RE2 regex with capture groups ($1, $2).',
   input: SearchAndReplaceInputSchema,
   output: SearchAndReplaceOutputSchema,
+  // results[].value XOR results[].error, and `summary` counts files while
+  // `totalMatches` counts replacements — not inferable from the description.
+  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,
@@ -686,7 +685,8 @@ export const SEARCH_AND_REPLACE = defineTool({
     const summaryText =
       `replace_text: '${truncatedPattern}'${dryLabel}` +
       ` \u00b7 ${String(structured.totalMatches)} match(es)` +
-      ` in ${String(structured.filesModified)} file(s)`;
+      ` in ${String(structured.summary.succeeded)} file(s)` +
+      (structured.summary.failed > 0 ? ` \u00b7 ${String(structured.summary.failed)} failed` : '');
     if (link) {
       return { structured, text: summaryText, resources: [link] };
     }

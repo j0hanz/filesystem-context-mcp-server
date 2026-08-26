@@ -318,6 +318,10 @@ export const LIST = defineTool({
     'When results exceed maxEntries, the full list is stored at resourceUri.',
   input: ListInputSchema,
   output: ListOutputSchema,
+  // Not published: every field is a plainly-named scalar (`entryCount`,
+  // `totalFiles`, `nextCursor`) that one sample response teaches, and the
+  // schema costs 1599 chars of every session start. Publishing is reserved for
+  // the value-XOR-error union shape a sample cannot convey.
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,

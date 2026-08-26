@@ -491,6 +491,12 @@ function formatEditSummary(
   dryRun: boolean,
 ): string {
   const tag = dryRun ? ' [dry run]' : '';
+  // Single-file failure: say why here rather than making the caller read
+  // structuredContent for the one message that can apply.
+  const [only] = results;
+  if (results.length === 1 && only?.error) {
+    return `edit: ${only.path} FAILED — ${only.error.message}${tag}`;
+  }
   const tokens = results.map((r) => {
     if (r.error) return `${basename(r.path)} FAILED`;
     const v = r.value;

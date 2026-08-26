@@ -81,14 +81,13 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
     dependentRequired: { endLine: ['startLine'] },
   });
 
+// File bytes are NOT here: text rides the text content block, image/audio ride
+// a media block. This schema is the metadata a caller cannot recover from
+// those blocks. `readOnePath` carries the bytes internally via
+// `PerPathReadValue` and `run` drops them before the structured half goes out.
 const ReadPerPathValueSchema = z.strictObject({
-  content: z.string().optional().describe('File text content'),
   mimeType: z.string().optional().describe('Detected MIME type (e.g. text/typescript)'),
   kind: FileKind.optional().describe('Broad file kind: text, binary, image, audio, or pdf'),
-  mediaData: z
-    .string()
-    .optional()
-    .describe('Base64-encoded media content for image/audio files (full read only)'),
   resourceUri: z
     .string()
     .optional()
@@ -190,7 +189,16 @@ function buildReadContinuation(result: {
   };
 }
 
-type PerPathReadValue = z.infer<typeof ReadPerPathValueSchema>;
+/**
+ * The published metadata plus the bytes this call read. `content` and
+ * `mediaData` exist only between `readOnePath` and the content blocks `run`
+ * builds from them — they are stripped before the structured half is returned,
+ * which is why they are not in `ReadPerPathValueSchema`.
+ */
+type PerPathReadValue = z.infer<typeof ReadPerPathValueSchema> & {
+  content?: string;
+  mediaData?: string;
+};
 
 interface BatchFileInfo {
   index: number;
@@ -520,8 +528,20 @@ export const READ_FILE = defineTool({
             })
             .join('\n\n');
 
+    // The bytes ship once. `text` above already carries every file's content
+    // verbatim (and image/audio bytes ride the media content block), so
+    // repeating them under `results[].value` doubled both the wire payload and
+    // the model's token cost for every read. The structured half keeps the
+    // metadata a client cannot recover from the text: paths, line counts,
+    // hashes, continuations, resourceUri.
+    const structuredResults = ordered.map((result) => {
+      if ('error' in result) return result;
+      const { content: _content, mediaData: _mediaData, ...value } = result.value;
+      return { ...result, value };
+    });
+
     return {
-      structured: { results: ordered, summary },
+      structured: { results: structuredResults, summary },
       text,
       ...(resources.length > 0 ? { resources } : {}),
     };

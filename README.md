@@ -393,7 +393,6 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `FILESYSTEM_MCP_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                                               |
 | `FS_CONTEXT_MAX_INLINE_MATCHES`           | Max inline content matches per search (default 50, 1–10000).                                                      |
 | `FS_INIT_HANDSHAKE_TIMEOUT_MS`            | Init handshake timeout in ms (default 30000, 1000–300000).                                                        |
-| `FS_INIT_TIMEOUT_CLOSE`                   | Truthy value closes the server on handshake timeout.                                                              |
 | `MAX_READ_MANY_TOTAL_SIZE`                | Max total bytes across read_many (default 524288, 10240–104857600).                                               |
 | `DEFAULT_SEARCH_TIMEOUT`                  | Search timeout in ms (default 5000, 100–60000).                                                                   |
 | `NO_COLOR`                                | Any value disables ANSI color output.                                                                             |
