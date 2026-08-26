@@ -227,7 +227,10 @@ const ListOutputSchema = z.strictObject({
       }),
     )
     .describe('Inline directory entries sorted directories-first then alphabetically by name'),
-  markdown: z.string().describe('ASCII tree representation of the directory structure'),
+  // No `markdown` field: the ASCII tree is the call's text content already, and
+  // carrying it here too doubled every list response for a string the client
+  // has in hand. The stored full-tree resource still holds its own copy — that
+  // one is a *different* (uncapped) tree and is never sent inline.
   entryCount: NonNegInt.describe('Number of entries included in this response'),
   totalEntries: NonNegInt.describe('Total entries found before the maxEntries cap was applied'),
   totalFiles: NonNegInt.describe('Total number of files found'),
@@ -246,7 +249,11 @@ const ListOutputSchema = z.strictObject({
 async function handleList(
   args: z.infer<typeof ListInputSchema>,
   ctx: ToolCtx,
-): Promise<{ structured: z.infer<typeof ListOutputSchema>; link?: ContentBlock }> {
+): Promise<{
+  structured: z.infer<typeof ListOutputSchema>;
+  markdown: string;
+  link?: ContentBlock;
+}> {
   const path = args.path;
   const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
   const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
@@ -291,7 +298,6 @@ async function handleList(
   const output: z.infer<typeof ListOutputSchema> = {
     path: validDir,
     entries: page,
-    markdown,
     entryCount: page.length,
     totalEntries: result.totalEntries,
     totalFiles: result.totalFiles,
@@ -300,7 +306,7 @@ async function handleList(
     ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
 
-  return { structured: output, ...(link ? { link } : {}) };
+  return { structured: output, markdown, ...(link ? { link } : {}) };
 }
 
 export const LIST = defineTool({
@@ -326,10 +332,10 @@ export const LIST = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const { structured, link } = await handleList(args, ctx);
+    const { structured, markdown, link } = await handleList(args, ctx);
     return {
       structured,
-      text: structured.markdown,
+      text: markdown,
       ...(link ? { resources: [link] } : {}),
     };
   },

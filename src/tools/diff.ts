@@ -67,7 +67,9 @@ async function handleDiff(
 
   let resourceUri: string | undefined;
   let link: ReturnType<typeof putJsonResource>['link'] | undefined;
-  if (ctx.resourceStore) {
+  // Identical files: the diff has no hunks, so externalizing it buys the client
+  // a link to nothing and burns a store slot the next real diff wants.
+  if (ctx.resourceStore && linesAdded + linesRemoved > 0) {
     const result = putJsonResource(ctx.resourceStore, 'diff', {
       diff: diffText,
       linesAdded,

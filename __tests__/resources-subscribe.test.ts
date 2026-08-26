@@ -59,4 +59,61 @@ describe('Resource subscriptions round-trip', () => {
 
     assert.strictEqual(received, undefined, 'Should not receive notification after unsubscribe');
   });
+
+  it('a repeated subscribe is one subscription: one notification, released by one unsubscribe', async () => {
+    const filePath = await writeTestFile(tmpDir, 'dup.txt', 'initial');
+    const uri = buildFileResourceUri(filePath);
+    let count = 0;
+
+    pair.client.setNotificationHandler('notifications/resources/updated', () => {
+      count += 1;
+    });
+
+    // Subscribing twice for one URI is the same subscription on the wire. A
+    // per-request notify sink made this fan out twice per change and left a
+    // lease one unsubscribe could not release.
+    await pair.client.subscribeResource({ uri });
+    await pair.client.subscribeResource({ uri });
+
+    await writeFile(filePath, 'changed');
+    const deadline = Date.now() + 2000;
+    while (count === 0 && Date.now() < deadline) {
+      await setTimeout(20);
+    }
+    // Settle past the 50ms debounce so a second sink would have fired by now.
+    await setTimeout(200);
+    assert.strictEqual(count, 1, 'a doubled subscribe must not double the notifications');
+
+    count = 0;
+    await pair.client.unsubscribeResource({ uri });
+    await writeFile(filePath, 'changed-again');
+    await setTimeout(300);
+    assert.strictEqual(count, 0, 'one unsubscribe must end a doubled subscription');
+  });
+
+  it('unsubscribing a URI never subscribed does not drop another holder watcher', async () => {
+    const held = await writeTestFile(tmpDir, 'held.txt', 'initial');
+    const uri = buildFileResourceUri(held);
+    let count = 0;
+
+    pair.client.setNotificationHandler('notifications/resources/updated', () => {
+      count += 1;
+    });
+
+    await pair.client.subscribeResource({ uri });
+    // Over-release: the registry ref-counts by URI, so an unsubscribe for a
+    // lease this connection never took used to decrement someone else's.
+    await pair.client.unsubscribeResource({
+      uri: buildFileResourceUri(join(tmpDir, 'never-subscribed.txt')),
+    });
+
+    await writeFile(held, 'changed');
+    const deadline = Date.now() + 2000;
+    while (count === 0 && Date.now() < deadline) {
+      await setTimeout(20);
+    }
+    assert.strictEqual(count, 1, 'the live subscription must survive an unrelated unsubscribe');
+
+    await pair.client.unsubscribeResource({ uri });
+  });
 });

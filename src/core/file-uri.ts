@@ -16,20 +16,36 @@ export function buildFileResourceUri(validPath: string): string {
   return `filesystem-mcp://file/${encodeURIComponent(posix).replace(/%2F/gi, '/')}`;
 }
 
+/**
+ * The link block for a URI already built by `buildFileResourceUri`. Callers that
+ * hold the URI must use this rather than rebuilding from a path: a path that
+ * differs only in case (the drive letter, on Windows) yields a *different* URI
+ * string, and watchers key on that string — a link and a `resourceUri` that
+ * disagree hand the client two subscriptions for one file.
+ */
+export function buildFileResourceLinkFor(
+  uri: string,
+  name: string,
+  mimeType: string,
+  size: number,
+  annotations: Record<string, unknown> = { audience: ['user', 'assistant'] },
+): ContentBlock {
+  return { type: 'resource_link', uri, name, mimeType, size, annotations };
+}
+
 export function buildFileResourceLink(
   validPath: string,
   mimeType: string,
   size: number,
   annotations: Record<string, unknown> = { audience: ['user', 'assistant'] },
 ): ContentBlock {
-  return {
-    type: 'resource_link',
-    uri: buildFileResourceUri(validPath),
-    name: basename(validPath),
+  return buildFileResourceLinkFor(
+    buildFileResourceUri(validPath),
+    basename(validPath),
     mimeType,
     size,
     annotations,
-  };
+  );
 }
 
 export function extractPath(uri: string): string | undefined {

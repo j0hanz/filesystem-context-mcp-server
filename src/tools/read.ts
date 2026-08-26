@@ -8,7 +8,7 @@ import * as z from 'zod/v4';
 
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode } from '../core/errors.js';
-import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
+import { buildFileResourceLinkFor, buildFileResourceUri } from '../core/file-uri.js';
 import { detectMimeFromContent, detectMimeType } from '../core/mime.js';
 import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import { readFileWithStats } from '../core/read.js';
@@ -492,9 +492,14 @@ export const READ_FILE = defineTool({
         continue;
       }
       if (!v.resourceUri || !v.content) continue;
+      // `result.path` is the path as *requested*; `v.resourceUri` was built from
+      // the *validated* one. Rebuilding from the request would emit a second URI
+      // for the same file whenever the two differ in case — subscribe by one and
+      // unsubscribe by the other and the watcher never goes away.
       resources.push(
-        buildFileResourceLink(
-          result.path,
+        buildFileResourceLinkFor(
+          v.resourceUri,
+          basename(result.path),
           v.mimeType ?? 'application/octet-stream',
           Buffer.byteLength(v.content, 'utf8'),
         ),

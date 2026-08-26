@@ -286,6 +286,14 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
   // destroyed on dispose; the shared modern-leg registry is owned by the host
   // and torn down at server shutdown.
   const ownsRegistry = options.watcherRegistry === undefined;
+  // The URIs this connection holds a `resources/subscribe` lease for. The wire
+  // verb is per-URI and idempotent — a second subscribe is the same
+  // subscription, and one unsubscribe ends it — but the registry ref-counts
+  // leases (the HTTP listen leg needs that). Without this set a double
+  // subscribe took two leases that one unsubscribe could not release, and an
+  // unsubscribe for a URI never subscribed released a lease this connection
+  // never took, dropping a watcher some other holder still wanted.
+  const leasedUris = new Set<string>();
 
   return {
     name: 'filesystem-mcp-file',
@@ -343,11 +351,17 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
 
     async subscribe(uri, notify) {
       if (!options.pathGuard) return;
+      // Already subscribed on this connection: the watcher is live and the sink
+      // is registered, so this is a no-op success rather than a second lease.
+      if (leasedUris.has(uri)) return undefined;
 
       const result = await attachFileWatcherForUri(registry, options.pathGuard, uri, notify, {
         markSubscribe: true,
       });
-      if (result.ok) return undefined;
+      if (result.ok) {
+        leasedUris.add(uri);
+        return undefined;
+      }
 
       if (result.reason === 'bad-uri') {
         throw new ResourceNotFoundError(uri, `Cannot subscribe: not a filesystem URI`);
@@ -371,10 +385,16 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     unsubscribe(uri) {
+      // Only release a lease this connection actually took.
+      if (!leasedUris.delete(uri)) return;
       registry.release(uri);
     },
 
     destroy() {
+      // Release what this connection still holds before the registry goes: on
+      // the shared (modern) registry nothing else would ever end these leases.
+      for (const uri of leasedUris) registry.release(uri);
+      leasedUris.clear();
       if (ownsRegistry) registry.destroy();
     },
   };
@@ -530,6 +550,27 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
     server.server.assertCanSetRequestHandler('resources/subscribe');
     server.server.assertCanSetRequestHandler('resources/unsubscribe');
 
+    // One stable callback for the whole registrar, NOT one per subscribe. The
+    // registry holds these in a Set keyed by identity, so a fresh closure per
+    // request made a second `resources/subscribe` for the same URI register a
+    // second sink: one file change then sent N notifications, and `unsubscribe`
+    // (which only ends a lease) removed none of them. Subscribe is per-URI on
+    // the wire, so the sink must be too — this makes it idempotent.
+    const notifyUpdated = (updatedUri: string): void => {
+      if (deps.notifier) {
+        deps.notifier.resourceUpdated(updatedUri);
+        return;
+      }
+      const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
+      // A failed notify means the connection went away; nothing to recover.
+      void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
+        Logger.debug('resource update not delivered', {
+          uri: updatedUri,
+          error: formatUnknownErrorMessage(err),
+        });
+      });
+    };
+
     server.server.setRequestHandler(
       'resources/subscribe',
       async (req: { params: SubscribeRequestParams }) => {
@@ -548,20 +589,7 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
             foundMatch = true;
             const subscribeResult = await contract.subscribe(
               requestedResource.toString(),
-              (updatedUri) => {
-                if (deps.notifier) {
-                  deps.notifier.resourceUpdated(updatedUri);
-                  return;
-                }
-                const updatePayload: ResourceUpdatedNotificationParams = { uri: updatedUri };
-                // A failed notify means the connection went away; nothing to recover.
-                void server.server.sendResourceUpdated(updatePayload).catch((err: unknown) => {
-                  Logger.debug('resource update not delivered', {
-                    uri: updatedUri,
-                    error: formatUnknownErrorMessage(err),
-                  });
-                });
-              },
+              notifyUpdated,
             );
             if (subscribeResult === false) {
               throw new ProtocolError(

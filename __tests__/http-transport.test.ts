@@ -63,7 +63,11 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
       arguments: { path: join(tmpDir, 'non_existent_http.txt') },
     });
 
-    assert.notStrictEqual(result.isError, true);
+    // A business error stays a tool *result* — a structured per-path summary,
+    // never a JSON-RPC protocol error. It is still a failed call: every path
+    // failed, so `isError` says so rather than handing the client an error
+    // message it would read as file content.
+    assert.strictEqual(result.isError, true);
     const structured = failedSummary(result);
     assert.strictEqual(structured?.summary?.failed, 1);
     assert.strictEqual(structured?.results?.[0]?.error?.code, 'NOT_FOUND');

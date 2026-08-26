@@ -371,6 +371,51 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.ok(block.text?.includes('move me'));
   });
 
+  it("read's resource_link and resourceUri name the same file", async () => {
+    const file = join(tmpDir, 'uri_agreement.txt');
+    await writeFile(file, 'content\n');
+
+    // Request it by a path whose case differs from the resolved one. The link
+    // used to be rebuilt from the *requested* path while resourceUri came from
+    // the validated one, so the two disagreed and each keyed its own watcher.
+    const result = await harness.client.callTool({
+      name: 'read',
+      arguments: { path: file.replace(/^([a-z]):/iu, (_m, d: string) => `${d.toUpperCase()}:`) },
+    });
+    assert.notStrictEqual(result.isError, true);
+
+    const structured = result.structuredContent as {
+      results?: { value?: { resourceUri?: string } }[];
+    };
+    const resourceUri = structured.results?.[0]?.value?.resourceUri;
+    const link = (result.content as { type: string; uri?: string }[]).find(
+      (c) => c.type === 'resource_link',
+    );
+    assert.ok(resourceUri, 'read must expose a resourceUri');
+    assert.strictEqual(link?.uri, resourceUri);
+  });
+
+  it('a call where every path failed is reported as isError', async () => {
+    const result = await harness.client.callTool({
+      name: 'read',
+      arguments: { paths: [join(tmpDir, 'no_such_a.txt'), join(tmpDir, 'no_such_b.txt')] },
+    });
+    assert.strictEqual(result.isError, true, 'no path succeeded, so the call failed');
+    assert.strictEqual(failedSummary(result)?.summary?.failed, 2);
+  });
+
+  it('a partly-failed batch is not isError', async () => {
+    const ok = join(tmpDir, 'partial_ok.txt');
+    await writeFile(ok, 'here\n');
+
+    const result = await harness.client.callTool({
+      name: 'read',
+      arguments: { paths: [ok, join(tmpDir, 'partial_missing.txt')] },
+    });
+    assert.notStrictEqual(result.isError, true, 'one path really was read');
+    assert.strictEqual(failedSummary(result)?.summary?.failed, 1);
+  });
+
   it('TC-FUNC-052: List roots via MCP tool call', async () => {
     const result = await harness.client.callTool({ name: 'list_roots' });
     assert.notStrictEqual(result.isError, true);

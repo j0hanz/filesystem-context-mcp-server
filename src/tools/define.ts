@@ -233,12 +233,27 @@ function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
   return AbortSignal.any([base, AbortSignal.timeout(timeoutMs)]);
 }
 
+/**
+ * A batch (`runOverPaths`) result where every path failed. The call produced no
+ * work at all, so it is a failed call — `isError` must say so. Partial failure
+ * is deliberately NOT an error: the per-path `results` carry which paths failed
+ * and the succeeded ones really were done.
+ */
+function isTotalBatchFailure(structured: unknown): boolean {
+  if (typeof structured !== 'object' || structured === null) return false;
+  const { summary } = structured as { summary?: { total?: number; failed?: number } };
+  return (
+    typeof summary?.total === 'number' && summary.total > 0 && summary.failed === summary.total
+  );
+}
+
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   const text = result.text ?? JSON.stringify(result.structured);
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
   return {
     content,
     structuredContent: result.structured,
+    ...(isTotalBatchFailure(result.structured) ? { isError: true } : {}),
   };
 }
 

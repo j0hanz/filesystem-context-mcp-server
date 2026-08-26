@@ -377,7 +377,8 @@ export const SEARCH_CONTENT = defineTool({
   name: 'search_text',
   title: 'Search Content',
   description:
-    'Search file contents by text or regex (grep-style). Returns matching lines with file path and line number. ' +
+    'Search file contents by text or regex (grep-style). Returns matching lines with file path, ' +
+    '1-indexed line number and 0-indexed column offset. ' +
     'Scope to specific file types with pattern (e.g. **/*.ts). ' +
     'Set includeHidden=true to include dotfiles. Use find_files to search by filename instead.',
   input: GrepInputSchema,

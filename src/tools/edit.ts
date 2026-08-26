@@ -439,12 +439,11 @@ async function handleEditFile(
       });
     }
 
-    const meta = buildEditFileMetadata(
-      editResult.content,
-      validPath,
-      editResult.appliedEdits,
-      ctx.resourceStore,
-    );
+    // Nothing was written, so there is no updated content to point a
+    // resourceUri or a resource_link at — the file on disk is still the one the
+    // caller already has. Same rule the appliedEdits-is-0 case follows: no
+    // write, no link.
+    const meta = buildEditFileMetadata(editResult.content, validPath, 0, ctx.resourceStore);
     return {
       file: buildEditFileValue(validPath, meta, new Date().toISOString(), editResult),
       ...(meta.resourceLink ? { resourceLink: meta.resourceLink } : {}),
