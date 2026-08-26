@@ -66,6 +66,12 @@ export interface ResourceRegistrationOptions {
   notifier?: ServerNotifier;
   /** The protocol era this instance serves; omitted where the caller does not know. */
   era?: 'legacy' | 'modern';
+  /**
+   * Scope for shared-content cache hints. 'private' when the endpoint is
+   * API-key gated, mirroring the list hints in server.ts — a shared cache must
+   * not store an authenticated response body. Defaults to 'public'.
+   */
+  cacheScope?: 'public' | 'private';
 }
 
 type ResourceRegistrarDeps = Omit<ResourceRegistrationOptions, 'pathGuard' | 'readOnly'> & {
@@ -151,7 +157,7 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
     mimeType: 'text/markdown',
     uri: INSTRUCTIONS_URI,
     annotations: { audience: ['assistant'], priority: 0.8 },
-    cacheHint: { cacheScope: 'public', ttlMs: 300_000 },
+    cacheHint: { cacheScope: options.cacheScope ?? 'public', ttlMs: 300_000 },
     read(uri) {
       return {
         contents: [
@@ -185,6 +191,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
   // unsubscribe for a URI never subscribed released a lease this connection
   // never took, dropping a watcher some other holder still wanted.
   const leasedUris = new Set<string>();
+  // Subscribes mid-acquire, keyed by URI. Two concurrent subscribes for the
+  // same URI must share one acquire: both passing the `leasedUris` check
+  // before either finished took two registry leases that the single set entry
+  // could release only once — on the shared modern registry that orphan lease
+  // pinned a watcher until process shutdown.
+  const inflight = new Map<string, Promise<boolean | undefined>>();
 
   return {
     name: 'filesystem-mcp-file',
@@ -193,27 +205,27 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
 
-    list() {
-      // The `filesystem-mcp://file/{+path}` template already covers workspace
-      // files; listing each allowed root as a concrete resource duplicated it
-      // and grew resources/list linearly with roots. `list_roots` owns root
-      // discovery.
-      return { resources: [] };
-    },
+    // No `list`: the template registers with `list: undefined` — readable but
+    // not enumerable. Listing each allowed root as a concrete resource
+    // duplicated the template and grew resources/list linearly with roots;
+    // `list_roots` owns root discovery.
 
-    async read(uri, variables, _ctx: ServerContext) {
+    async read(uri, _variables, _ctx: ServerContext) {
       if (!options.pathGuard) {
         throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
       }
       // Decode via extractPath — the same decoder resources/subscribe uses — so
       // both consumers are symmetric with buildFileResourceUri's encoding. The
       // {+path} template variable arrives still percent-encoded, so validating
-      // it directly would treat "c%3A/proj/a.ts" as a literal relative path.
-      const rawPath = extractPath(uri.href) ?? variables['path'];
-      if (typeof rawPath !== 'string') {
+      // it directly would treat "c%3A/proj/a.ts" as a literal relative path;
+      // no fallback to it here, or the two branches would validate different
+      // strings. extractPath only fails past the template match on undecodable
+      // percent-encoding, which is the caller's malformed URI.
+      const rawPath = extractPath(uri.href);
+      if (rawPath === undefined) {
         throw new ProtocolError(
           ProtocolErrorCode.InvalidParams,
-          'Path variable is required and must be a string',
+          'Malformed file URI: path is not valid percent-encoding',
         );
       }
       await options.pathGuard.validateExistingPath(rawPath);
@@ -234,45 +246,53 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     async complete(variable, value) {
-      if (variable === 'path' && options.pathGuard) {
-        return completer ? completer.suggest(value) : [];
-      }
-      return [];
+      return variable === 'path' && completer ? completer.suggest(value) : [];
     },
 
-    async subscribe(uri, notify) {
-      if (!options.pathGuard) return;
+    subscribe(uri, notify) {
+      const pathGuard = options.pathGuard;
+      if (!pathGuard) return undefined;
       // Already subscribed on this connection: the watcher is live and the sink
       // is registered, so this is a no-op success rather than a second lease.
       if (leasedUris.has(uri)) return undefined;
+      // A subscribe for this URI is mid-acquire: share its outcome instead of
+      // taking a second lease the lease set cannot represent.
+      const pending = inflight.get(uri);
+      if (pending) return pending;
 
-      const result = await registry.acquire(options.pathGuard, uri, notify, {
-        markSubscribe: true,
-      });
-      if (result.ok) {
-        leasedUris.add(uri);
-        return undefined;
-      }
-
-      if (result.reason === 'bad-uri') {
-        throw new ResourceNotFoundError(uri, `Cannot subscribe: not a filesystem URI`);
-      }
-      if (result.reason === 'invalid-path') {
-        const err = result.error;
-        if (isNotFoundish(err)) {
-          throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
+      const acquire = async (): Promise<boolean | undefined> => {
+        const result = await registry.acquire(pathGuard, uri, notify, {
+          markSubscribe: true,
+        });
+        if (result.ok) {
+          leasedUris.add(uri);
+          return undefined;
         }
-        Logger.warn(
-          `Unexpected error validating path for watcher ${uri}: ${formatUnknownErrorMessage(err)}`,
-        );
-        throw err;
-      }
-      // Unsubscribed (or the registry destroyed) mid-await: the caller already
-      // asked for this to stop, so there is nothing to reject.
-      if (result.reason === 'stale') return undefined;
-      // capped / attach-failed: `false` tells the handler to reject, since
-      // undefined would report success with no watcher attached.
-      return false;
+
+        if (result.reason === 'bad-uri') {
+          throw new ResourceNotFoundError(uri, `Cannot subscribe: not a filesystem URI`);
+        }
+        if (result.reason === 'invalid-path') {
+          const err = result.error;
+          if (isNotFoundish(err)) {
+            throw new ResourceNotFoundError(uri, `Cannot subscribe to ${uri}: ${err.message}`);
+          }
+          Logger.warn(
+            `Unexpected error validating path for watcher ${uri}: ${formatUnknownErrorMessage(err)}`,
+          );
+          throw err;
+        }
+        // Unsubscribed (or the registry destroyed) mid-await: the caller already
+        // asked for this to stop, so there is nothing to reject.
+        if (result.reason === 'stale') return undefined;
+        // capped / attach-failed: `false` tells the handler to reject, since
+        // undefined would report success with no watcher attached.
+        return false;
+      };
+
+      const promise = acquire().finally(() => inflight.delete(uri));
+      inflight.set(uri, promise);
+      return promise;
     },
 
     unsubscribe(uri) {
@@ -495,6 +515,9 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
               notifyUpdated,
             );
             if (subscribeResult === false) {
+              // InternalError for want of anything better: ProtocolErrorCode
+              // has no resource-limit member, and the message already names
+              // the actionable cause.
               throw new ProtocolError(
                 ProtocolErrorCode.InternalError,
                 `Subscription rejected: no watcher attached (watcher limit ${MAX_WATCHERS} reached, or fs.watch failed to start).`,
@@ -522,10 +545,16 @@ export function registerResources(deps: ResourceRegistrarDeps): { dispose(): voi
     server.server.setRequestHandler(
       'resources/unsubscribe',
       (req: { params: UnsubscribeRequestParams }) => {
-        const canonical = resourceUrlFromServerUrl(req.params.uri).toString();
+        // Route by URI prefix, mirroring the subscribe handler: a broadcast
+        // to every contract works while only one is subscribable, but hands a
+        // second subscribable contract someone else's URI the day it appears.
+        const requestedResource = resourceUrlFromServerUrl(req.params.uri);
         for (const contract of resourceContracts) {
-          if (contract.unsubscribe) {
-            contract.unsubscribe(canonical);
+          if (!contract.unsubscribe) continue;
+          const configured = contract.uri ?? contract.uriTemplate.split('{')[0];
+          if (!configured) continue;
+          if (checkResourceAllowed({ requestedResource, configuredResource: configured })) {
+            contract.unsubscribe(requestedResource.toString());
           }
         }
         return {};

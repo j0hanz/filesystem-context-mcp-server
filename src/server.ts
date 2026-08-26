@@ -108,7 +108,7 @@ export async function createServer(
     completions: {},
   } satisfies ServerCapabilities;
 
-  const cacheScope = extraDeps?.apiKey ? 'private' : 'public';
+  const cacheScope: 'private' | 'public' = extraDeps?.apiKey ? 'private' : 'public';
   const serverConfig: NonNullable<ConstructorParameters<typeof McpServer>[1]> = {
     capabilities,
     enforceStrictCapabilities: true,
@@ -179,6 +179,7 @@ export async function createServer(
     server,
     pathGuard,
     resourceStore,
+    cacheScope,
     ...(options.readOnly ? { readOnly: true } : {}),
     ...(extraDeps?.watcherRegistry ? { watcherRegistry: extraDeps.watcherRegistry } : {}),
     ...(extraDeps?.notifier ? { notifier: extraDeps.notifier } : {}),
