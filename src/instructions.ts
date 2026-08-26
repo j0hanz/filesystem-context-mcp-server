@@ -35,6 +35,16 @@ function buildToolsOverview(readOnly: boolean): string {
 
 export const INSTRUCTIONS_URI = 'internal://instructions';
 
+/**
+ * The one statement of what this server is and how to approach it. The server's
+ * `instructions`, the `get-help` prompt, and the instructions resource all
+ * describe the same document, and three hand-maintained paraphrases of it drift
+ * against each other and cost the client the same sentence three times.
+ */
+export const INSTRUCTIONS_SUMMARY =
+  'Navigation guide for filesystem-mcp tools and constraints. ' +
+  'Start with: list_roots -> list/find_files -> stat -> read. Never guess paths.';
+
 export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
   const maxFileMb = Math.floor(getMaxTextFileSize() / 1024 / 1024);
   return {

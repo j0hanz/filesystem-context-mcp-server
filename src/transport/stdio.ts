@@ -151,11 +151,20 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
   // too — the watcher stays until the connection ends, bounded by MAX_WATCHERS.
   // Per-subscription release needs the id the unsubscribe contract does not
   // carry (see watcher-registry.ts).
+  //
+  // serveStdio installs its onmessage synchronously and only then starts the
+  // wire; this wrapper is only correct because of that ordering. Assert it
+  // rather than degrade to a silent no-op if a future SDK release changes it.
   const deliver = wire.onmessage;
+  if (!deliver) {
+    throw new Error(
+      'serveStdio did not install a synchronous onmessage handler; the subscriptions/listen watcher gate cannot attach. This is an SDK contract change, not a configuration error.',
+    );
+  }
   let gated = Promise.resolve();
   wire.onmessage = (message) => {
     if (listenSubscriptionUris(message).length === 0) {
-      deliver?.(message);
+      deliver(message);
       return;
     }
     gated = gated
@@ -173,7 +182,7 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
             return;
           }
         }
-        deliver?.(message);
+        deliver(message);
       })
       .catch(async (error: unknown) => {
         const failure =

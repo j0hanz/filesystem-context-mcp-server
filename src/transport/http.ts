@@ -148,10 +148,10 @@ function setupExpressApp(
   app.options('/mcp', corsPreflightHandler(allowedOriginHostnames));
   app.use('/mcp', corsOriginMiddleware(allowedOriginHostnames));
 
-  if (apiKey) {
-    const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', 120, 1, 100_000);
-    app.use('/mcp', createRateLimiter(rpm));
-  }
+  // Unconditional: the spec's rate-limit MUST is not scoped to authenticated
+  // binds. A keyless bind is loopback-only, so the cap is looser, not absent.
+  const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', apiKey ? 120 : 6_000, 1, 100_000);
+  app.use('/mcp', createRateLimiter(rpm));
 
   if (apiKey && allowedHosts.length > 0) {
     const metadataHandler = (req: Request, res: Response): void => {

@@ -28,22 +28,28 @@ import type { ResourceStore } from '../core/store.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
-const EditSpecSchema = z.strictObject({
-  oldText: z
-    .string()
-    .min(1, 'oldText required')
-    .refine((val) => !isBlank(val), {
-      message: 'oldText cannot be empty or whitespace-only',
-    })
-    .describe(
-      'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
-    )
-    .meta({ examples: ['const x = 1;', 'function oldName('] }),
-  newText: z
-    .string()
-    .describe('Replacement text. Use an empty string to delete the matched oldText.')
-    .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
-});
+const EditSpecSchema = z
+  .strictObject({
+    oldText: z
+      .string()
+      .min(1, 'oldText required')
+      .refine((val) => !isBlank(val), {
+        message: 'oldText cannot be empty or whitespace-only',
+      })
+      .describe(
+        'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
+      )
+      .meta({ examples: ['const x = 1;', 'function oldName('] }),
+    newText: z
+      .string()
+      .describe('Replacement text. Use an empty string to delete the matched oldText.')
+      .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
+  })
+  // The one document in this server where a `$ref` pays: this subschema is used
+  // at both `edits` and `files[].edits`, so an `id` hoists it into `$defs` once
+  // instead of inlining ~1.3 kB twice. Shared schemas used once per document
+  // deliberately carry no `id` — there a `$ref` costs more than it saves.
+  .meta({ id: 'EditSpec' });
 
 const MAX_MULTI_FILES = 5;
 const MAX_EDITS_PER_FILE = 100;
@@ -150,7 +156,7 @@ const EditFileOutputSchema = z.strictObject({
   results: z
     .array(EditPerPathSchema)
     .describe('Per-path edit results ordered to match the input paths'),
-  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
+  summary: OperationSummarySchema,
 });
 
 type EditFileValue = z.infer<typeof PerFileResultSchema>;
@@ -514,6 +520,8 @@ export const EDIT = defineTool({
     'For glob-based bulk regex replacement across many files, use replace_text instead.',
   input: EditFileInputSchema,
   output: EditFileOutputSchema,
+  // Same per-path union as read, plus diff, which is present only under dryRun.
+  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,

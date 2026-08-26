@@ -39,7 +39,12 @@ import {
   MAX_WATCHERS,
   type WatcherRegistry,
 } from './core/watcher-registry.js';
-import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from './instructions.js';
+import {
+  buildSectionsRecord,
+  INSTRUCTIONS_SUMMARY,
+  INSTRUCTIONS_URI,
+  renderSections,
+} from './instructions.js';
 
 // ═══════════════════════════════════════════════════════════════
 // shared
@@ -142,7 +147,7 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
   return {
     name: 'filesystem-mcp-instructions',
     title: 'Server Instructions',
-    description: 'Navigation guide for filesystem-mcp tools and constraints.',
+    description: INSTRUCTIONS_SUMMARY,
     mimeType: 'text/markdown',
     uri: INSTRUCTIONS_URI,
     annotations: { audience: ['assistant'], priority: 0.8 },

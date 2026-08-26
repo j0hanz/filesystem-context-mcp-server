@@ -11,7 +11,12 @@ import * as z from 'zod/v4';
 import { formatUnknownErrorMessage, fsErrorCode, hasErrorShape } from './core/errors.js';
 import { Logger } from './core/observability.js';
 import { isBlank, SHELL_METACHAR_RE } from './core/schema.js';
-import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from './instructions.js';
+import {
+  buildSectionsRecord,
+  INSTRUCTIONS_SUMMARY,
+  INSTRUCTIONS_URI,
+  renderSections,
+} from './instructions.js';
 
 // --- Types ---
 
@@ -96,8 +101,7 @@ const GET_HELP: PromptEntry = {
   contract: {
     name: 'get-help',
     title: 'Get Help',
-    description:
-      'Return filesystem-mcp server usage instructions, optionally filtered to a named section.',
+    description: INSTRUCTIONS_SUMMARY,
   },
   register(server, options) {
     const topics = Object.keys(options.sections);

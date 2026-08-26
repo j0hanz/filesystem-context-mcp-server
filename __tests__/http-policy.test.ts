@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { AddressInfo } from 'node:net';
 import { describe, it } from 'node:test';
 
 import type { Request, Response } from 'express';
@@ -19,6 +20,8 @@ import {
   resolveTrustProxySetting,
   validateBearerAuthorization,
 } from '../src/http-policy.js';
+import { startHttpServer } from '../src/transport/http.js';
+import { cleanupTestRoot, createTestRoot } from './helpers.js';
 
 interface MockResponse {
   statusCode?: number;
@@ -678,5 +681,37 @@ describe('HTTP Policy & Security', () => {
       assert.strictEqual(resolveTrustProxySetting(''), undefined);
       assert.strictEqual(resolveTrustProxySetting(undefined), undefined);
     });
+  });
+});
+
+describe('keyless bind rate limiting', () => {
+  // The spec's "rate limit tool invocations" MUST is not scoped to
+  // authenticated binds. A keyless bind is loopback-only, so its cap is looser
+  // than the authenticated 120/min — but it exists.
+  it('TC-SEC-036b: a keyless server still mounts the rate limiter', async () => {
+    const saved = process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'];
+    process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = '2';
+    const dir = await createTestRoot();
+    const httpServer = await startHttpServer(0, { cliAllowedDirs: [dir] }, {});
+    const port = (httpServer.address() as AddressInfo).port;
+    const post = async (): Promise<number> => {
+      const res = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      });
+      await res.text();
+      return res.status;
+    };
+    try {
+      await post();
+      await post();
+      assert.strictEqual(await post(), 429, 'the third request must be rate limited');
+    } finally {
+      await new Promise<void>((resolve) => httpServer.close(resolve));
+      await cleanupTestRoot(dir);
+      if (saved === undefined) Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_RATE_LIMIT_RPM');
+      else process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = saved;
+    }
   });
 });

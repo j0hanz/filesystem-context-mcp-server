@@ -72,16 +72,12 @@ const ReadFileInputSchema = singleOrBatchPathsInput({
   // `singleOrBatchPathsInput` set rather than merging into it — dropping it here
   // would silently un-publish the path/paths rule.
   .meta({
+    // The line-param exclusivity that used to sit here as a five-branch
+    // `not/anyOf` is one sentence in the description instead: validateReadRange
+    // rejects every conflicting combination by name at runtime, so the wire copy
+    // was paying for a second statement of a rule the model reads better in
+    // prose.
     oneOf: [{ required: ['path'] }, { required: ['paths'] }],
-    not: {
-      anyOf: [
-        { required: ['head', 'tail'] },
-        { required: ['head', 'startLine'] },
-        { required: ['head', 'endLine'] },
-        { required: ['tail', 'startLine'] },
-        { required: ['tail', 'endLine'] },
-      ],
-    },
     dependentRequired: { endLine: ['startLine'] },
   });
 
@@ -125,7 +121,7 @@ const ReadPerPathSchema = z.strictObject({
 
 const ReadFileOutputSchema = z.strictObject({
   results: z.array(ReadPerPathSchema).describe('Per-path results ordered to match the input paths'),
-  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
+  summary: OperationSummarySchema,
 });
 
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
@@ -386,9 +382,13 @@ export const READ_FILE = defineTool({
   description:
     'Read one or more text files and return content. ' +
     'Partial reads: head (first N lines), tail (last N lines), startLine/endLine (line range). ' +
-    'Batch mode: pass paths[] instead of path; line params are shared across all files.',
+    'Batch mode: pass paths[] instead of path; line params are shared across all files. ' +
+    'head, tail, and startLine/endLine are mutually exclusive — use exactly one.',
   input: ReadFileInputSchema,
   output: ReadFileOutputSchema,
+  // results[].value XOR results[].error, and value has no required field at all —
+  // not inferable from the description.
+  publishOutputSchema: true,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,

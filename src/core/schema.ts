@@ -137,32 +137,35 @@ export const SafeGlobPattern = z
   .describe('Relative glob pattern under the search root (e.g. "**/*.ts", "src/**/*.js").')
   .meta({ examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'] });
 
+// Only the fields whose key does not already say what they hold carry a
+// description. A `.describe('Name')` on `name` costs every client tokens to
+// learn nothing.
 export const FileInfoSchema = z.strictObject({
-  name: z.string().describe('Name'),
-  path: z.string().describe('Absolute path'),
-  type: FileType.describe('Type'),
-  size: NonNegInt.describe('Size (bytes)'),
+  name: z.string(),
+  path: z.string(),
+  type: FileType,
+  size: NonNegInt,
   tokenEstimate: NonNegInt.optional().describe('Rough token estimate; use to pre-screen read cost'),
-  created: IsoDateTime.describe('Created'),
-  modified: IsoDateTime.describe('Modified'),
-  accessed: IsoDateTime.describe('Accessed'),
-  permissions: z.string().describe('Permissions'),
-  isHidden: z.boolean().describe('Hidden?'),
-  mimeType: z.string().optional().describe('MIME type'),
+  created: IsoDateTime,
+  modified: IsoDateTime,
+  accessed: IsoDateTime,
+  permissions: z.string(),
+  isHidden: z.boolean(),
+  mimeType: z.string().optional(),
   symlinkTarget: z.string().optional().describe('Target (symlink)'),
 });
 
 export const OperationSummarySchema = z.strictObject({
-  total: NonNegInt.describe('Total'),
-  succeeded: NonNegInt.describe('Succeeded'),
-  failed: NonNegInt.describe('Failed'),
+  total: NonNegInt,
+  succeeded: NonNegInt,
+  failed: NonNegInt,
 });
 
 export const PerFileErrorSchema = z.strictObject({
-  code: z.string().describe('Error code'),
-  message: z.string().describe('Error message'),
-  path: z.string().optional().describe('Path involved'),
-  suggestion: z.string().optional().describe('Suggested fix'),
+  code: z.string(),
+  message: z.string(),
+  path: z.string().optional(),
+  suggestion: z.string().optional(),
 });
 
 /** One entry of a tool's `failures[]`: the path that failed and why. */

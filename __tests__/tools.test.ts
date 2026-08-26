@@ -173,11 +173,15 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
           undefined,
           `${tool.name} must not publish a $schema key`,
         );
-        assert.strictEqual(
-          (tool.inputSchema as { $defs?: unknown }).$defs,
-          undefined,
-          `${tool.name} must publish a dereferenced input schema without $defs`,
-        );
+        // `edit` is the deliberate exception: EditSpec is used at two sites in
+        // one document, so it carries an `id` and is hoisted (see below).
+        if (tool.name !== 'edit') {
+          assert.strictEqual(
+            (tool.inputSchema as { $defs?: unknown }).$defs,
+            undefined,
+            `${tool.name} must publish a dereferenced input schema without $defs`,
+          );
+        }
         assert.strictEqual(
           (tool.outputSchema as { $defs?: unknown } | undefined)?.$defs,
           undefined,
@@ -457,6 +461,16 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const listTool = ALL_TOOLS.find((t) => t.name === 'list');
     assert.ok(listTool, 'list tool should be defined');
     assert.strictEqual(listTool.annotations.idempotentHint, true);
+  });
+
+  // The declaration above stays the source of truth in code; the wire copy is
+  // narrowed in defineTool, so the hint that costs every client tokens without
+  // changing what it does never leaves the process.
+  it('TC-FUNC-058b: list does not publish idempotentHint on the wire', async () => {
+    const { tools } = await harness.client.listTools();
+    const listTool = tools.find((t) => t.name === 'list');
+    assert.ok(listTool, 'list must be registered');
+    assert.strictEqual(listTool.annotations?.idempotentHint, undefined);
   });
 
   // A grant widens the allowed roots, and no resource list reads them: the
@@ -1035,7 +1049,15 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       );
     }
 
-    for (const name of ['create', 'edit', 'patch', 'stat']) {
+    // Only the three tools whose result shape is a union still publish an
+    // outputSchema; the rest return a flat object their description names.
+    for (const name of ['create', 'patch', 'stat']) {
+      const tool = tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} must be registered`);
+      assert.strictEqual(tool.outputSchema, undefined, `${name} must not publish an outputSchema`);
+    }
+
+    for (const name of ['edit']) {
       const tool = tools.find((t) => t.name === name);
       assert.ok(tool, `${name} must be registered`);
       const serialized = JSON.stringify(tool.outputSchema);
@@ -1075,14 +1097,25 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const edit = tools.find((t) => t.name === 'edit');
     assert.ok(edit);
     const editInput = JSON.stringify(edit.inputSchema);
-    assert.ok(!editInput.includes('$ref'), 'edit input must be fully dereferenced');
+    // EditSpec is the one subschema with an `id`, so it is hoisted into `$defs`
+    // and referenced from both use sites (edits and files[].edits) rather than
+    // inlined twice.
+    assert.strictEqual(
+      editInput.split('"$ref"').length - 1,
+      2,
+      'edit must reference the hoisted EditSpec at both use sites',
+    );
+    assert.ok(
+      (edit.inputSchema as { $defs?: Record<string, unknown> }).$defs?.['EditSpec'],
+      'edit must publish EditSpec in $defs',
+    );
     // Sentinel is the opening of EditSpecSchema's `oldText` description in
     // src/tools/edit.ts — reword that description and this count must move with
-    // it. EditSpec is inlined at both use sites (edits and files[].edits).
+    // it. Hoisted, it appears once.
     assert.strictEqual(
       editInput.split('Exact literal text to locate').length - 1,
-      2,
-      "EditSpec's oldText description must appear at both inlined use sites",
+      1,
+      "EditSpec's oldText description must appear only in the hoisted $defs entry",
     );
 
     // `oneOf` (not `anyOf`): `{path, paths}` matches two branches and so fails,
@@ -1111,21 +1144,64 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       not?: { anyOf?: { required: string[] }[] };
       dependentRequired?: Record<string, string[]>;
     };
-    assert.deepStrictEqual(
-      readSchema.not?.anyOf,
-      [
-        { required: ['head', 'tail'] },
-        { required: ['head', 'startLine'] },
-        { required: ['head', 'endLine'] },
-        { required: ['tail', 'startLine'] },
-        { required: ['tail', 'endLine'] },
-      ],
-      'read must advertise every conflicting line-param pair',
+    assert.strictEqual(
+      readSchema.not,
+      undefined,
+      'read no longer publishes the line-param exclusivity as a not/anyOf block',
     );
     assert.deepStrictEqual(
       readSchema.dependentRequired,
       { endLine: ['startLine'] },
       'read must advertise that endLine needs startLine',
     );
+
+    // The rule moved off the wire, so it is proven at the layer that enforces
+    // it: validateReadRange rejects the pair by name and that reaches the client
+    // as a tool error.
+    const conflictFile = await writeTestFile(tmpDir, 'line-conflict.txt', 'a\nb\nc');
+    const conflict = await harness.client.callTool({
+      name: 'read',
+      arguments: { path: conflictFile, head: 1, tail: 1 },
+    });
+    assert.strictEqual(conflict.isError, true);
+    assert.match(firstTextBlock(conflict).text, /head|tail/i);
+  });
+
+  // The session-start cost a client pays before its first tool call. Lower this
+  // ceiling when a step in the payload plan removes weight; never raise it
+  // without a recorded reason. Baseline at commit 528760ea: 41410 / 20862.
+  // After the payload trims and the opt-in outputSchema policy: 24246 / 11536,
+  // a 41% cut. The three tools that still publish an output schema account for
+  // 6334 of the full figure (read 2806, edit 2554, delete 974) — the plan's
+  // projection put that add-back at ~4000, which is the whole of the gap
+  // against its 18500 target.
+  it('TOOL-SURFACE-002: tools/list stays within the session-start budget', async () => {
+    const BUDGET_CHARS = 24_750;
+    const BUDGET_CHARS_READ_ONLY = 12_000;
+
+    const full = await createTestClientPair([tmpDir]);
+    try {
+      const { tools } = await full.client.listTools();
+      assert.strictEqual(tools.length, 13, 'tool count changed; update the budget deliberately');
+      const size = JSON.stringify(tools).length;
+      assert.ok(
+        size <= BUDGET_CHARS,
+        `tools/list is ${String(size)} chars, over the ${String(BUDGET_CHARS)} budget`,
+      );
+    } finally {
+      await full.close();
+    }
+
+    const ro = await createTestClientPair([tmpDir], { readOnly: true });
+    try {
+      const { tools } = await ro.client.listTools();
+      const size = JSON.stringify(tools).length;
+      assert.ok(
+        size <= BUDGET_CHARS_READ_ONLY,
+        `read-only tools/list is ${String(size)} chars, over the ${String(BUDGET_CHARS_READ_ONLY)} budget`,
+      );
+    } finally {
+      await ro.close();
+    }
   });
 });

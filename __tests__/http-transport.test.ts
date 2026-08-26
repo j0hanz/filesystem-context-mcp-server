@@ -83,7 +83,7 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
     const discover = httpHarness.client.getDiscoverResult() as
       { ttlMs?: number; cacheScope?: string } | undefined;
     assert.ok(discover, 'a modern connection must retain its discover result');
-    assert.strictEqual(discover.ttlMs, 60_000);
+    assert.strictEqual(discover.ttlMs, 3_600_000);
     assert.strictEqual(discover.cacheScope, 'public');
   });
 });

@@ -36,7 +36,7 @@ const StatOutputSchema = z.strictObject({
   results: z
     .array(StatPerPathSchema)
     .describe('Per-path metadata results ordered to match the input paths'),
-  summary: OperationSummarySchema.describe('Aggregate counts: total, succeeded, failed'),
+  summary: OperationSummarySchema,
   fileCount: NonNegInt.optional().describe('Number of regular files in the results'),
   dirCount: NonNegInt.optional().describe('Number of directories in the results'),
   resourceUri: z

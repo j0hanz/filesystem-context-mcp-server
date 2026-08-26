@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 
-import { StoppedReasonSchema } from '../core/concurrency.js';
+import { SearchStoppedReasonSchema } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
@@ -61,7 +61,12 @@ function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOut
   return {
     ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
     ...(summary.truncated ? { truncated: true } : {}),
-    ...(summary.stoppedReason !== undefined ? { stoppedReason: summary.stoppedReason } : {}),
+    // `maxFiles` is unreachable here — this scan calls only hitMaxResults and
+    // hitAbort — so it is excluded rather than published as a value no response
+    // can carry. The shared tracker type is wider than this one caller.
+    ...(summary.stoppedReason !== undefined && summary.stoppedReason !== 'maxFiles'
+      ? { stoppedReason: summary.stoppedReason }
+      : {}),
     ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
     ...(summary.skippedTooLarge ? { skippedTooLarge: summary.skippedTooLarge } : {}),
   };
@@ -137,7 +142,7 @@ const GrepOutputSchema = z.strictObject({
     .boolean()
     .optional()
     .describe('True when the match list was cut due to maxResults or timeout'),
-  stoppedReason: StoppedReasonSchema.describe(
+  stoppedReason: SearchStoppedReasonSchema.describe(
     'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
   ),
   resourceUri: z

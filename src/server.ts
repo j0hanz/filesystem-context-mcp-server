@@ -13,7 +13,7 @@ import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import { ResourceStore } from './core/store.js';
 import type { WatcherRegistry } from './core/watcher-registry.js';
-import { INSTRUCTIONS_URI } from './instructions.js';
+import { INSTRUCTIONS_SUMMARY, INSTRUCTIONS_URI } from './instructions.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
@@ -113,15 +113,19 @@ export async function createServer(
     capabilities,
     enforceStrictCapabilities: true,
     cacheHints: {
-      'tools/list': { ttlMs: 60_000, cacheScope },
-      'prompts/list': { ttlMs: 60_000, cacheScope },
+      'tools/list': { ttlMs: 3_600_000, cacheScope },
+      'prompts/list': { ttlMs: 3_600_000, cacheScope },
       // Always private, never `cacheScope`: this list enumerates the
       // ResourceStore, so its entries are one caller's externalized tool output
       // — the same entries whose own read hint is `private` (resources.ts). The
-      // other four lists are the same for every caller and follow the key.
+      // other four lists are the same for every caller and follow the key, and
+      // they are built from frozen module-level arrays that cannot change at
+      // runtime, so an hour is honest: a shorter hint only buys the client a
+      // re-fetch of bytes that cannot have differed, at the cost of the prompt
+      // cache stability the spec asks deterministic ordering to preserve.
       'resources/list': { ttlMs: 30_000, cacheScope: 'private' },
-      'resources/templates/list': { ttlMs: 60_000, cacheScope },
-      'server/discover': { ttlMs: 60_000, cacheScope },
+      'resources/templates/list': { ttlMs: 3_600_000, cacheScope },
+      'server/discover': { ttlMs: 3_600_000, cacheScope },
     },
     // Multi-round-trip `requestState` integrity (protocol revision 2026-07-28):
     // the codec verifies the HMAC on every retried round before the handler
@@ -133,8 +137,7 @@ export async function createServer(
   };
 
   serverConfig.instructions =
-    'filesystem-mcp: Secure local filesystem MCP server. ' +
-    'Start with: list_roots -> list/find_files -> stat -> read. Never guess paths. ' +
+    `${INSTRUCTIONS_SUMMARY} ` +
     `For full guidance, read ${INSTRUCTIONS_URI} or run the get-help prompt.`;
 
   const implementation: Implementation = {

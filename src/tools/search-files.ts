@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 
-import { StoppedReasonSchema } from '../core/concurrency.js';
+import { SearchStoppedReasonSchema } from '../core/concurrency.js';
 import { closePage, openPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
@@ -62,7 +62,7 @@ const SearchFilesOutputSchema = z.strictObject({
   skippedInaccessible: NonNegInt.optional().describe(
     'Files skipped due to permission or access errors',
   ),
-  stoppedReason: StoppedReasonSchema.describe(
+  stoppedReason: SearchStoppedReasonSchema.describe(
     'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
   ),
   resourceUri: z
@@ -135,7 +135,10 @@ async function handleSearchFiles(
     ...(result.summary.skippedInaccessible
       ? { skippedInaccessible: result.summary.skippedInaccessible }
       : {}),
-    ...(result.summary.stoppedReason !== undefined
+    // `maxFiles` is unreachable here — this scan calls only hitMaxResults and
+    // hitAbort — so it is excluded rather than published as a value no response
+    // can carry. The shared tracker type is wider than this one caller.
+    ...(result.summary.stoppedReason !== undefined && result.summary.stoppedReason !== 'maxFiles'
       ? { stoppedReason: result.summary.stoppedReason }
       : {}),
     ...(nextCursor !== undefined ? { nextCursor } : {}),

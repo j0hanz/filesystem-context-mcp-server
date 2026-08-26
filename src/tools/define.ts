@@ -122,6 +122,14 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
    * caller-supplied filesystem paths.
    */
   readonly accessPaths?: (args: z.infer<I>) => readonly string[];
+  /**
+   * Publish `output` as the tool's wire `outputSchema`. Off by default: the
+   * spec makes the field optional and it costs more than every other part of
+   * a tool entry combined. Turn it on only where the shape is not inferable —
+   * a discriminated per-path union, or a field that appears under one flag and
+   * not another. The Zod object still validates every result either way.
+   */
+  readonly publishOutputSchema?: boolean;
   readonly run: (
     args: z.infer<I>,
     ctx: ToolCtx,
@@ -464,8 +472,9 @@ function zodJsonSchemaValidator(schema: z.ZodType): jsonSchemaValidator {
  *
  * - `$schema` and `title` carry no information the host uses.
  * - `maximum: Number.MAX_SAFE_INTEGER` is zod's int() artifact, not a bound.
- * - Output schemas additionally drop `examples`: an example value for a field
- *   the server itself fills in teaches the model nothing.
+ * - `examples` is dropped in both directions: on output it describes a field the
+ *   server itself fills in, and on input every description that carried one
+ *   already spells the same example out inline, so the keyword paid twice.
  *
  * Output `description`s are NOT dropped. They were, and the result was a wire
  * contract the model had to guess at: `delete` returns `path` XOR `paths`,
@@ -483,7 +492,7 @@ function toDraft202012(schema: z.ZodType, io: 'input' | 'output'): JsonSchemaTyp
       const node = jsonSchema as Record<string, unknown>;
       delete node['title'];
       if (node['maximum'] === Number.MAX_SAFE_INTEGER) delete node['maximum'];
-      if (io === 'output') delete node['examples'];
+      delete node['examples'];
     },
   }) as Record<string, unknown>;
   delete generated['$schema'];
@@ -499,12 +508,35 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   // Nothing here depends on `deps`, so it is built once per tool definition
   // rather than once per `register` — the HTTP leg registers every tool afresh
   // on each request.
+  // Published annotations are derived, not passed through. `readOnlyHint` is
+  // load-bearing (MUTATING_TOOL_NAMES derives the --read-only gate from it) and
+  // `openWorldHint: false` is a real claim for a filesystem server. The other
+  // two describe behavior a read-only tool cannot have, and restate the default
+  // for a mutating one — 29 tokens per tool for nothing a client acts on.
+  const publishedAnnotations: ToolAnnotations = {
+    readOnlyHint: def.annotations.readOnlyHint,
+    openWorldHint: def.annotations.openWorldHint ?? false,
+    ...(def.annotations.readOnlyHint
+      ? {}
+      : { destructiveHint: def.annotations.destructiveHint ?? true }),
+  };
+
   const toolDefShape = {
     title: def.title,
     description: def.description,
     inputSchema: fromJsonSchema<z.infer<I>>(inputJsonSchema, zodJsonSchemaValidator(def.input)),
-    outputSchema: fromJsonSchema<z.infer<O>>(outputJsonSchema, zodJsonSchemaValidator(def.output)),
-    annotations: def.annotations,
+    // The validator is built either way — results are still checked against the
+    // Zod object — but the schema reaches the wire only where the shape is not
+    // inferable from the description plus the text content.
+    ...(def.publishOutputSchema
+      ? {
+          outputSchema: fromJsonSchema<z.infer<O>>(
+            outputJsonSchema,
+            zodJsonSchemaValidator(def.output),
+          ),
+        }
+      : {}),
+    annotations: publishedAnnotations,
   };
 
   const tool: DefinedTool = {

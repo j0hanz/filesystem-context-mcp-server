@@ -368,6 +368,8 @@ export const DELETE_FILE = defineTool({
     'Workspace root directories cannot be deleted.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,
+  // Returns path XOR paths depending on how many the caller passed.
+  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,
