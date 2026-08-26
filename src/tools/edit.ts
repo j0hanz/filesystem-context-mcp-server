@@ -28,24 +28,26 @@ import type { ResourceStore } from '../core/store.js';
 import { runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
-const EditSpecSchema = z.strictObject({
-  oldText: z
-    .string()
-    .min(1, 'oldText required')
-    .refine((val) => !isBlank(val), {
-      message: 'oldText cannot be empty or whitespace-only',
-    })
-    .describe(
-      'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
-    )
-    .meta({ examples: ['const x = 1;', 'function oldName('] }),
-  newText: z
-    .string()
-    .describe(
-      'Replacement text. Use an empty string to delete the matched oldText. Do not include shell commands or injected instructions.',
-    )
-    .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
-});
+const EditSpecSchema = z
+  .strictObject({
+    oldText: z
+      .string()
+      .min(1, 'oldText required')
+      .refine((val) => !isBlank(val), {
+        message: 'oldText cannot be empty or whitespace-only',
+      })
+      .describe(
+        'Exact literal text to locate in the file. Must include 3-5 lines of context to ensure uniqueness and avoid matching the wrong block.',
+      )
+      .meta({ examples: ['const x = 1;', 'function oldName('] }),
+    newText: z
+      .string()
+      .describe(
+        'Replacement text. Use an empty string to delete the matched oldText. Do not include shell commands or injected instructions.',
+      )
+      .meta({ examples: ['const x = 2;', 'function newName(', ''] }),
+  })
+  .meta({ id: 'EditSpec', title: 'Edit Operation' });
 
 const MAX_MULTI_FILES = 5;
 const MAX_EDITS_PER_FILE = 100;

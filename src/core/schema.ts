@@ -11,6 +11,11 @@ export const IsoDateTime = z.iso.datetime().meta({
   id: 'IsoDateTime',
   title: 'ISO Date-Time',
   description: 'ISO 8601 UTC date-time string (e.g. 2024-01-15T12:00:00.000Z)',
+  // `format: "date-time"` already pins the value; zod's ~330-char calendar
+  // regex is pure wire weight. Runtime validation still runs it — this
+  // suppresses the emitted keyword only. Filtering at the toJSONSchema call
+  // instead would relocate the regex to every `$ref`, not remove it.
+  pattern: undefined,
 });
 
 // pattern (not z.hash('sha256')) so no `format: "sha256_hex"` keyword is emitted;
@@ -401,7 +406,7 @@ export function singleOrBatchPathsInput<
     ...(filesSchema ? { files: filesSchema.optional() } : {}),
   };
 
-  return z.strictObject(shape).superRefine((value, ctx) => {
+  const base = z.strictObject(shape).superRefine((value, ctx) => {
     const hasPath = value['path'] !== undefined;
     const hasPaths = value['paths'] !== undefined;
     // Safety: z.strictObject above rejects unknown keys (including `files` when !triadic) before this runs.
@@ -429,6 +434,15 @@ export function singleOrBatchPathsInput<
         input: value,
       });
     }
+  });
+
+  // Mirror the superRefine above on the wire: exactly one input mode. `{}` and
+  // `path`+`paths` both fail this oneOf, matching the runtime rule. Keep the two
+  // in step — both are keyed off `triadic`.
+  return base.meta({
+    oneOf: triadic
+      ? [{ required: ['path'] }, { required: ['paths'] }, { required: ['files'] }]
+      : [{ required: ['path'] }, { required: ['paths'] }],
   }) as z.ZodObject<SingleOrBatchShape<TExtra, TPerFile>>;
 }
 

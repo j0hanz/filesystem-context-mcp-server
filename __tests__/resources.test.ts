@@ -480,6 +480,13 @@ describe('MCP Resources', () => {
       assert.ok(
         result.resourceTemplates.some((t) => t.uriTemplate === 'filesystem-mcp://file/{+path}'),
       );
+
+      // Every entry the result store writes is JSON (putJsonResource), so the
+      // template must not advertise a type none of its resources have.
+      const resultTemplate = result.resourceTemplates.find(
+        (t) => t.uriTemplate === 'filesystem-mcp://result/{id}',
+      );
+      assert.strictEqual(resultTemplate?.mimeType, 'application/json');
     });
 
     it('client.readResource() reads internal instructions', async () => {

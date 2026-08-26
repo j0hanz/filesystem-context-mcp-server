@@ -982,6 +982,26 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       );
     }
 
+    for (const name of ['create', 'edit', 'patch', 'stat']) {
+      const tool = tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} must be registered`);
+      const defs =
+        (tool.outputSchema as { $defs?: Record<string, { format?: string; pattern?: string }> })
+          .$defs ?? {};
+      const iso = defs['IsoDateTime'];
+      assert.ok(iso, `${name} outputSchema must carry $defs.IsoDateTime`);
+      assert.strictEqual(iso.format, 'date-time');
+      assert.strictEqual(iso.pattern, undefined, `${name} must not emit a date-time pattern`);
+      // Use-site guard: `02-29` is the leap-day branch unique to zod's calendar
+      // regex. Asserting over the whole serialized schema — not just `$defs` —
+      // is what catches a mechanism that relocates the regex to each `$ref`
+      // instead of removing it.
+      assert.ok(
+        !JSON.stringify(tool.outputSchema).includes('02-29'),
+        `${name} must not carry the calendar regex at any use site`,
+      );
+    }
+
     for (const name of ['read', 'stat']) {
       const tool = tools.find((t) => t.name === name);
       assert.ok(tool, `${name} must be registered`);
@@ -995,5 +1015,36 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         `${name} must not advertise a files param it does not accept`,
       );
     }
+
+    const edit = tools.find((t) => t.name === 'edit');
+    assert.ok(edit);
+    const editInput = JSON.stringify(edit.inputSchema);
+    assert.ok(editInput.includes('#/$defs/EditSpec'), 'edit ops must be a $ref');
+    // Sentinel is the opening of EditSpecSchema's `oldText` description in
+    // src/tools/edit.ts — reword that description and this count must move with
+    // it. Once means hoisted into `$defs`; twice means inlined at both use sites.
+    assert.strictEqual(
+      editInput.split('Exact literal text to locate').length - 1,
+      1,
+      "EditSpec's oldText description must appear exactly once, under $defs",
+    );
+
+    // `oneOf` (not `anyOf`): `{path, paths}` matches two branches and so fails,
+    // mirroring the superRefine in singleOrBatchPathsInput. It mirrors that
+    // builder only — `edit` layers a second superRefine (its `edits`/`files`
+    // pairing) that stays runtime-only, so `edit`'s wire schema is deliberately
+    // looser than its runtime gate.
+    const modeBranches = (name: string, keys: string[]) => {
+      const tool = tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} must be registered`);
+      assert.deepStrictEqual(
+        (tool.inputSchema as { oneOf?: unknown }).oneOf,
+        keys.map((k) => ({ required: [k] })),
+        `${name} must advertise its input modes as oneOf`,
+      );
+    };
+    modeBranches('read', ['path', 'paths']);
+    modeBranches('stat', ['path', 'paths']);
+    modeBranches('edit', ['path', 'paths', 'files']);
   });
 });

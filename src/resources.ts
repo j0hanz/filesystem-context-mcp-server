@@ -410,7 +410,7 @@ function createResultResource(options: ResourceRegistrationOptions): ResourceCon
     title: 'Cached Tool Result',
     description:
       'Ephemeral cached tool output. Listed via resources/list; entries expire after the cache TTL.',
-    mimeType: 'text/plain',
+    mimeType: 'application/json',
     uriTemplate: 'filesystem-mcp://result/{id}',
     annotations: { audience: ['assistant'], priority: 0.3 },
     cacheHint: { cacheScope: 'private', ttlMs: 60_000 },
