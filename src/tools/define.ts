@@ -189,32 +189,6 @@ function toToolCtx(
   };
 }
 
-function buildExecutionCtx(
-  ctx: ToolCtx,
-  signal: AbortSignal,
-  onProgress: (p: { current: number; total?: number }) => void,
-): ToolCtx {
-  return {
-    signal,
-    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
-    ...(ctx.authInfo ? { authInfo: ctx.authInfo } : {}),
-    ...(ctx._meta ? { _meta: ctx._meta } : {}),
-    fs: ctx.fs,
-    resourceStore: ctx.resourceStore,
-    ...(ctx.server ? { server: ctx.server } : {}),
-    log: (level: LoggingLevel, data: unknown, logger?: string) => {
-      const msg = typeof data === 'string' ? data : String(data);
-      const prefix = logger ? `[${logger}] ` : '';
-      Logger.emit(level, `${prefix}${msg}`);
-    },
-    ...(ctx.sendNotification ? { sendNotification: ctx.sendNotification } : {}),
-    onProgress,
-    inputResponses: ctx.inputResponses,
-    requestState: ctx.requestState,
-    ...(ctx.clientCapabilities ? { clientCapabilities: ctx.clientCapabilities } : {}),
-  };
-}
-
 function resolveProgressCtx<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
   args: z.infer<I>,
@@ -284,9 +258,18 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
       sinks,
       ...(isTest ? { rateLimitMs: 0 } : {}),
     });
-    this.toolCtx = buildExecutionCtx(ctx, this.signal, (p) => {
-      this.#tick(p);
-    });
+    this.toolCtx = {
+      ...ctx,
+      signal: this.signal,
+      log: (level: LoggingLevel, data: unknown, logger?: string) => {
+        const msg = typeof data === 'string' ? data : String(data);
+        const prefix = logger ? `[${logger}] ` : '';
+        Logger.emit(level, `${prefix}${msg}`);
+      },
+      onProgress: (p) => {
+        this.#tick(p);
+      },
+    };
   }
 
   #tick(p: { current: number; total?: number }): void {
