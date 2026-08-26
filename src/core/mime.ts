@@ -4,7 +4,7 @@ import { extname } from 'node:path';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export const MIME_KINDS = ['text', 'binary', 'image', 'audio', 'pdf'] as const;
-export type MimeKind = (typeof MIME_KINDS)[number];
+type MimeKind = (typeof MIME_KINDS)[number];
 
 export interface MimeInfo {
   mimeType: string;

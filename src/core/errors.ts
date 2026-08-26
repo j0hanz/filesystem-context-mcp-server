@@ -21,7 +21,7 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-export interface PerFileError {
+interface PerFileError {
   readonly code: ErrorCode;
   readonly message: string;
   readonly path?: string;
@@ -129,7 +129,7 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
   [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
 };
 
-export function resolveSuggestion(p: Pick<Problem, 'code' | 'issues'>): string | undefined {
+function resolveSuggestion(p: Pick<Problem, 'code' | 'issues'>): string | undefined {
   for (const issue of p.issues ?? []) {
     const fromRule = issue.params?.['suggestion'];
     if (typeof fromRule === 'string') return fromRule;
@@ -288,7 +288,7 @@ function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
   };
 }
 
-export function zodErrorToProblem(err: z.ZodError): Problem {
+function zodErrorToProblem(err: z.ZodError): Problem {
   const issues = err.issues.map(toProblemIssue);
   const suggestion = resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues });
   return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
@@ -328,7 +328,7 @@ export function hasErrorShape(
   return code === undefined || c === code;
 }
 
-export function classify(error: unknown): Problem {
+function classify(error: unknown): Problem {
   if (error === null || error === undefined) {
     return Problem.unknown('Unknown error');
   }
@@ -357,7 +357,7 @@ export function isNotFoundErrno(error: unknown): error is NodeJS.ErrnoException 
   return isNodeError(error) && error.code === 'ENOENT';
 }
 
-export function isAbortError(error: unknown): boolean {
+function isAbortError(error: unknown): boolean {
   return classify(error).code === ErrorCode.CANCELLED;
 }
 

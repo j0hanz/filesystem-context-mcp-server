@@ -36,15 +36,12 @@ function parseLogLevelEnv(): LoggingLevel {
  * Minimum severity that reaches stderr, from `LOG_LEVEL` / `--log-level`.
  * Evaluated lazily on access.
  */
-export function getLogLevel(): LoggingLevel {
+function getLogLevel(): LoggingLevel {
   return parseLogLevelEnv();
 }
 
 /** True when `level` is at least as severe as the configured minimum. */
-export function isLevelEnabled(
-  level: LoggingLevel,
-  minimum: LoggingLevel = getLogLevel(),
-): boolean {
+function isLevelEnabled(level: LoggingLevel, minimum: LoggingLevel = getLogLevel()): boolean {
   return LEVEL_ORDER.indexOf(level) <= LEVEL_ORDER.indexOf(minimum);
 }
 

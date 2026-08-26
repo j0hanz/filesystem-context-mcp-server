@@ -125,8 +125,6 @@ const ReadFileOutputSchema = z.strictObject({
 
 type ReadFileInput = z.infer<typeof ReadFileInputSchema>;
 
-export { ReadFileInputSchema };
-
 const READ_TOOL_LABEL = 'Read';
 
 interface ReadSpecCommon {

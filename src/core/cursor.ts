@@ -1,6 +1,6 @@
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './errors.js';
 
-export function encodeOffsetCursor(offset: number): string {
+function encodeOffsetCursor(offset: number): string {
   return Buffer.from(JSON.stringify({ offset })).toString('base64url');
 }
 
@@ -52,7 +52,7 @@ export function closePage(params: {
   return offset + pageCount < total ? encodeOffsetCursor(offset + pageCount) : undefined;
 }
 
-export function decodeOffsetCursor(cursor: string): number {
+function decodeOffsetCursor(cursor: string): number {
   try {
     const text = Buffer.from(cursor, 'base64url').toString('utf-8');
     const parsed = JSON.parse(text) as { offset?: unknown };

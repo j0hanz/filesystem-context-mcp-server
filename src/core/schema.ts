@@ -33,11 +33,11 @@ export const PositiveInt = z
   .int({ message: 'Must be integer' })
   .positive({ message: 'Must be > 0' });
 
-export const FILE_TYPES = ENTRY_TYPES;
+const FILE_TYPES = ENTRY_TYPES;
 export type FileType = (typeof FILE_TYPES)[number];
 export const FileType = z.enum(FILE_TYPES);
 
-export const FILE_KINDS = MIME_KINDS;
+const FILE_KINDS = MIME_KINDS;
 export type FileKind = (typeof FILE_KINDS)[number];
 export const FileKind = z.enum(FILE_KINDS);
 

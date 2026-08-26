@@ -17,7 +17,6 @@ import {
   SKIPPABLE_ERRNOS,
   SKIPPABLE_FS_CODES,
 } from './errors.js';
-import { isSafeGlobSyntax } from './glob.js';
 import { Logger } from './observability.js';
 import { findProjectRoot, isUnsafeCwdPath, resolveConfiguredDirs } from './path-discovery.js';
 import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './path-utils.js';
@@ -26,14 +25,14 @@ import type { EntryType } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
 
-export { getReservedDeviceNameForPath, isSafeGlobSyntax, isWindowsDriveRelativePath };
-
-export { IS_WINDOWS, isSlash, toPosixPath, findProjectRoot };
+// Re-exported for path-completer.ts, the one consumer that reaches these
+// through this module rather than through primitives.ts directly.
+export { isSlash, toPosixPath };
 
 // Allowed-directory assembly and the PathGuard that enforces it. The
 // sensitive-file denylist lives in sensitive.ts, and the character-level
 // primitives (IS_WINDOWS, isAlpha, isSlash, toPosixPath) live in
-// primitives.ts — re-exported here so existing call sites stay unchanged.
+// primitives.ts.
 declare const ValidatedPathBrand: unique symbol;
 export type ValidatedPath = string & { readonly [ValidatedPathBrand]: true };
 
@@ -270,7 +269,7 @@ async function expandAllowedDirectories(
   return [...new Set(expanded)];
 }
 
-export async function resolveAllowedDirectoriesState(
+async function resolveAllowedDirectoriesState(
   dirs: readonly string[],
   signal?: AbortSignal,
 ): Promise<AllowedDirectoriesState> {

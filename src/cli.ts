@@ -105,7 +105,7 @@ async function validateDirectoryPath(inputPath: string, allowMissing = false): P
   }
 }
 
-export async function normalizeAndValidateDirs(
+async function normalizeAndValidateDirs(
   paths: readonly string[],
   allowMissing = false,
 ): Promise<string[]> {
@@ -174,7 +174,7 @@ const OPTIONS_HELP: HelpRow[] = [
   },
 ];
 
-export const ENV_HELP: HelpRow[] = [
+const ENV_HELP: HelpRow[] = [
   { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
   { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
   { flags: 'API_KEY', desc: 'HTTP API key' },
@@ -321,7 +321,7 @@ function parsePortOption(raw: unknown): number | undefined {
   return n;
 }
 
-export const CLI_PARSER_CONFIG = {
+const CLI_PARSER_CONFIG = {
   options: {
     'allow-cwd': { type: 'boolean', default: false },
     'read-only': { type: 'boolean', default: false },

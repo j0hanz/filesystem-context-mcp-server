@@ -310,7 +310,7 @@ function expandHiddenGlobstars(patterns: Set<string>, prefix: string, remainder:
   if (addDotFile) patterns.add(`${prefix}**/.${afterGlobstar}`);
 }
 
-export function buildHiddenPatterns(normalizedPattern: string): readonly string[] {
+function buildHiddenPatterns(normalizedPattern: string): readonly string[] {
   const patterns = new Set<string>([normalizedPattern]);
   const { prefix, remainder } = splitPatternPrefix(normalizedPattern);
 

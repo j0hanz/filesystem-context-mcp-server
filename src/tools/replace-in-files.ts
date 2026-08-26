@@ -211,7 +211,7 @@ function expandDollarTokens(
   });
 }
 
-export function createRegexReplacementMatcher(
+function createRegexReplacementMatcher(
   regex: Regex,
   expandReplacement: boolean,
 ): ReplacementMatcher {

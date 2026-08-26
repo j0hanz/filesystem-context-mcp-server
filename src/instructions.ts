@@ -1,5 +1,3 @@
-import type { PromptMessage, ResourceLink } from '@modelcontextprotocol/server';
-
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   getMaxTextFileSize,
@@ -85,15 +83,4 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
 
 export function renderSections(sections: Record<string, string>): string {
   return `\n${Object.values(sections).join('\n\n')}\n`;
-}
-
-export function linkToInstructions(uri: string = INSTRUCTIONS_URI): PromptMessage {
-  const content: ResourceLink = {
-    type: 'resource_link',
-    uri,
-    name: 'filesystem-mcp-instructions',
-    mimeType: 'text/markdown',
-    annotations: { audience: ['assistant'], priority: 0.5 },
-  };
-  return { role: 'user', content };
 }

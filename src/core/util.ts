@@ -35,7 +35,7 @@ export function parseEnvInt(
 }
 
 /** Validate a raw integer setting (env var or CLI override) with a logged fallback. */
-export function parseIntSetting(
+function parseIntSetting(
   name: string,
   value: string | undefined,
   defaultValue: number,
