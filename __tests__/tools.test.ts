@@ -962,4 +962,38 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(structured.matches?.[0]?.line, 2);
     assert.ok(structured.matches?.[0]?.content?.includes('NEEDLE_MARK'));
   });
+
+  it('TOOL-SURFACE-001: published schemas carry no dead keywords or phantom fields', async () => {
+    const { tools } = await harness.client.listTools();
+    // Scoped to input schemas: `suggestion` is a legitimate output property on
+    // PerFileError, but never a schema keyword.
+    const inputSchemas = JSON.stringify(tools.map((t) => t.inputSchema));
+
+    assert.ok(
+      !inputSchemas.includes('suggestion'),
+      'the non-standard suggestion keyword must not reach the wire',
+    );
+
+    for (const tool of tools) {
+      assert.strictEqual(
+        tool.annotations?.title,
+        undefined,
+        `${tool.name} must not duplicate its title into annotations`,
+      );
+    }
+
+    for (const name of ['read', 'stat']) {
+      const tool = tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} must be registered`);
+      const properties = tool.inputSchema.properties ?? {};
+      assert.ok(
+        !Object.keys(properties).includes('files'),
+        `${name} must not declare a files property`,
+      );
+      assert.ok(
+        !JSON.stringify(tool.inputSchema).includes('and files'),
+        `${name} must not advertise a files param it does not accept`,
+      );
+    }
+  });
 });

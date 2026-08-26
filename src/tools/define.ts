@@ -445,7 +445,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   const inputJsonSchema = toDraft202012(def.input, 'input');
   const outputJsonSchema = toDraft202012(def.output, 'output');
 
-  const annotations = { ...def.annotations, title: def.title };
   // Nothing here depends on `deps`, so it is built once per tool definition
   // rather than once per `register` — the HTTP leg registers every tool afresh
   // on each request.
@@ -454,12 +453,12 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     description: def.description,
     inputSchema: fromJsonSchema<z.infer<I>>(inputJsonSchema, zodJsonSchemaValidator(def.input)),
     outputSchema: fromJsonSchema<z.infer<O>>(outputJsonSchema, zodJsonSchemaValidator(def.output)),
-    annotations,
+    annotations: def.annotations,
   };
 
   const tool: DefinedTool = {
     name: def.name,
-    annotations,
+    annotations: def.annotations,
 
     register(deps: ToolDeps): RegisteredTool {
       return deps.server.registerTool(def.name, toolDefShape, createServerToolHandler(def, deps));

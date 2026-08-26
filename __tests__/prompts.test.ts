@@ -60,6 +60,20 @@ describe('MCP Prompts Tests (MCP Client)', () => {
         );
       }
     });
+
+    it('TC-FUNC-067b: no argument description doubles a period', async () => {
+      // pathArg appends its own sentence break, topicArg takes the caller's.
+      // A caller obeying the wrong sibling's contract shows up here as "..".
+      const promptsList = await harness.client.listPrompts();
+      for (const entry of promptsList.prompts) {
+        for (const arg of entry.arguments ?? []) {
+          assert.ok(
+            !/\w\.\.\s/u.test(arg.description ?? ''),
+            `${entry.name}.${arg.name} doubles a period: ${arg.description ?? ''}`,
+          );
+        }
+      }
+    });
   });
 
   describe('Prompt: get-help', () => {

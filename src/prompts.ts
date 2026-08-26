@@ -64,7 +64,12 @@ function pathArg(
 ): ReturnType<typeof completable<z.ZodString>> {
   const completer = new PathCompleter(guard);
   return completable(
-    RequiredPath.describe(`${description}. No "..", shell metacharacters, or blank input.`),
+    // Owns the sentence break: `topicArg` below takes its period from the
+    // caller, this one appends its own. Strip a caller's trailing period so the
+    // two contracts cannot produce ".." on the wire.
+    RequiredPath.describe(
+      `${description.replace(/\.$/u, '')}. No "..", shell metacharacters, or blank input.`,
+    ),
     (value, ctx) => completer.suggest(value, argumentName, ctx?.arguments ?? undefined),
   );
 }
@@ -182,7 +187,7 @@ const ANALYZE_PATH: PromptEntry = {
     name: 'analyze-path',
     title: 'Analyze Path',
     description:
-      'Guided workflow to analyze a file or directory: runs stat, read, and tree, then reports type, size, permissions, and key observations.',
+      'Guided workflow to analyze a file or directory: runs stat, read, and list, then reports type, size, permissions, and key observations.',
   },
   register(server, options) {
     server.registerPrompt(
@@ -251,7 +256,7 @@ const FIND_IN_TREE: PromptEntry = {
           root: pathArg(
             options.pathGuard,
             'root',
-            'Directory to search under (must be within an allowed root); defaults to the first allowed root.',
+            'Directory to search under (must be within an allowed root); defaults to the first allowed root',
           ).optional(),
           mode: FIND_IN_TREE_MODE.default('both').describe(
             'Search scope: name = filename patterns only, content = file content only, both = all.',

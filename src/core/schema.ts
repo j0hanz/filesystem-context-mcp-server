@@ -91,10 +91,7 @@ const PathBase = z
   })
   .describe(
     'Absolute or relative path within an allowed workspace root. No "..", shell metacharacters, or blank input.',
-  )
-  .meta({
-    suggestion: 'Path must be inside an allowed root. Call list_roots to see allowed directories.',
-  });
+  );
 
 export const OptionalPath = PathBase.optional();
 export const RequiredPath = PathBase;
@@ -147,7 +144,6 @@ export const SafeGlobPattern = z
     id: 'SafeGlobPattern',
     title: 'Glob Pattern',
     examples: ['**/*.ts', 'src/**/*.js', '*.{ts,tsx}'],
-    suggestion: 'Use forward-slash globs; absolute paths and ".." are forbidden.',
   });
 
 export const FileInfoSchema = z
@@ -387,10 +383,12 @@ export function singleOrBatchPathsInput<
           .max(maxBatch)
           .describe(`Per-file entries (batch mode; max ${String(maxBatch)})`);
 
+  const filesSuffix = triadic ? ' and files' : '';
+
   const shape: z.ZodRawShape = {
     ...opts.extra,
     path: RequiredPath.optional().describe(
-      'Single file path; mutually exclusive with paths and files',
+      `Single file path; mutually exclusive with paths${filesSuffix}`,
     ),
     paths: z
       .array(RequiredPath)
@@ -398,7 +396,7 @@ export function singleOrBatchPathsInput<
       .max(maxBatch)
       .optional()
       .describe(
-        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path and files`,
+        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path${filesSuffix}`,
       ),
     ...(filesSchema ? { files: filesSchema.optional() } : {}),
   };
@@ -470,8 +468,8 @@ export const CursorSchema = base64urlCursor
   .optional()
   .describe(
     'Opaque pagination cursor from a prior response; pass unchanged for the next page. ' +
-      'list cursors are stateless offsets and never expire; find_files cursors re-run the query per page, ' +
-      'expire after ~5 min or a server restart, and may duplicate or skip matches if files change between pages.',
+      'Each page re-runs the query, so entries may shift, duplicate, or be skipped if files ' +
+      'change between pages.',
   );
 
 export const NextCursorSchema = base64urlCursor

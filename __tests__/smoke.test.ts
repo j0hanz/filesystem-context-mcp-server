@@ -30,7 +30,7 @@ describe('Smoke Tests', () => {
     await harness.close();
   });
 
-  it('SMOKE-003: tools/list returns 12 tools via MCP client', async () => {
+  it('SMOKE-003: tools/list returns every registered tool via MCP client', async () => {
     const harness = await createTestClientPair([tmpDir]);
     const toolsResult = await harness.client.listTools();
     assert.strictEqual(toolsResult.tools.length, ALL_REGISTERED_TOOL_NAMES.length);
