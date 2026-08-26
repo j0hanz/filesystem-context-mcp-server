@@ -1,5 +1,5 @@
 import { McpServer, ProtocolErrorCode, ResourceNotFoundError } from '@modelcontextprotocol/server';
-import type { ServerContext } from '@modelcontextprotocol/server';
+import type { ReadResourceResult, ServerContext } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -11,7 +11,12 @@ import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
-import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/instructions.js';
+import {
+  buildSectionsRecord,
+  INSTRUCTIONS_URI,
+  NO_POSITIONAL_ROOTS_GUIDANCE,
+  renderSections,
+} from '../src/instructions.js';
 import { getResourceContracts, registerResources } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
@@ -25,6 +30,18 @@ import {
 
 const dummyContext = { sessionId: 'test-session' } as unknown as ServerContext;
 
+function requiredSection(sections: Record<string, string>, key: string): string {
+  const value = sections[key];
+  assert.ok(value, `expected instruction section ${key}`);
+  return value;
+}
+
+function firstResourceContent(result: ReadResourceResult): ReadResourceResult['contents'][number] {
+  const content = result.contents[0];
+  assert.ok(content, 'expected one resource content item');
+  return content;
+}
+
 describe('MCP Resources', () => {
   describe('internal://instructions (TC-FUNC-055–057)', () => {
     it('TC-FUNC-055: buildSectionsRecord produces guidelines, tools_overview, constraints, error_recovery', () => {
@@ -36,48 +53,68 @@ describe('MCP Resources', () => {
       assert.ok('error_recovery' in sections, 'error_recovery should be present');
 
       // Verify guidelines content
-      assert.match(sections.guidelines, /root_access:/);
-      assert.match(sections.guidelines, /path_resolution:/);
+      const guidelines = requiredSection(sections, 'guidelines');
+      assert.match(guidelines, /root_access:/);
+      assert.match(guidelines, /path_resolution:/);
 
       // Verify constraints content
-      assert.match(sections.constraints, /allowed_roots:/);
-      assert.match(sections.constraints, /sensitive_paths:/);
-      assert.match(sections.constraints, /enforced_limits:/);
-      assert.match(sections.constraints, /ephemeral_results:/);
+      const constraints = requiredSection(sections, 'constraints');
+      assert.match(constraints, /allowed_roots:/);
+      assert.match(constraints, /sensitive_paths:/);
+      assert.match(constraints, /enforced_limits:/);
+      assert.match(constraints, /ephemeral_results:/);
 
       // Verify error recovery content
-      assert.match(sections.error_recovery, /ACCESS_DENIED:/);
-      assert.match(sections.error_recovery, /NOT_FOUND:/);
-      assert.match(sections.error_recovery, /TOO_LARGE:/);
-      assert.match(sections.error_recovery, /TIMEOUT:/);
-      assert.match(sections.error_recovery, /INVALID_INPUT:/);
+      const errorRecovery = requiredSection(sections, 'error_recovery');
+      assert.match(errorRecovery, /ACCESS_DENIED:/);
+      assert.match(errorRecovery, /NOT_FOUND:/);
+      assert.match(errorRecovery, /TOO_LARGE:/);
+      assert.match(errorRecovery, /TIMEOUT:/);
+      assert.match(errorRecovery, /INVALID_INPUT:/);
+    });
+
+    it('TC-FUNC-055a: modern root guidance lists known roots and explicit bootstrap paths', () => {
+      const sections = buildSectionsRecord(false);
+      const guidelines = requiredSection(sections, 'guidelines');
+      const constraints = requiredSection(sections, 'constraints');
+
+      assert.match(guidelines, /configured or accepted roots/i);
+      assert.match(guidelines, /modern.*concrete path.*grant/i);
+      assert.match(constraints, /legacy.*roots\/list/i);
+      assert.doesNotMatch(guidelines, /discover.*unknown workspace/i);
+
+      assert.match(NO_POSITIONAL_ROOTS_GUIDANCE, /FS_ALLOWED_DIRS/);
+      assert.match(NO_POSITIONAL_ROOTS_GUIDANCE, /--allow-cwd/);
+      assert.match(NO_POSITIONAL_ROOTS_GUIDANCE, /concrete path/);
     });
 
     it('TC-FUNC-056: tools_overview behavior under readOnly true vs false', () => {
       // When readOnly = false, mutating tools are listed under Write
       const sectionsWritable = buildSectionsRecord(false);
-      assert.match(sectionsWritable.tools_overview, /Navigate:/);
-      assert.match(sectionsWritable.tools_overview, /Inspect:/);
-      assert.match(sectionsWritable.tools_overview, /Read:/);
-      assert.match(sectionsWritable.tools_overview, /Write:/);
+      const writableTools = requiredSection(sectionsWritable, 'tools_overview');
+      assert.match(writableTools, /Navigate:/);
+      assert.match(writableTools, /Inspect:/);
+      assert.match(writableTools, /Read:/);
+      assert.match(writableTools, /Write:/);
 
       for (const toolName of MUTATING_TOOL_NAMES) {
         assert.ok(
-          sectionsWritable.tools_overview.includes(toolName),
+          writableTools.includes(toolName),
           `Mutating tool ${toolName} should be in tools_overview when readOnly=false`,
         );
       }
 
       // When readOnly = true, "Write" section is omitted from tools_overview
       const sectionsReadOnly = buildSectionsRecord(true);
-      assert.match(sectionsReadOnly.tools_overview, /Navigate:/);
-      assert.match(sectionsReadOnly.tools_overview, /Inspect:/);
-      assert.match(sectionsReadOnly.tools_overview, /Read:/);
-      assert.doesNotMatch(sectionsReadOnly.tools_overview, /Write:/);
+      const readOnlyTools = requiredSection(sectionsReadOnly, 'tools_overview');
+      assert.match(readOnlyTools, /Navigate:/);
+      assert.match(readOnlyTools, /Inspect:/);
+      assert.match(readOnlyTools, /Read:/);
+      assert.doesNotMatch(readOnlyTools, /Write:/);
 
       for (const toolName of MUTATING_TOOL_NAMES) {
         assert.ok(
-          !sectionsReadOnly.tools_overview.includes(toolName),
+          !readOnlyTools.includes(toolName),
           `Mutating tool ${toolName} should not be in tools_overview when readOnly=true`,
         );
       }
@@ -110,9 +147,11 @@ describe('MCP Resources', () => {
       );
 
       assert.strictEqual(readResult.contents.length, 1);
-      assert.strictEqual(readResult.contents[0].uri, INSTRUCTIONS_URI);
-      assert.strictEqual(readResult.contents[0].mimeType, 'text/markdown');
-      assert.strictEqual(readResult.contents[0].text, rendered);
+      const instructionsContent = firstResourceContent(readResult);
+      assert.strictEqual(instructionsContent.uri, INSTRUCTIONS_URI);
+      assert.strictEqual(instructionsContent.mimeType, 'text/markdown');
+      assert.ok('text' in instructionsContent);
+      assert.strictEqual(instructionsContent.text, rendered);
     });
   });
 
@@ -157,9 +196,11 @@ describe('MCP Resources', () => {
 
       const textRead = await resultContract.read(textUrl, { id: textId }, dummyContext);
       assert.strictEqual(textRead.contents.length, 1);
-      assert.strictEqual(textRead.contents[0].uri, textEntry.uri);
-      assert.strictEqual(textRead.contents[0].mimeType, 'text/markdown');
-      assert.strictEqual(textRead.contents[0].text, '# Test Summary');
+      const cachedContent = firstResourceContent(textRead);
+      assert.strictEqual(cachedContent.uri, textEntry.uri);
+      assert.strictEqual(cachedContent.mimeType, 'text/markdown');
+      assert.ok('text' in cachedContent);
+      assert.strictEqual(cachedContent.text, '# Test Summary');
     });
 
     it('TC-FUNC-060: Missing entry throws NOT_FOUND / ResourceNotFoundError', async () => {
@@ -255,9 +296,11 @@ describe('MCP Resources', () => {
       const result = await fileContract.read(uri, { path: filePath }, dummyContext);
 
       assert.strictEqual(result.contents.length, 1);
-      assert.strictEqual(result.contents[0].uri, uri.href);
-      assert.strictEqual(result.contents[0].mimeType, 'text/plain');
-      assert.strictEqual(result.contents[0].text, textContent);
+      const textResource = firstResourceContent(result);
+      assert.strictEqual(textResource.uri, uri.href);
+      assert.strictEqual(textResource.mimeType, 'text/plain');
+      assert.ok('text' in textResource);
+      assert.strictEqual(textResource.text, textContent);
     });
 
     it('TC-FUNC-062: Read workspace binary file via resource contract', async () => {
@@ -280,10 +323,12 @@ describe('MCP Resources', () => {
       const result = await fileContract.read(uri, { path: binPath }, dummyContext);
 
       assert.strictEqual(result.contents.length, 1);
-      assert.strictEqual(result.contents[0].uri, uri.href);
-      assert.strictEqual(result.contents[0].mimeType, 'image/png');
-      assert.strictEqual(result.contents[0].blob, pngBytes.toString('base64'));
-      assert.strictEqual(result.contents[0].text, undefined);
+      const binaryResource = firstResourceContent(result);
+      assert.strictEqual(binaryResource.uri, uri.href);
+      assert.strictEqual(binaryResource.mimeType, 'image/png');
+      assert.ok('blob' in binaryResource);
+      assert.strictEqual(binaryResource.blob, pngBytes.toString('base64'));
+      assert.ok(!('text' in binaryResource));
     });
 
     it('TC-FUNC-063: WatcherRegistry - add callback, attach watcher, and debounce notifications', async () => {
@@ -493,9 +538,11 @@ describe('MCP Resources', () => {
     it('client.readResource() reads internal instructions', async () => {
       const result = await harness.client.readResource({ uri: INSTRUCTIONS_URI });
       assert.strictEqual(result.contents.length, 1);
-      assert.strictEqual(result.contents[0].uri, INSTRUCTIONS_URI);
-      assert.strictEqual(result.contents[0].mimeType, 'text/markdown');
-      assert.ok((result.contents[0] as { text: string }).text.includes('Guidelines:'));
+      const instructionsContent = firstResourceContent(result);
+      assert.strictEqual(instructionsContent.uri, INSTRUCTIONS_URI);
+      assert.strictEqual(instructionsContent.mimeType, 'text/markdown');
+      assert.ok('text' in instructionsContent);
+      assert.ok(instructionsContent.text.includes('Guidelines:'));
     });
 
     it('client.readResource() reads workspace file via uri', async () => {
@@ -503,8 +550,10 @@ describe('MCP Resources', () => {
       const uri = buildFileResourceUri(filePath);
       const result = await harness.client.readResource({ uri });
       assert.strictEqual(result.contents.length, 1);
-      assert.strictEqual(result.contents[0].uri, uri);
-      assert.strictEqual((result.contents[0] as { text: string }).text, 'client resource read');
+      const fileContent = firstResourceContent(result);
+      assert.strictEqual(fileContent.uri, uri);
+      assert.ok('text' in fileContent);
+      assert.strictEqual(fileContent.text, 'client resource read');
     });
 
     it('client.readResource() on a missing workspace file rejects as resource-not-found', async () => {

@@ -255,14 +255,11 @@ export function createWatcherRegistry() {
      * every failing exit past that point cancels the declaration, so no uri is
      * poisoned for a later attach.
      *
-     * Every `ok` return takes one lease; lifetime is the caller's to manage, and
-     * the legs differ. HTTP releases per stream: the listen stream is the POST's
-     * own SSE response, so `transport/http.ts` calls `release` for each URI this
-     * returned `ok` for when that response closes (the ref-count is by URI, so a
-     * watcher another stream still holds survives). Stdio has no per-stream
-     * close hook on the SDK's listen router, so its watchers live for the
-     * connection and are freed by `destroy()` at close; that is bounded by
-     * MAX_WATCHERS, and a stdio connection has exactly one client.
+     * Every `ok` return takes one lease; lifetime is the caller's to manage.
+     * HTTP releases when the listen response closes. Stdio tracks the listen
+     * request ID and releases on cancellation, SDK rejection, or graceful
+     * completion. In both legs the ref-count is by URI, so a watcher another
+     * stream still holds survives.
      */
     async acquire(
       pathGuard: PathGuard,

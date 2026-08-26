@@ -66,8 +66,10 @@ describe('MCP Prompts Tests (MCP Client)', () => {
       const result = await harness.client.getPrompt({ name: 'get-help', arguments: {} });
 
       assert.equal(result.messages.length, 1);
-      assert.equal(result.messages[0].role, 'user');
-      const textContent = result.messages[0].content as TextContent;
+      const message = result.messages[0];
+      assert.ok(message);
+      assert.equal(message.role, 'user');
+      const textContent = message.content as TextContent;
       assert.equal(textContent.type, 'text');
       assert.equal(textContent.text, fullInstructions);
       assert.ok(textContent.text.includes('Guidelines:'));
@@ -83,7 +85,9 @@ describe('MCP Prompts Tests (MCP Client)', () => {
         arguments: { topic: 'guidelines' },
       });
       assert.equal(guidelinesResult.messages.length, 1);
-      const guidelinesText = (guidelinesResult.messages[0].content as TextContent).text;
+      const guidelinesMessage = guidelinesResult.messages[0];
+      assert.ok(guidelinesMessage);
+      const guidelinesText = (guidelinesMessage.content as TextContent).text;
       assert.equal(guidelinesText, sections['guidelines']);
       assert.ok(guidelinesText.includes('root_access:'));
       assert.ok(!guidelinesText.includes('Error Recovery:'));
@@ -93,7 +97,9 @@ describe('MCP Prompts Tests (MCP Client)', () => {
         name: 'get-help',
         arguments: { topic: 'ERROR_RECOVERY' },
       });
-      const errorText = (errorResult.messages[0].content as TextContent).text;
+      const errorMessage = errorResult.messages[0];
+      assert.ok(errorMessage);
+      const errorText = (errorMessage.content as TextContent).text;
       assert.equal(errorText, sections['error_recovery']);
       assert.ok(errorText.includes('ACCESS_DENIED:'));
 
@@ -102,7 +108,9 @@ describe('MCP Prompts Tests (MCP Client)', () => {
         name: 'get-help',
         arguments: { topic: 'unknown_topic_name' },
       });
-      const unknownText = (unknownResult.messages[0].content as TextContent).text;
+      const unknownMessage = unknownResult.messages[0];
+      assert.ok(unknownMessage);
+      const unknownText = (unknownMessage.content as TextContent).text;
       assert.ok(unknownText.startsWith("Section 'unknown_topic_name' not found. Available:"));
       assert.ok(unknownText.includes('guidelines, tools_overview, constraints, error_recovery'));
       assert.ok(unknownText.includes(fullInstructions));

@@ -36,6 +36,7 @@ import {
 } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
+import type { PageSnapshotStore } from '../core/page-store.js';
 import type { PathGuard } from '../core/path.js';
 import { isSamePath } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
@@ -48,6 +49,7 @@ export interface ToolCtx {
   readonly authInfo?: AuthInfo;
   readonly _meta?: RequestMeta | undefined;
   readonly fs: GuardedFileSystem;
+  readonly pageStore: PageSnapshotStore;
   readonly resourceStore: ResourceStore | undefined;
   /** Emits a log line to stderr via `Logger.emit`, gated by `LOG_LEVEL`. */
   readonly log?: (level: LoggingLevel, data: unknown, logger?: string) => void;
@@ -86,6 +88,7 @@ export interface ToolCtx {
 interface ToolDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
+  readonly pageStore: PageSnapshotStore;
   readonly resourceStore: ResourceStore | undefined;
 }
 
@@ -145,13 +148,14 @@ export interface DefinedTool {
 
 function toToolCtx(
   ctx: ServerContext | undefined,
-  deps: Pick<ToolDeps, 'pathGuard' | 'resourceStore' | 'server'>,
+  deps: Pick<ToolDeps, 'pathGuard' | 'pageStore' | 'resourceStore' | 'server'>,
 ): ToolCtx {
   if (!ctx) {
     const signal = new AbortController().signal;
     return {
       signal,
       fs: new GuardedFileSystem(deps.pathGuard),
+      pageStore: deps.pageStore,
       resourceStore: deps.resourceStore,
       server: deps.server,
     };
@@ -180,6 +184,7 @@ function toToolCtx(
     ...(ctx.http?.authInfo ? { authInfo: ctx.http.authInfo } : {}),
     ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
     fs: new GuardedFileSystem(deps.pathGuard),
+    pageStore: deps.pageStore,
     resourceStore: deps.resourceStore,
     sendNotification: async (notification) => ctx.mcpReq.notify(notification),
     inputResponses: ctx.mcpReq.inputResponses,

@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   apiKey?: string;
   /** Shared change-event bus for multi-instance HTTP deployments. Caller-owned. */
   eventBus?: ServerEventBus;
+  /** Explicit topology; fleet mode requires shared state and event delivery. */
+  deploymentMode?: 'single' | 'fleet';
 }
 
 /** The request id of a parsed JSON-RPC body, for error-envelope echo. */

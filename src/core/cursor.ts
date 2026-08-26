@@ -1,73 +1,91 @@
 import { ErrorCode, formatUnknownErrorMessage, FsError } from './errors.js';
+import type { PageSnapshot, PageSnapshotStore } from './page-store.js';
+import { invalidCursor } from './page-store.js';
 
-function encodeOffsetCursor(offset: number): string {
-  return Buffer.from(JSON.stringify({ offset })).toString('base64url');
+interface PageCursor {
+  readonly snapshotId: string;
+  readonly offset: number;
 }
 
-/**
- * Owner of the offset-page rule: decode the incoming cursor and derive the
- * fetch window for this page. Every page re-runs the underlying query and sorts
- * the result before slicing, so every page MUST sort the same universe —
- * otherwise successive pages sort different populations and overlap/skip
- * matches. That means the fetch has to cover the full result set up to the
- * query's hard cap `max`, not just the end of this page: `fetchMax = max`.
- *
- * (Capping at `offset + pageSize` would only be safe if the underlying scan
- * yielded in sorted order; it yields in readdir order, so a per-page cap
- * slices a different, unsorted prefix each time.)
- *
- * The page itself is bounded by `pageSize` later, in {@link closePage}'s caller
- * via `slice(offset, offset + pageSize)`; `fetchMax` is only the scan cap.
- *
- * ponytail: every page re-scans to `max` and re-sorts — O(max) per page, not
- * O(offset+pageSize). A ~100x work increase for page 1 over the old per-page
- * cap, but the old cap sorted a different readdir prefix each page (overlap/
- * skip). If per-page re-scan shows up in a profile, cache the page-1 sorted
- * set (the resource store already persists it) and serve later pages from it
- * by cursor instead of re-scanning.
- */
-export function openPage(params: { cursor: string | undefined; max: number }): {
-  offset: number;
-  fetchMax: number;
-} {
-  const { cursor, max } = params;
-  const offset = cursor !== undefined ? decodeOffsetCursor(cursor) : 0;
-  return { offset, fetchMax: max };
+function encodePageCursor(cursor: PageCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64url');
 }
 
-/**
- * The other half of {@link openPage}: a cursor for the next page, or undefined
- * when there is none. `total` is the size of the full set this page sorted
- * (the scan's capped result count, the same every page); a next page exists
- * while this page did not reach the end of it. A page that yielded nothing is
- * already at or past the end (`offset >= total`), so it naturally gets no
- * cursor — issuing one there would loop the caller.
- */
-export function closePage(params: {
-  total: number;
-  offset: number;
-  pageCount: number;
-}): string | undefined {
-  const { total, offset, pageCount } = params;
-  return offset + pageCount < total ? encodeOffsetCursor(offset + pageCount) : undefined;
+function pageResult<T, M>(
+  snapshotId: string,
+  offset: number,
+  pageSize: number,
+  snapshot: PageSnapshot<T, M>,
+): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+  if (offset >= snapshot.items.length) throw invalidCursor();
+  const page = snapshot.items.slice(offset, offset + pageSize);
+  const nextOffset = offset + page.length;
+  return {
+    page,
+    metadata: snapshot.metadata,
+    nextCursor:
+      nextOffset < snapshot.items.length
+        ? encodePageCursor({ snapshotId, offset: nextOffset })
+        : undefined,
+  };
 }
 
-function decodeOffsetCursor(cursor: string): number {
+export function createFirstPage<T, M>(params: {
+  store: PageSnapshotStore;
+  queryKey: string;
+  items: readonly T[];
+  metadata: M;
+  pageSize: number;
+}): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+  if (params.items.length <= params.pageSize) {
+    return {
+      page: params.items,
+      metadata: params.metadata,
+      nextCursor: undefined,
+    };
+  }
+  const snapshotId = params.store.create({
+    queryKey: params.queryKey,
+    items: params.items,
+    metadata: params.metadata,
+  });
+  return pageResult(snapshotId, 0, params.pageSize, {
+    items: params.items,
+    metadata: params.metadata,
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the cursor carries no typed payload; the caller supplies the snapshot's original item and metadata types.
+export function readNextPage<T, M>(params: {
+  store: PageSnapshotStore;
+  queryKey: string;
+  cursor: string;
+  pageSize: number;
+}): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+  const decoded = decodePageCursor(params.cursor);
+  const snapshot = params.store.read<T, M>(decoded.snapshotId, params.queryKey);
+  return pageResult(decoded.snapshotId, decoded.offset, params.pageSize, snapshot);
+}
+
+function decodePageCursor(cursor: string): PageCursor {
   try {
     const text = Buffer.from(cursor, 'base64url').toString('utf-8');
-    const parsed = JSON.parse(text) as { offset?: unknown };
+    const parsed = JSON.parse(text) as { snapshotId?: unknown; offset?: unknown };
     if (
+      typeof parsed.snapshotId === 'string' &&
+      parsed.snapshotId.length > 0 &&
       typeof parsed.offset === 'number' &&
       Number.isInteger(parsed.offset) &&
       parsed.offset >= 0
     ) {
-      return parsed.offset;
+      return { snapshotId: parsed.snapshotId, offset: parsed.offset };
     }
-    throw new Error('Invalid offset');
+    throw new Error('Invalid page cursor');
   } catch (error) {
+    if (error instanceof FsError) throw error;
     throw new FsError(
       ErrorCode.INVALID_INPUT,
-      'Invalid cursor. Request the first page without a cursor.',
+      invalidCursor().message,
       undefined,
       { originalError: formatUnknownErrorMessage(error) },
       error instanceof Error ? error : undefined,

@@ -15,6 +15,7 @@ import type {
   ClientCapabilities,
   InputRequest,
   InputRequiredResult,
+  RequestStateCodec,
 } from '@modelcontextprotocol/server';
 import {
   acceptedContent,
@@ -78,7 +79,7 @@ export interface PendingInput {
  * A server restart invalidates in-flight tokens; the client re-requests, which
  * is fail-closed and safe.
  */
-function resolveRequestStateKey(): Uint8Array {
+function configuredRequestStateKey(): Uint8Array | undefined {
   const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
   if (env) {
     const bytes = Buffer.from(env, 'utf8');
@@ -87,7 +88,18 @@ function resolveRequestStateKey(): Uint8Array {
       `FILESYSTEM_MCP_REQUEST_STATE_KEY is ${String(bytes.length)} bytes; 32 are required. Falling back to a random per-boot key — in-flight input_required rounds will not survive a restart.`,
     );
   }
-  return randomBytes(32);
+  return undefined;
+}
+
+// Built on first use, not at module load: `startHttpServer` gets to enforce the
+// fleet key requirement before anything mints with a random per-boot fallback.
+let codec: RequestStateCodec<PendingState> | undefined;
+
+function getRequestStateCodec(): RequestStateCodec<PendingState> {
+  codec ??= createRequestStateCodec<PendingState>({
+    key: configuredRequestStateKey() ?? randomBytes(32),
+  });
+  return codec;
 }
 
 /**
@@ -95,18 +107,17 @@ function resolveRequestStateKey(): Uint8Array {
  * `FILESYSTEM_MCP_REQUEST_STATE_KEY` is missing or <32 bytes, refuse to start —
  * a multi-instance fleet behind a load balancer would otherwise silently break
  * every `input_required` round that lands on a different instance (each node
- * mints tokens with its own random per-boot key). No-op when `API_KEY` is unset
- * (stdio / public HTTP) or when the env key is already strong. Called from
- * `startHttpServer`, never at module load.
+ * mints tokens with its own random per-boot key). No-op outside explicit fleet
+ * mode. Called from `startHttpServer`, never at module load.
  */
-export function assertFleetRequestStateKey(apiKey: string | undefined): void {
-  if (!apiKey) return;
-  const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-  if (!env || Buffer.from(env, 'utf8').length < 32) {
+export function assertFleetRequestStateKey(fleet: boolean): void {
+  if (!fleet) return;
+  if (!configuredRequestStateKey()) {
     throw new Error(
-      'FILESYSTEM_MCP_REQUEST_STATE_KEY must be >=32 bytes when API_KEY is set (multi-instance HTTP).',
+      'FILESYSTEM_MCP_REQUEST_STATE_KEY must be >=32 bytes in fleet deployment mode.',
     );
   }
+  getRequestStateCodec();
 }
 
 /**
@@ -115,9 +126,10 @@ export function assertFleetRequestStateKey(apiKey: string | undefined): void {
  * `ServerOptions.requestState.verify` and throws on tamper, expiry, or bind
  * mismatch (the seam answers with the frozen `-32602`).
  */
-export const requestStateCodec = createRequestStateCodec<PendingState>({
-  key: resolveRequestStateKey(),
-});
+export const requestStateCodec: RequestStateCodec<PendingState> = {
+  mint: (payload, ctx) => getRequestStateCodec().mint(payload, ctx),
+  verify: (state, ctx) => getRequestStateCodec().verify(state, ctx),
+};
 
 /**
  * Build a boolean confirmation input for one pending item. The schema uses a

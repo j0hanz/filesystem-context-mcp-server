@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 
+import type { PageSnapshotStore } from '../core/page-store.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import { CREATE } from './create.js';
@@ -54,6 +55,7 @@ export { LIST, LIST_ALLOWED_DIRECTORIES, READ_FILE, SEARCH_CONTENT, SEARCH_FILES
 interface ToolRegistrarDeps {
   readonly server: McpServer;
   readonly pathGuard: PathGuard;
+  readonly pageStore: PageSnapshotStore;
   readonly resourceStore: ResourceStore;
   readonly readOnly?: boolean;
 }
@@ -62,6 +64,7 @@ export function registerTools(deps: ToolRegistrarDeps): void {
   const toolDeps = {
     server: deps.server,
     pathGuard: deps.pathGuard,
+    pageStore: deps.pageStore,
     resourceStore: deps.resourceStore,
   };
   for (const tool of registeredTools(deps.readOnly ?? false)) {

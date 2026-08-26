@@ -1,15 +1,18 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport } from '@modelcontextprotocol/client';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import type { ElicitRequestParams, ElicitResult } from '@modelcontextprotocol/client';
-import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import type { ElicitRequest, ElicitResult } from '@modelcontextprotocol/client';
+import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/server';
+import type { JSONRPCMessage } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -123,7 +126,7 @@ export async function createTestClientPair(
  * `input_required` round-trip with. The SDK retries the original `tools/call`
  * carrying the returned `content` as `inputResponses`.
  */
-export type ElicitHandler = (params: ElicitRequestParams) => Promise<ElicitResult> | ElicitResult;
+export type ElicitHandler = (request: ElicitRequest) => Promise<ElicitResult> | ElicitResult;
 
 /** An elicitation-capable modern-era client and its teardown. */
 export interface ElicitationTestContext {
@@ -221,6 +224,9 @@ export async function createTestHttpHarness(
   const sharedRegistry = createWatcherRegistry();
 
   const notifier = {
+    toolsChanged: () => {},
+    promptsChanged: () => {},
+    resourcesChanged: () => {},
     resourceUpdated: (uri: string) => {
       bus.publish({ kind: 'resource_updated', uri });
     },
@@ -266,16 +272,6 @@ export async function createTestHttpHarness(
 
 export const TEST_API_KEY = 'x-test-key-0123456789';
 
-/**
- * The one input a real HTTP server still needs from the process: the fleet
- * request-state key, which has no CLI flag. The bearer key rides
- * `RuntimeConfig.apiKey`, and the bind host defaults to loopback in
- * `startHttpServer` — neither belongs in the environment any more.
- */
-const HTTP_TEST_ENV: Record<string, string> = {
-  FILESYSTEM_MCP_REQUEST_STATE_KEY: 'a'.repeat(32),
-};
-
 export interface HttpTestContext {
   port: number;
   /** The `/mcp` endpoint of the booted server. */
@@ -299,7 +295,7 @@ export async function bootHttpTest(
   extraEnv: Record<string, string> = {},
   runtimeConfig: Omit<RuntimeConfig, 'apiKey'> = {},
 ): Promise<HttpTestContext> {
-  const env = { ...HTTP_TEST_ENV, ...extraEnv };
+  const env = { ...extraEnv };
   const saved = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(env)) {
     saved.set(key, process.env[key]);
@@ -344,7 +340,12 @@ export async function bootHttpTest(
       for (const client of clients) {
         await client.close().catch(() => {});
       }
-      await new Promise<void>((resolve) => httpServer.close(resolve));
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
       for (const [key, value] of saved) {
         // Reflect over `delete`: an empty string is not the same as unset here
         // (API_KEY='' would read as "auth configured"), so the key must go.
@@ -371,13 +372,17 @@ export function getStdioServerCommand(): string[] {
  * stdio has no in-process shortcut — the only honest coverage spawns a real
  * process, mirroring `node --import tsx src/index.ts <allowedDir>`.
  */
-export async function createStdioClient(allowedDir: string): Promise<TestStdioContext> {
+export async function createStdioClient(
+  allowedDir: string,
+  extraEnv: Record<string, string> = {},
+): Promise<TestStdioContext> {
   const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const [command, ...args] = getStdioServerCommand() as [string, ...string[]];
   const transport = new StdioClientTransport({
     command,
     args: [...args, allowedDir],
     cwd: repoRoot,
+    env: { ...getDefaultEnvironment(), ...extraEnv },
   });
   const client = new Client(
     { name: 'stdio-test-harness', version: '1.0.0' },
@@ -389,6 +394,69 @@ export async function createStdioClient(allowedDir: string): Promise<TestStdioCo
     close: async () => {
       await client.close();
       await transport.close();
+    },
+  };
+}
+
+export interface RawStdioTestContext {
+  send: (message: JSONRPCMessage) => Promise<void>;
+  sendMany: (messages: readonly JSONRPCMessage[]) => Promise<void>;
+  nextMessage: () => Promise<JSONRPCMessage>;
+  close: () => Promise<void>;
+}
+
+/** Spawn the stdio entry without an SDK client so malformed wire messages can be tested. */
+export async function createRawStdioServer(
+  allowedDir: string,
+  extraEnv: Record<string, string> = {},
+): Promise<RawStdioTestContext> {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const [command, ...args] = getStdioServerCommand() as [string, ...string[]];
+  const child = spawn(command, [...args, allowedDir], {
+    cwd: repoRoot,
+    env: { ...getDefaultEnvironment(), ...extraEnv },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const lines = createInterface({ input: child.stdout });
+  const queued: JSONRPCMessage[] = [];
+  const waiters: ((message: JSONRPCMessage) => void)[] = [];
+
+  lines.on('line', (line) => {
+    const message = JSON.parse(line) as JSONRPCMessage;
+    const waiter = waiters.shift();
+    if (waiter) waiter(message);
+    else queued.push(message);
+  });
+
+  return {
+    send: async (message) => {
+      await new Promise<void>((resolve, reject) => {
+        child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    },
+    sendMany: async (messages) => {
+      await new Promise<void>((resolve, reject) => {
+        const payload = messages.map((message) => JSON.stringify(message)).join('\n');
+        child.stdin.write(`${payload}\n`, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+    },
+    nextMessage: async () => {
+      const message = queued.shift();
+      if (message) return message;
+      return new Promise<JSONRPCMessage>((resolve) => {
+        waiters.push(resolve);
+      });
+    },
+    close: async () => {
+      lines.close();
+      child.stdin.end();
+      await new Promise<void>((resolve) => child.once('close', () => resolve()));
     },
   };
 }

@@ -4,7 +4,7 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
-import { closePage, openPage } from '../core/cursor.js';
+import { createFirstPage, readNextPage } from '../core/cursor.js';
 import { ErrorCode, FsError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
@@ -47,7 +47,6 @@ type SearchInput = z.infer<typeof GrepInputSchema>;
 type SearchOutput = z.infer<typeof GrepOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
-type SearchSummary = SearchResultValue['summary'];
 
 interface SearchPreviewState {
   needsExternalize: boolean;
@@ -60,19 +59,14 @@ interface SearchContext {
   caseSensitive: boolean;
 }
 
-function buildStructuredSummaryFields(summary: SearchSummary): Partial<SearchOutput> {
-  return {
-    ...(summary.filesMatched ? { filesMatched: summary.filesMatched } : {}),
-    ...(summary.truncated ? { truncated: true } : {}),
-    // `maxFiles` is unreachable here — this scan calls only hitMaxResults and
-    // hitAbort — so it is excluded rather than published as a value no response
-    // can carry. The shared tracker type is wider than this one caller.
-    ...(summary.stoppedReason !== undefined && summary.stoppedReason !== 'maxFiles'
-      ? { stoppedReason: summary.stoppedReason }
-      : {}),
-    ...(summary.skippedInaccessible ? { skippedInaccessible: summary.skippedInaccessible } : {}),
-    ...(summary.skippedTooLarge ? { skippedTooLarge: summary.skippedTooLarge } : {}),
-  };
+interface SearchContentPageMetadata {
+  readonly totalMatches: number;
+  readonly filesScanned: number;
+  readonly filesMatched?: number;
+  readonly truncated: boolean;
+  readonly stoppedReason?: SearchOutput['stoppedReason'];
+  readonly skippedInaccessible?: number;
+  readonly skippedTooLarge?: number;
 }
 
 function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewState {
@@ -163,15 +157,19 @@ function buildSearchMatchDetail(totalMatches: number, filesMatched: number): str
   return `${matchDetail} · ${formatCount(filesMatched, 'file', 'files')}`;
 }
 
-function buildSearchStructured(
-  summary: SearchSummary,
+function searchContentOutput(
   matches: SearchMatchPayload[],
+  metadata: SearchContentPageMetadata,
 ): SearchOutput {
   return {
     matches,
-    totalMatches: summary.matchingLines,
-    filesScanned: summary.filesScanned,
-    ...buildStructuredSummaryFields(summary),
+    totalMatches: metadata.totalMatches,
+    filesScanned: metadata.filesScanned,
+    ...(metadata.filesMatched ? { filesMatched: metadata.filesMatched } : {}),
+    ...(metadata.truncated ? { truncated: true } : {}),
+    ...(metadata.stoppedReason !== undefined ? { stoppedReason: metadata.stoppedReason } : {}),
+    ...(metadata.skippedInaccessible ? { skippedInaccessible: metadata.skippedInaccessible } : {}),
+    ...(metadata.skippedTooLarge ? { skippedTooLarge: metadata.skippedTooLarge } : {}),
   };
 }
 
@@ -285,24 +283,13 @@ function buildExternalizedResponse(
   return { structured: structuredForResponse, link };
 }
 
-function getPagedPayloads(
+function sortedPayloads(
   result: SearchResultValue,
   args: SearchInput,
   regexMatcher: Regex | undefined,
-  cursorOffset: number,
-): { matchPayloads: SearchMatchPayload[]; nextCursor: string | undefined } {
+): SearchMatchPayload[] {
   const searchContext = createSearchContext(args, regexMatcher);
-  // Sort the full capped set before slicing: every page must sort the same
-  // universe (see openPage), so the page window is bounded by pageSize here.
-  const sorted = buildSortedPayloads(result, searchContext);
-  const matchPayloads = sorted.slice(cursorOffset, cursorOffset + args.maxResults);
-  const nextCursor = closePage({
-    total: sorted.length,
-    offset: cursorOffset,
-    pageCount: matchPayloads.length,
-  });
-
-  return { matchPayloads, nextCursor };
+  return buildSortedPayloads(result, searchContext);
 }
 
 function finalizeSearchOutput(
@@ -354,6 +341,20 @@ async function resolveSearchScope(
   };
 }
 
+function searchContentQueryKey(args: SearchInput, requestedPath: string): string {
+  return JSON.stringify({
+    method: 'search_text',
+    path: requestedPath,
+    pattern: args.pattern,
+    searchPattern: args.searchPattern,
+    isRegex: args.isRegex,
+    includeHidden: args.includeHidden,
+    includeIgnored: args.includeIgnored,
+    caseSensitive: args.caseSensitive,
+    maxDepth: args.maxDepth,
+  });
+}
+
 async function handleSearchContent(
   args: SearchInput,
   ctx: ToolCtx,
@@ -361,37 +362,62 @@ async function handleSearchContent(
   structured: SearchOutput;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
+  const requestedPath = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
+  const queryKey = searchContentQueryKey(args, requestedPath);
+
+  if (args.cursor !== undefined) {
+    const paged = readNextPage<SearchMatchPayload, SearchContentPageMetadata>({
+      store: ctx.pageStore,
+      queryKey,
+      cursor: args.cursor,
+      pageSize: args.maxResults,
+    });
+    const fullStructured = searchContentOutput([...paged.page], paged.metadata);
+    if (paged.nextCursor !== undefined) fullStructured.nextCursor = paged.nextCursor;
+    const preview = buildSearchPreviewState([...paged.page]);
+    return finalizeSearchOutput(fullStructured, preview, ctx.resourceStore, args.searchPattern);
+  }
+
   const { basePath, args: scoped } = await resolveSearchScope(args, ctx);
   const regexMatcher = createSearchMatcher(scoped);
-
-  const { offset: cursorOffset, fetchMax } = openPage({
-    cursor: scoped.cursor,
-    max: MAX_SEARCH_RESULTS,
-  });
 
   const result = await searchContent(
     basePath,
     scoped.searchPattern,
-    buildSearchContentOptions({ ...scoped, maxResults: fetchMax }, ctx.signal),
+    buildSearchContentOptions({ ...scoped, maxResults: MAX_SEARCH_RESULTS }, ctx.signal),
     ctx.fs.pathGuard,
   );
 
   // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
-  let matchPayloads: SearchMatchPayload[];
-  let nextCursor: string | undefined;
+  let allMatchPayloads: SearchMatchPayload[];
   try {
-    ({ matchPayloads, nextCursor } = getPagedPayloads(result, scoped, regexMatcher, cursorOffset));
+    allMatchPayloads = sortedPayloads(result, scoped, regexMatcher);
   } finally {
     freeRegex(regexMatcher);
   }
-
-  const fullStructured: SearchOutput = {
-    ...buildSearchStructured(result.summary, matchPayloads),
+  const metadata: SearchContentPageMetadata = {
+    totalMatches: result.summary.matchingLines,
+    filesScanned: result.summary.filesScanned,
+    ...(result.summary.filesMatched ? { filesMatched: result.summary.filesMatched } : {}),
+    truncated: result.summary.truncated,
+    ...(result.summary.stoppedReason !== undefined && result.summary.stoppedReason !== 'maxFiles'
+      ? { stoppedReason: result.summary.stoppedReason }
+      : {}),
+    ...(result.summary.skippedInaccessible
+      ? { skippedInaccessible: result.summary.skippedInaccessible }
+      : {}),
+    ...(result.summary.skippedTooLarge ? { skippedTooLarge: result.summary.skippedTooLarge } : {}),
   };
-  if (nextCursor !== undefined) fullStructured.nextCursor = nextCursor;
-
-  const preview = buildSearchPreviewState(matchPayloads);
-
+  const paged = createFirstPage<SearchMatchPayload, SearchContentPageMetadata>({
+    store: ctx.pageStore,
+    queryKey,
+    items: allMatchPayloads,
+    metadata,
+    pageSize: scoped.maxResults,
+  });
+  const fullStructured = searchContentOutput([...paged.page], metadata);
+  if (paged.nextCursor !== undefined) fullStructured.nextCursor = paged.nextCursor;
+  const preview = buildSearchPreviewState([...paged.page]);
   const { structured, link } = finalizeSearchOutput(
     fullStructured,
     preview,

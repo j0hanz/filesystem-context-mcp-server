@@ -13,6 +13,7 @@ import { after, before, describe, it } from 'node:test';
 
 import * as z from 'zod/v4';
 
+import { PageSnapshotStore } from '../src/core/page-store.js';
 import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createServer } from '../src/server.js';
@@ -24,6 +25,7 @@ import {
   registeredTools,
 } from '../src/tools/index.js';
 import {
+  bootHttpTest,
   cleanupTestRoot,
   createElicitationClientPair,
   createTestClientPair,
@@ -307,10 +309,11 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       },
     });
     const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
+    const pageStore = new PageSnapshotStore();
     const resourceStore = new ResourceStore();
     const createProbeServer = (): McpServer => {
       const server = new McpServer({ name: 'auth-probe', version: '1.0.0' });
-      authProbe.register({ server, pathGuard, resourceStore });
+      authProbe.register({ server, pathGuard, pageStore, resourceStore });
       return server;
     };
 
@@ -606,6 +609,8 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
 
     let notified = false;
     const notifier = {
+      toolsChanged: () => {},
+      promptsChanged: () => {},
       resourcesChanged: () => {
         notified = true;
       },
@@ -705,9 +710,18 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'list',
       arguments: { path: sub, maxEntries: 2 },
     });
-    const s1 = r1.structuredContent as { nextCursor?: string; entryCount?: number };
+    const s1 = r1.structuredContent as {
+      nextCursor?: string;
+      entryCount?: number;
+      resourceUri?: string;
+    };
     assert.strictEqual(s1.entryCount, 2);
     assert.ok(s1.nextCursor, 'first page should yield a nextCursor');
+    assert.strictEqual(
+      s1.resourceUri,
+      undefined,
+      'ordinary pagination must not externalize a hard-cap resource',
+    );
     const r2 = await harness.client.callTool({
       name: 'list',
       arguments: { path: sub, maxEntries: 2, cursor: s1.nextCursor },
@@ -715,6 +729,66 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const s2 = r2.structuredContent as { nextCursor?: string; entryCount?: number };
     assert.strictEqual(s2.entryCount, 2);
     assert.ok(!s2.nextCursor, 'second page is the last');
+  });
+
+  it('TC-FUNC-063b: list pages are stable and query-bound', async () => {
+    const sub = join(tmpDir, 'stable_page_dir');
+    await mkdir(sub, { recursive: true });
+    for (const name of ['bravo.txt', 'charlie.txt']) {
+      await writeFile(join(sub, name), 'x');
+    }
+    const first = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 1 },
+    });
+    const firstStructured = first.structuredContent as {
+      entries?: { name: string }[];
+      nextCursor?: string;
+    };
+    const cursor = firstStructured.nextCursor;
+    assert.ok(cursor);
+
+    await rm(sub, { recursive: true, force: true });
+    const second = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 10, cursor },
+    });
+    assert.notStrictEqual(second.isError, true);
+    const secondStructured = second.structuredContent as { entries?: { name: string }[] };
+    assert.deepStrictEqual(
+      [...(firstStructured.entries ?? []), ...(secondStructured.entries ?? [])].map(
+        (entry) => entry.name,
+      ),
+      ['bravo.txt', 'charlie.txt'],
+      'page two must read the first-page snapshot after the directory is removed',
+    );
+
+    const replay = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: tmpDir, maxEntries: 10, cursor },
+    });
+    assert.strictEqual(replay.isError, true);
+    assert.match(firstTextBlock(replay).text ?? '', /INVALID_INPUT/);
+  });
+
+  it('TC-FUNC-063a: list does not return a successful partial result after abort', async () => {
+    const originalTimeout = Object.getOwnPropertyDescriptor(AbortSignal, 'timeout');
+    assert.ok(originalTimeout);
+    Object.defineProperty(AbortSignal, 'timeout', {
+      configurable: true,
+      value: () => AbortSignal.abort(new DOMException('test timeout', 'TimeoutError')),
+    });
+    try {
+      const result = await harness.client.callTool({
+        name: 'list',
+        arguments: { path: tmpDir, includeIgnored: true },
+      });
+
+      assert.strictEqual(result.isError, true);
+      assert.strictEqual(result.structuredContent, undefined);
+    } finally {
+      Object.defineProperty(AbortSignal, 'timeout', originalTimeout);
+    }
   });
 
   it('TC-LOG-001: Tool execution logs to stderr', async () => {
@@ -1072,6 +1146,44 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.ok(sc.results?.some((r) => r.path.endsWith('findme.txt')));
   });
 
+  it('find_files pages are stable and reject cursor pattern replay', async () => {
+    const dir = join(tmpDir, 'find_pages');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'bravo.txt'), 'x');
+    await writeFile(join(dir, 'charlie.txt'), 'x');
+    const first = await harness.client.callTool({
+      name: 'find_files',
+      arguments: { path: dir, pattern: '*.txt', maxResults: 1 },
+    });
+    const firstStructured = first.structuredContent as {
+      results?: { path: string }[];
+      nextCursor?: string;
+    };
+    const cursor = firstStructured.nextCursor;
+    assert.ok(cursor);
+
+    await rm(dir, { recursive: true, force: true });
+    const second = await harness.client.callTool({
+      name: 'find_files',
+      arguments: { path: dir, pattern: '*.txt', maxResults: 10, cursor },
+    });
+    assert.notStrictEqual(second.isError, true);
+    const secondStructured = second.structuredContent as { results?: { path: string }[] };
+    assert.deepStrictEqual(
+      [...(firstStructured.results ?? []), ...(secondStructured.results ?? [])].map(
+        (entry) => entry.path,
+      ),
+      ['bravo.txt', 'charlie.txt'],
+    );
+
+    const replay = await harness.client.callTool({
+      name: 'find_files',
+      arguments: { path: dir, pattern: '*.md', maxResults: 10, cursor },
+    });
+    assert.strictEqual(replay.isError, true);
+    assert.match(firstTextBlock(replay).text ?? '', /INVALID_INPUT/);
+  });
+
   it('TC-FUNC-015s: stat returns file metadata via callTool', async () => {
     const file = await writeTestFile(tmpDir, 'statme.txt', 'hello');
     const result = await harness.client.callTool({
@@ -1145,6 +1257,72 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.strictEqual(structured.totalMatches, 1);
     assert.strictEqual(structured.matches?.[0]?.line, 2);
     assert.ok(structured.matches?.[0]?.content?.includes('NEEDLE_MARK'));
+  });
+
+  it('search_text pages are stable and reject cursor query replay', async () => {
+    const file = await writeTestFile(tmpDir, 'search_pages.txt', 'NEEDLE bravo\nNEEDLE charlie\n');
+    const first = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 1 },
+    });
+    const firstStructured = first.structuredContent as {
+      matches?: { content: string }[];
+      nextCursor?: string;
+    };
+    const cursor = firstStructured.nextCursor;
+    assert.ok(cursor);
+
+    await rm(file, { force: true });
+    const second = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 10, cursor },
+    });
+    assert.notStrictEqual(second.isError, true);
+    const secondStructured = second.structuredContent as { matches?: { content: string }[] };
+    assert.deepStrictEqual(
+      [...(firstStructured.matches ?? []), ...(secondStructured.matches ?? [])].map(
+        (match) => match.content,
+      ),
+      ['NEEDLE bravo', 'NEEDLE charlie'],
+    );
+
+    const replay = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'different query', maxResults: 10, cursor },
+    });
+    assert.strictEqual(replay.isError, true);
+    assert.match(firstTextBlock(replay).text ?? '', /INVALID_INPUT/);
+  });
+
+  it('HTTP pagination survives the per-request server factory', async () => {
+    const root = await createTestRoot();
+    const http = await bootHttpTest([root]);
+    try {
+      await writeTestFile(root, 'http-pages/bravo.txt', 'x');
+      await writeTestFile(root, 'http-pages/charlie.txt', 'x');
+      const client = await http.makeClient('http-pagination');
+      const first = await client.callTool({
+        name: 'list',
+        arguments: { path: join(root, 'http-pages'), maxEntries: 1 },
+      });
+      const firstStructured = first.structuredContent as { nextCursor?: string };
+      const cursor = firstStructured.nextCursor;
+      assert.ok(cursor);
+
+      const second = await client.callTool({
+        name: 'list',
+        arguments: { path: join(root, 'http-pages'), maxEntries: 10, cursor },
+      });
+      assert.notStrictEqual(second.isError, true);
+      const secondStructured = second.structuredContent as { entries?: { name: string }[] };
+      assert.deepStrictEqual(
+        secondStructured.entries?.map((entry) => entry.name),
+        ['charlie.txt'],
+      );
+    } finally {
+      await http.close();
+      await cleanupTestRoot(root);
+    }
   });
 
   it('TOOL-SURFACE-001: published schemas carry no dead keywords or phantom fields', async () => {
@@ -1281,7 +1459,9 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: conflictFile, head: 1, tail: 1 },
     });
     assert.strictEqual(conflict.isError, true);
-    assert.match(firstTextBlock(conflict).text, /head|tail/i);
+    const conflictText = firstTextBlock(conflict).text;
+    assert.ok(conflictText);
+    assert.match(conflictText, /head|tail/i);
   });
 
   // The session-start cost a client pays before its first tool call. Lower this

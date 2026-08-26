@@ -38,9 +38,7 @@ interface MockResponse {
 
 function createMockResponse(): Response & MockResponse {
   const res: MockResponse = {
-    statusCode: undefined,
     headers: {},
-    body: undefined,
     ended: false,
     header(name: string, value: string) {
       this.headers[name.toLowerCase()] = value;
@@ -708,7 +706,12 @@ describe('keyless bind rate limiting', () => {
       await post();
       assert.strictEqual(await post(), 429, 'the third request must be rate limited');
     } finally {
-      await new Promise<void>((resolve) => httpServer.close(resolve));
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
       await cleanupTestRoot(dir);
       if (saved === undefined) Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_RATE_LIMIT_RPM');
       else process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = saved;

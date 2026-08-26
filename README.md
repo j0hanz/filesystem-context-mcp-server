@@ -82,7 +82,7 @@ filesystem-mcp /path/to/allowed/dir
 docker run -i --rm \
   -v /path/to/project:/workspace:ro \
   ghcr.io/j0hanz/filesystem-mcp:latest \
-  /workspace
+  --read-only /workspace
 ```
 
 ### Configure in VS Code
@@ -94,7 +94,7 @@ Add to `.vscode/mcp.json`:
   "servers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/project"]
     }
   }
 }
@@ -103,7 +103,7 @@ Add to `.vscode/mcp.json`:
 Or install via CLI:
 
 ```sh
-code --add-mcp '{"name":"filesystem","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest"]}'
+code --add-mcp '{"name":"filesystem","command":"npx","args":["-y","@j0hanz/filesystem-mcp@latest","/path/to/project"]}'
 ```
 
 ### Configure in Visual Studio
@@ -115,7 +115,7 @@ Add to `.vs\mcp.json` in your solution directory, or `%USERPROFILE%\.mcp.json` f
   "servers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/project"]
     }
   }
 }
@@ -145,7 +145,7 @@ Add to `.cursor/mcp.json` in your project root (project-scoped), or `~/.cursor/m
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/project"]
     }
   }
 }
@@ -196,7 +196,10 @@ Claude Desktop (`claude_desktop_config.json`) and Cursor (`mcp.json`):
 ```
 
 > [!NOTE]
-> Add `:ro` to the volume mount (e.g. `/path/to/project:/workspace:ro`) to restrict the server to read-only access. Write tools (`create`, `edit`, `move`, `delete`, `patch`, `replace_text`) are unavailable in that mode.
+> For least privilege, use both controls: `:ro` makes the container mount
+> read-only at the operating-system boundary, while the server's `--read-only`
+> flag removes mutating tools (`create`, `edit`, `move`, `delete`, `patch`,
+> `replace_text`) from `tools/list`.
 
 ## Usage
 
@@ -283,17 +286,24 @@ the narrow dependency contract it consumes.
 
 ## Configuration
 
-Install it globally once and it works across every workspace without per-project config. The server resolves allowed directories from three sources, tried in this order:
+The server starts with allowed directories from explicit startup configuration:
 
-1. **MCP Roots Protocol**: VS Code, Cursor, and Claude Code support the roots capability, so the server queries allowed folders from the client directly.
-2. **Environment Variable**: The `FS_ALLOWED_DIRS` environment variable lists fallback directory paths (separated by `:` on POSIX or `;` on Windows).
-3. **Current Working Directory**: The `--allow-cwd` flag grants access to the directory where the server started.
+1. **Positional directories** passed to `filesystem-mcp`.
+2. **Environment variable** `FS_ALLOWED_DIRS` (separated by `:` on POSIX or `;` on Windows).
+3. **Current working directory** when `--allow-cwd` is enabled.
+
+Legacy MCP connections may additionally seed roots through the deprecated
+`roots/list` flow. Modern 2026-07-28 connections do not automatically send
+workspace roots. They can add access after startup by calling a tool with a
+concrete path and approving the elicitation-backed grant. `list_roots` reports
+the roots already configured or accepted; it cannot discover an unknown
+workspace by itself.
 
 ### Recommended global recipes
 
 #### VS Code / Cursor / Claude Code (primary recipe)
 
-These clients support the MCP Roots protocol, so no positional arguments are needed. The server queries workspace roots automatically.
+Configure the project directory explicitly:
 
 Add to your global or project-scoped configuration:
 
@@ -302,7 +312,7 @@ Add to your global or project-scoped configuration:
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@j0hanz/filesystem-mcp@latest"]
+      "args": ["-y", "@j0hanz/filesystem-mcp@latest", "/path/to/project"]
     }
   }
 }
@@ -363,48 +373,42 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `--log-level <level>`     | `info`  | Log level: debug, info, warn, or error (env: `LOG_LEVEL`)                          |
 | `--print-config`          | `false` | Print the active configuration and exit (use `--json` for machine-readable output) |
 | `--json`                  | `false` | Output `--print-config` as JSON                                                    |
-| `allow <path>`            | —       | CLI subcommand to authorize a path across client configurations                    |
-| `disallow <path>`         | —       | CLI subcommand to de-authorize a path across client configurations                 |
-| `list-allowed`            | —       | CLI subcommand to list all currently authorized paths                              |
 
 #### Environment variables
 
-| Variable                                  | Purpose                                                                                                           |
-| :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
-| `FS_ALLOWED_DIRS`                         | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.                            |
-| `ROOT_BOUNDARY`                           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                                        |
-| `ALLOW_CWD_WALK`                          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).                               |
-| `ALLOW_MISSING_ROOTS`                     | Set to any value to start even if configured directories do not exist.                                            |
-| `ALLOW_SENSITIVE`                         | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`).                         |
-| `DENYLIST`                                | Comma-separated list of paths or patterns to block (mirrors `--deny`).                                            |
-| `MAX_FILE_SIZE`                           | Maximum file size for reads in bytes (mirrors `--max-file-size`).                                                 |
-| `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                                                   |
-| `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                                                 |
-| `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                                          |
-| `FILESYSTEM_MCP_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                     |
-| `FILESYSTEM_MCP_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                                                    |
-| `FILESYSTEM_MCP_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                                        |
-| `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS` | Set to 1 to bind a wildcard host with no Host validation (accepts the risk).                                      |
-| `FILESYSTEM_MCP_PUBLIC_URL`               | Resource identifier URL for RFC 9728 discovery.                                                                   |
-| `FILESYSTEM_MCP_MAX_HTTP_SESSIONS`        | Max concurrent HTTP sessions (default 100, 1–10000).                                                              |
-| `FILESYSTEM_MCP_SESSION_IDLE_TIMEOUT_MS`  | HTTP session idle timeout in ms (default 1800000, 1000–86400000).                                                 |
-| `FILESYSTEM_MCP_RATE_LIMIT_RPM`           | Per-client-IP requests/min on public HTTP bind (default 120, 1–100000).                                           |
-| `FS_CONTEXT_MAX_REQUEST_BYTES`            | Max HTTP request body bytes (default 4194304, 1024–268435456).                                                    |
-| `FILESYSTEM_MCP_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                                               |
-| `FS_CONTEXT_MAX_INLINE_MATCHES`           | Max inline content matches per search (default 50, 1–10000).                                                      |
-| `FS_INIT_HANDSHAKE_TIMEOUT_MS`            | Init handshake timeout in ms (default 30000, 1000–300000).                                                        |
-| `MAX_READ_MANY_TOTAL_SIZE`                | Max total bytes across read_many (default 524288, 10240–104857600).                                               |
-| `DEFAULT_SEARCH_TIMEOUT`                  | Search timeout in ms (default 5000, 100–60000).                                                                   |
-| `NO_COLOR`                                | Any value disables ANSI color output.                                                                             |
-| `FILESYSTEM_MCP_REQUEST_STATE_KEY`        | HMAC key sealing `input_required` requestState across retry rounds (UTF-8, >=32 bytes; random per boot if unset). |
+| Variable                                  | Purpose                                                                                                                                                                                                           |
+| :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FS_ALLOWED_DIRS`                         | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.                                                                                                                            |
+| `ROOT_BOUNDARY`                           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                                                                                                                                        |
+| `ALLOW_CWD_WALK`                          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).                                                                                                                               |
+| `ALLOW_MISSING_ROOTS`                     | Set to any value to start even if configured directories do not exist.                                                                                                                                            |
+| `ALLOW_SENSITIVE`                         | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`).                                                                                                                         |
+| `DENYLIST`                                | Comma-separated list of paths or patterns to block (mirrors `--deny`).                                                                                                                                            |
+| `MAX_FILE_SIZE`                           | Maximum file size for reads in bytes (mirrors `--max-file-size`).                                                                                                                                                 |
+| `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                                                                                                                                                   |
+| `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                                                                                                                                                 |
+| `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                                                                                                                                          |
+| `FILESYSTEM_MCP_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                                                                                                                     |
+| `FILESYSTEM_MCP_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                                                                                                                                                    |
+| `FILESYSTEM_MCP_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                                                                                                                                        |
+| `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS` | Set to 1 to bind a wildcard host with no Host validation (accepts the risk).                                                                                                                                      |
+| `FILESYSTEM_MCP_PUBLIC_URL`               | Resource identifier URL for RFC 9728 discovery.                                                                                                                                                                   |
+| `FILESYSTEM_MCP_RATE_LIMIT_RPM`           | Per-client-IP requests/minute (default 120 with API-key authentication, 6,000 for keyless loopback; range 1–100000).                                                                                              |
+| `FS_CONTEXT_MAX_REQUEST_BYTES`            | Max HTTP request body bytes (default 4194304, 1024–268435456).                                                                                                                                                    |
+| `FILESYSTEM_MCP_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                                                                                                                                               |
+| `FS_CONTEXT_MAX_INLINE_MATCHES`           | Max inline content matches per search (default 50, 1–10000).                                                                                                                                                      |
+| `MAX_READ_MANY_TOTAL_SIZE`                | Max total bytes across read_many (default 524288, 10240–104857600).                                                                                                                                               |
+| `DEFAULT_SEARCH_TIMEOUT`                  | Search timeout in ms (default 5000, 100–60000).                                                                                                                                                                   |
+| `NO_COLOR`                                | Any value disables ANSI color output.                                                                                                                                                                             |
+| `FILESYSTEM_MCP_REQUEST_STATE_KEY`        | HMAC key sealing `input_required` requestState across retry rounds. Optional for stdio and single-instance HTTP (random per boot if unset); mandatory and shared across every fleet instance (UTF-8, >=32 bytes). |
 
 #### Multi-instance HTTP deployments
 
-Each instance delivers `subscriptions/listen` change events (`resources/updated`,
-`tools/list_changed`, etc.) on an in-process bus by default. Behind a load
-balancer with more than one instance, a listener on instance A will not see an
-event published on instance B. The server logs a warning at boot when `API_KEY`
-is set for this reason.
+Each instance delivers `subscriptions/listen` change events
+(`resources/updated`, `tools/list_changed`, etc.) on an in-process bus by
+default. Behind a load balancer with more than one instance, a listener on
+instance A will not see an event published on instance B. Explicit fleet mode
+therefore refuses to boot without a shared event bus.
 
 To fan events out across instances, implement the SDK's `ServerEventBus`
 interface (two methods: `publish`/`subscribe`) over whatever pub/sub you
@@ -445,11 +449,17 @@ const eventBus = new RedisServerEventBus();
 const apiKey = process.env['API_KEY'];
 if (!apiKey) throw new Error('API_KEY is required for a multi-instance HTTP deployment');
 
-await startHttpServer(3000, { cliAllowedDirs: ['/workspace'] }, { apiKey, eventBus });
+await startHttpServer(
+  3000,
+  { cliAllowedDirs: ['/workspace'] },
+  { apiKey, eventBus, deploymentMode: 'fleet' },
+);
 ```
 
 This project ships no bus adapter and no pub/sub dependency. A single
-in-process instance (the common case) needs nothing extra.
+in-process instance (the common case) needs nothing extra and is the CLI's
+default. Load-balanced deployments must use the programmatic API with
+`deploymentMode: 'fleet'`.
 
 ### Examples
 
@@ -487,7 +497,7 @@ filesystem-mcp --port 3000
 1. Fork the repository.
 2. Create a feature branch: `git checkout -b feat/your-feature`.
 3. Commit your changes with a clear message.
-4. Run `npm run check` to confirm tests, types, lint, and knip all pass.
+4. Run `node scripts/tasks.mjs` to confirm tests, types, lint, formatting, and knip all pass.
 5. Open a pull request.
 
 [![Contributors](https://contrib.rocks/image?repo=j0hanz/filesystem-mcp)](https://github.com/j0hanz/filesystem-mcp/graphs/contributors)

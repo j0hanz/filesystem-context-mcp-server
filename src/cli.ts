@@ -213,7 +213,7 @@ const ENV_HELP: HelpRow[] = [
   { flags: 'FILESYSTEM_MCP_PUBLIC_URL', desc: 'Resource identifier URL for RFC 9728 discovery' },
   {
     flags: 'FILESYSTEM_MCP_RATE_LIMIT_RPM',
-    desc: 'Per-client-IP requests/min on public HTTP bind (default 120, 1–100000)',
+    desc: 'Per-client-IP requests/min (default 120 authenticated, 6000 keyless loopback; 1–100000)',
   },
   {
     flags: 'FS_CONTEXT_MAX_REQUEST_BYTES',
@@ -228,10 +228,6 @@ const ENV_HELP: HelpRow[] = [
     desc: 'Max inline content matches per search (default 50, 1–10000)',
   },
   {
-    flags: 'FS_INIT_HANDSHAKE_TIMEOUT_MS',
-    desc: 'Init handshake timeout in ms (default 30000, 1000–300000)',
-  },
-  {
     flags: 'MAX_READ_MANY_TOTAL_SIZE',
     desc: 'Max total bytes across one batch read (default 524288, 10240–104857600)',
   },
@@ -239,7 +235,7 @@ const ENV_HELP: HelpRow[] = [
   { flags: 'NO_COLOR', desc: 'Any value disables ANSI color output' },
   {
     flags: 'FILESYSTEM_MCP_REQUEST_STATE_KEY',
-    desc: 'HMAC key sealing input_required requestState across retry rounds (UTF-8, >=32 bytes; random per boot if unset)',
+    desc: 'HMAC key for input_required state; optional outside fleet mode, shared and >=32 bytes in fleet mode',
   },
 ];
 

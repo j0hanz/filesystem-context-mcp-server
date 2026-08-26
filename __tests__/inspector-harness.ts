@@ -180,7 +180,7 @@ export async function executeInspectorCli<T = unknown>(
       if (trimmedOut.length > 0) {
         try {
           const parsed = JSON.parse(trimmedOut) as Record<string, unknown>;
-          json = (parsed?.result !== undefined ? parsed.result : parsed) as T;
+          json = (parsed['result'] !== undefined ? parsed['result'] : parsed) as T;
         } catch {
           // If output is NDJSON (--app-info with tools/list), json parsing the whole block might fail
         }

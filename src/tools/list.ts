@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
-import { closePage, openPage } from '../core/cursor.js';
+import { createFirstPage, readNextPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import type { EntryType } from '../core/glob.js';
 import {
@@ -48,11 +48,7 @@ interface CollectOptions {
   includeIgnored: boolean;
   signal: AbortSignal;
   pathGuard: PathGuard;
-  // Upper bound on the collected (and thus paginable) entry array. MUST match
-  // the `max` passed to openPage: offset pagination is only correct when
-  // every page scans and sorts the same universe up to the same cap. The
-  // caller threads openPage's fetchMax here so the invariant is enforced,
-  // not implicit across two constants.
+  /** Upper bound on the stored, paginable entry array. */
   entryCap: number;
   onProgress?: (progress: { current: number; total?: number }) => void;
 }
@@ -107,7 +103,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     maxDepth: options.maxDepth - 1,
     onlyFiles: false,
   })) {
-    if (options.signal.aborted) break;
+    options.signal.throwIfAborted();
     scanned++;
     options.onProgress?.({ current: scanned });
 
@@ -145,6 +141,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     }
   }
 
+  options.signal.throwIfAborted();
   entries.sort(compareEntries);
 
   return {
@@ -209,7 +206,7 @@ const ListInputSchema = z.strictObject({
   maxEntries: PositiveInt.max(MAX_LIST_ENTRIES)
     .default(DEFAULT_LIST_ENTRIES)
     .describe(
-      `Maximum number of entries to include in the inline result (default: ${String(DEFAULT_LIST_ENTRIES)}); full result is stored at resourceUri when exceeded`,
+      `Page size (default: ${String(DEFAULT_LIST_ENTRIES)}). Continue with nextCursor; resourceUri is only for hard-cap overflow.`,
     ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
@@ -246,6 +243,41 @@ const ListOutputSchema = z.strictObject({
   nextCursor: NextCursorSchema,
 });
 
+interface ListPageMetadata {
+  readonly path: string;
+  readonly totalEntries: number;
+  readonly totalFiles: number;
+  readonly totalDirectories: number;
+  readonly resourceUri?: string;
+}
+
+function listQueryKey(args: z.infer<typeof ListInputSchema>, path: string): string {
+  return JSON.stringify({
+    method: 'list',
+    path,
+    maxDepth: args.maxDepth,
+    includeHidden: args.includeHidden,
+    includeIgnored: args.includeIgnored,
+  });
+}
+
+function listOutput(
+  entries: readonly CollectedEntry[],
+  metadata: ListPageMetadata,
+  nextCursor: string | undefined,
+): z.infer<typeof ListOutputSchema> {
+  return {
+    path: metadata.path,
+    entries: [...entries],
+    entryCount: entries.length,
+    totalEntries: metadata.totalEntries,
+    totalFiles: metadata.totalFiles,
+    totalDirectories: metadata.totalDirectories,
+    ...(metadata.resourceUri ? { resourceUri: metadata.resourceUri } : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
+  };
+}
+
 async function handleList(
   args: z.infer<typeof ListInputSchema>,
   ctx: ToolCtx,
@@ -256,27 +288,31 @@ async function handleList(
 }> {
   const path = args.path;
   const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
+  const queryKey = listQueryKey(args, resolvedPath);
+
+  if (args.cursor !== undefined) {
+    const paged = readNextPage<CollectedEntry, ListPageMetadata>({
+      store: ctx.pageStore,
+      queryKey,
+      cursor: args.cursor,
+      pageSize: args.maxEntries,
+    });
+    return {
+      structured: listOutput(paged.page, paged.metadata, paged.nextCursor),
+      markdown: renderMarkdown(basename(paged.metadata.path), [...paged.page]),
+    };
+  }
+
   const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
-
-  const { offset, fetchMax } = openPage({ cursor: args.cursor, max: MAX_LIST_ENTRIES });
-
   const result = await collect(validDir, {
     maxDepth: args.maxDepth,
     includeHidden: args.includeHidden,
     includeIgnored: args.includeIgnored,
     signal: timedSignal(ctx.signal, DEFAULT_SEARCH_TIMEOUT_MS),
     pathGuard: ctx.fs.pathGuard,
-    entryCap: fetchMax,
+    entryCap: MAX_LIST_ENTRIES,
     ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
   });
-  const page = result.entries.slice(offset, offset + args.maxEntries);
-  const nextCursor = closePage({
-    total: result.entries.length,
-    offset,
-    pageCount: page.length,
-  });
-  const markdown = renderMarkdown(basename(validDir), page);
-
   let resourceUri: string | undefined;
   let link: ContentBlock | undefined;
   if (result.totalEntries > result.entries.length && ctx.resourceStore) {
@@ -295,27 +331,35 @@ async function handleList(
     link = res.link;
   }
 
-  const output: z.infer<typeof ListOutputSchema> = {
+  const metadata: ListPageMetadata = {
     path: validDir,
-    entries: page,
-    entryCount: page.length,
     totalEntries: result.totalEntries,
     totalFiles: result.totalFiles,
     totalDirectories: result.totalDirectories,
     ...(resourceUri ? { resourceUri } : {}),
-    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
+  const paged = createFirstPage<CollectedEntry, ListPageMetadata>({
+    store: ctx.pageStore,
+    queryKey,
+    items: result.entries,
+    metadata,
+    pageSize: args.maxEntries,
+  });
+  const output = listOutput(paged.page, metadata, paged.nextCursor);
 
-  return { structured: output, markdown, ...(link ? { link } : {}) };
+  return {
+    structured: output,
+    markdown: renderMarkdown(basename(validDir), [...paged.page]),
+    ...(link ? { link } : {}),
+  };
 }
 
 export const LIST = defineTool({
   name: 'list',
   title: 'List',
   description:
-    'List directory contents. Returns entries sorted directories-first then alphabetically, plus a markdown ASCII tree. ' +
-    'Default maxDepth=1 lists top-level entries only; increase to recurse deeper. ' +
-    'When results exceed maxEntries, the full list is stored at resourceUri.',
+    'List sorted directory entries and an ASCII tree. maxDepth=1 is top-level. ' +
+    'maxEntries sets page size; continue with nextCursor. resourceUri is only for hard-cap overflow.',
   input: ListInputSchema,
   output: ListOutputSchema,
   // Not published: every field is a plainly-named scalar (`entryCount`,

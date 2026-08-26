@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
-import { closePage, openPage } from '../core/cursor.js';
+import { createFirstPage, readNextPage } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
@@ -87,6 +87,49 @@ function buildRelativeResults(
   return relativeResults;
 }
 
+type SearchFileResult = NonNullable<z.infer<typeof SearchFilesOutputSchema>['results']>[number];
+
+interface SearchFilesPageMetadata {
+  readonly root: string;
+  readonly totalMatches: number;
+  readonly filesScanned: number;
+  readonly skippedInaccessible?: number;
+  readonly stoppedReason?: z.infer<typeof SearchFilesOutputSchema>['stoppedReason'];
+  readonly resourceUri?: string;
+}
+
+function searchFilesQueryKey(
+  args: z.infer<typeof SearchFilesInputSchema>,
+  basePath: string,
+): string {
+  return JSON.stringify({
+    method: 'find_files',
+    path: basePath,
+    pattern: args.pattern,
+    includeIgnored: args.includeIgnored,
+    includeHidden: args.includeHidden,
+    sortBy: args.sortBy,
+    maxDepth: args.maxDepth,
+  });
+}
+
+function searchFilesOutput(
+  results: readonly SearchFileResult[],
+  metadata: SearchFilesPageMetadata,
+  nextCursor: string | undefined,
+): z.infer<typeof SearchFilesOutputSchema> {
+  return {
+    root: metadata.root,
+    results: [...results],
+    totalMatches: metadata.totalMatches,
+    filesScanned: metadata.filesScanned,
+    ...(metadata.skippedInaccessible ? { skippedInaccessible: metadata.skippedInaccessible } : {}),
+    ...(metadata.stoppedReason !== undefined ? { stoppedReason: metadata.stoppedReason } : {}),
+    ...(metadata.resourceUri ? { resourceUri: metadata.resourceUri } : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
+  };
+}
+
 async function handleSearchFiles(
   args: z.infer<typeof SearchFilesInputSchema>,
   ctx: ToolCtx,
@@ -94,16 +137,24 @@ async function handleSearchFiles(
   structured: z.infer<typeof SearchFilesOutputSchema>;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
-  const basePath = await ctx.fs.pathGuard.validateExistingDirectory(
-    ctx.fs.pathGuard.resolvePathOrRoot(args.path),
-  );
+  const requestedBasePath = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
+  const queryKey = searchFilesQueryKey(args, requestedBasePath);
+  if (args.cursor !== undefined) {
+    const paged = readNextPage<SearchFileResult, SearchFilesPageMetadata>({
+      store: ctx.pageStore,
+      queryKey,
+      cursor: args.cursor,
+      pageSize: args.maxResults,
+    });
+    return {
+      structured: searchFilesOutput(paged.page, paged.metadata, paged.nextCursor),
+    };
+  }
+
+  const basePath = await ctx.fs.pathGuard.validateExistingDirectory(requestedBasePath);
   const excludePatterns = args.includeIgnored ? [] : DEFAULT_EXCLUDE_PATTERNS;
-  const { offset: cursorOffset, fetchMax } = openPage({
-    cursor: args.cursor,
-    max: MAX_SEARCH_RESULTS,
-  });
   const searchOptions: Parameters<typeof searchFiles>[3] = {
-    maxResults: fetchMax,
+    maxResults: MAX_SEARCH_RESULTS,
     includeHidden: args.includeHidden,
     sortBy: args.sortBy,
     respectGitignore: !args.includeIgnored,
@@ -117,55 +168,46 @@ async function handleSearchFiles(
     searchOptions,
     ctx.fs.pathGuard,
   );
-  // fetchMax covers the full capped set (see openPage), so the page window is
-  // bounded here by pageSize, not by the fetch cap.
-  const displayResults = result.results.slice(cursorOffset, cursorOffset + args.maxResults);
-  const nextCursor = closePage({
-    total: result.results.length,
-    offset: cursorOffset,
-    pageCount: displayResults.length,
-  });
-
-  const relativeResults = buildRelativeResults(result.basePath, displayResults);
-  const structured: z.infer<typeof SearchFilesOutputSchema> = {
-    root: basePath,
-    results: relativeResults,
-    totalMatches: result.summary.matched,
-    filesScanned: result.summary.filesScanned,
-    ...(result.summary.skippedInaccessible
-      ? { skippedInaccessible: result.summary.skippedInaccessible }
-      : {}),
-    // `maxFiles` is unreachable here — this scan calls only hitMaxResults and
-    // hitAbort — so it is excluded rather than published as a value no response
-    // can carry. The shared tracker type is wider than this one caller.
-    ...(result.summary.stoppedReason !== undefined && result.summary.stoppedReason !== 'maxFiles'
-      ? { stoppedReason: result.summary.stoppedReason }
-      : {}),
-    ...(nextCursor !== undefined ? { nextCursor } : {}),
-  };
+  const relativeResults = buildRelativeResults(result.basePath, result.results);
 
   // Store the full result set so a caller can fetch all matching files by URI
   // when the response is incomplete: `nextCursor` covers the multi-page case,
   // and `summary.truncated` covers a single page that already hit the hard result
   // cap (no nextCursor, but more matches exist beyond the cap).
-  if (ctx.resourceStore !== undefined && (nextCursor !== undefined || result.summary.truncated)) {
-    const fullRelativeResults = buildRelativeResults(result.basePath, result.results);
-    const { entry, link } = putJsonResource(
-      ctx.resourceStore,
-      `${args.pattern} files`,
-      fullRelativeResults,
-    );
-
-    return {
-      structured: {
-        ...structured,
-        resourceUri: entry.uri,
-      },
-      link,
-    };
+  let resourceUri: string | undefined;
+  let link: ReturnType<typeof putJsonResource>['link'] | undefined;
+  if (
+    ctx.resourceStore !== undefined &&
+    (relativeResults.length > args.maxResults || result.summary.truncated)
+  ) {
+    const stored = putJsonResource(ctx.resourceStore, `${args.pattern} files`, relativeResults);
+    resourceUri = stored.entry.uri;
+    link = stored.link;
   }
 
-  return { structured };
+  const metadata: SearchFilesPageMetadata = {
+    root: result.basePath,
+    totalMatches: result.summary.matched,
+    filesScanned: result.summary.filesScanned,
+    ...(result.summary.skippedInaccessible
+      ? { skippedInaccessible: result.summary.skippedInaccessible }
+      : {}),
+    ...(result.summary.stoppedReason !== undefined && result.summary.stoppedReason !== 'maxFiles'
+      ? { stoppedReason: result.summary.stoppedReason }
+      : {}),
+    ...(resourceUri ? { resourceUri } : {}),
+  };
+  const paged = createFirstPage<SearchFileResult, SearchFilesPageMetadata>({
+    store: ctx.pageStore,
+    queryKey,
+    items: relativeResults,
+    metadata,
+    pageSize: args.maxResults,
+  });
+  return {
+    structured: searchFilesOutput(paged.page, metadata, paged.nextCursor),
+    ...(link !== undefined ? { link } : {}),
+  };
 }
 
 export const SEARCH_FILES = defineTool({
@@ -173,7 +215,7 @@ export const SEARCH_FILES = defineTool({
   title: 'Find Files',
   description:
     'Find files matching a glob pattern. Returns matched paths with optional metadata. ' +
-    'Pagination: cursors are offset-based and re-run the full query per page. ' +
+    'Pagination cursors reference a query-bound snapshot that expires after 60 seconds. ' +
     'For content search use search_text; for bulk regex replacements use replace_text with the same glob.',
   input: SearchFilesInputSchema,
   output: SearchFilesOutputSchema,

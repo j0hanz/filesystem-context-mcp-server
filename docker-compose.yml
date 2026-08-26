@@ -4,4 +4,4 @@ services:
     stdin_open: true
     volumes:
       - ./:/projects/workspace:ro
-    command: ['/projects/workspace']
+    command: ['--read-only', '/projects/workspace']

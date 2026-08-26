@@ -2,7 +2,7 @@
 // gated transport that attaches listen-filter watchers before the SDK sees the
 // message.
 import type { McpServerFactory } from '@modelcontextprotocol/server';
-import { JSONRPC_VERSION, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import { JSONRPC_VERSION, ProtocolErrorCode, specTypeSchemas } from '@modelcontextprotocol/server';
 import {
   serveStdio,
   type StdioServerHandle,
@@ -14,11 +14,41 @@ import { fileURLToPath } from 'node:url';
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import { Logger } from '../core/observability.js';
 import type { ServerOptions } from '../core/path.js';
+import { PathGuard } from '../core/path.js';
 import { createWatcherRegistry } from '../core/watcher-registry.js';
 import type { FilesystemServerContext } from '../server.js';
 import { createServer } from '../server.js';
 import type { RuntimeConfig } from './shared.js';
 import { jsonRpcRequestId, listenSubscriptionUris, prepareListenWatchers } from './shared.js';
+
+interface StdioListenState {
+  acquiredUris: string[];
+  cancelled: boolean;
+  delivered: boolean;
+}
+
+function isStructurallyValidListen(message: unknown): boolean {
+  const result = specTypeSchemas.SubscriptionsListenRequest['~standard'].validate(message);
+  return !('issues' in result);
+}
+
+// Read through a function, not `state.cancelled` directly: a cancellation lands
+// between the checks, and control-flow narrowing from the first one would
+// otherwise make the second read a compile-time constant.
+function isListenCancelled(state: StdioListenState): boolean {
+  return state.cancelled;
+}
+
+function cancelledRequestId(message: unknown): string | number | null {
+  if (typeof message !== 'object' || message === null) return null;
+  const notification = message as {
+    method?: unknown;
+    params?: { requestId?: unknown };
+  };
+  if (notification.method !== 'notifications/cancelled') return null;
+  const requestId = notification.params?.requestId;
+  return typeof requestId === 'string' || typeof requestId === 'number' ? requestId : null;
+}
 
 /**
  * Seed the guard's allowed roots from the client's declared workspace roots.
@@ -81,19 +111,25 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
  * `req.body`. The watcher's notify sink calls `sendResourceUpdated` on the
  * pinned instance, which the router then delivers to the listening stream.
  *
- * ponytail: stdio watchers live for the connection and are freed by
- * `registry.destroy()` at close, not when one listen stream ends — the router
- * exposes no per-stream close hook the way an HTTP SSE response does. Bounded by
- * MAX_WATCHERS, and a stdio connection has exactly one client.
+ * Watcher leases are tracked by listen request ID and released on cancellation,
+ * rejection, graceful completion, or connection close.
  */
 export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
   let activeCtx: FilesystemServerContext | undefined;
+  const pathGuard = new PathGuard(options, true);
+  let pathGuardReady: Promise<void> | undefined;
+  const ensurePathGuard = (): Promise<void> => {
+    pathGuardReady ??= pathGuard.recomputeAllowedDirectories();
+    return pathGuardReady;
+  };
   // Shared with the resource contract so a `resources/subscribe` and a
   // `subscriptions/listen` naming the same URI reuse one watcher.
   const registry = createWatcherRegistry();
   const factory: McpServerFactory = async ({ era }) => {
+    await ensurePathGuard();
     const c = await createServer(options, {
       watcherRegistry: registry,
+      pathGuard,
       era,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
     });
@@ -131,6 +167,26 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
   };
 
   const wire = new StdioServerTransport();
+  const listens = new Map<string | number, StdioListenState>();
+
+  // Deleting the entry is what makes this idempotent: a second call for the
+  // same id finds nothing to release.
+  const releaseListen = (id: string | number): void => {
+    const state = listens.get(id);
+    if (!state) return;
+    listens.delete(id);
+    for (const uri of state.acquiredUris) registry.release(uri);
+  };
+
+  const send = wire.send.bind(wire);
+  wire.send = async (message) => {
+    if ('id' in message && ('result' in message || 'error' in message)) {
+      const id = message.id;
+      if (id !== undefined) releaseListen(id);
+    }
+    await send(message);
+  };
+
   const handle = serveStdio(factory, {
     legacy: 'serve',
     transport: wire,
@@ -139,18 +195,11 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
     },
   });
 
-  // Wrap the callback `serveStdio` just installed. A message with no listen
-  // filter is forwarded on the spot, so one slow attach cannot stall the
-  // connection's other traffic (a `notifications/cancelled` for the very request
-  // being gated, most of all); gated messages stay ordered among themselves, so
-  // two listens naming the same URI cannot race the registry's ref-count.
-  //
-  // Every lease taken here is held for the rest of the connection: stdio has no
-  // per-stream close hook, so nothing releases them and `registry.destroy` at
-  // close is the only teardown. That covers a listen the SDK goes on to reject
-  // too — the watcher stays until the connection ends, bounded by MAX_WATCHERS.
-  // Per-subscription release needs the id the unsubscribe contract does not
-  // carry (see watcher-registry.ts).
+  // Wrap the callback `serveStdio` just installed. Listen requests are admitted
+  // in order so two requests naming the same URI cannot race the registry's
+  // ref-count. Cancellation is serialized with pending admission by request ID:
+  // a pending request is suppressed and releases after preparation, while an
+  // active request releases before the SDK closes its stream.
   //
   // serveStdio installs its onmessage synchronously and only then starts the
   // wire; this wrapper is only correct because of that ordering. Assert it
@@ -163,35 +212,74 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
   }
   let gated = Promise.resolve();
   wire.onmessage = (message) => {
-    if (listenSubscriptionUris(message).length === 0) {
+    const cancelId = cancelledRequestId(message);
+    if (cancelId !== null) {
+      const state = listens.get(cancelId);
+      if (!state) {
+        deliver(message);
+        return;
+      }
+      state.cancelled = true;
+      if (state.delivered) {
+        releaseListen(cancelId);
+        deliver(message);
+      }
+      return;
+    }
+
+    const subscriptionUris = listenSubscriptionUris(message);
+    if (subscriptionUris.length === 0) {
       deliver(message);
       return;
     }
+    const id = jsonRpcRequestId(message);
+    if (id === null || listens.has(id)) {
+      deliver(message);
+      return;
+    }
+    const state: StdioListenState = {
+      acquiredUris: [],
+      cancelled: false,
+      delivered: false,
+    };
+    listens.set(id, state);
     gated = gated
       .then(async () => {
-        const id = jsonRpcRequestId(message);
-        const ctx = activeCtx;
-        if (id !== null && ctx) {
-          const prepared = await prepareListenWatchers(message, ctx.pathGuard, registry, sink);
-          if (!prepared.ok) {
-            await wire.send({
-              jsonrpc: JSONRPC_VERSION,
-              id,
-              error: { code: ProtocolErrorCode.InvalidParams, message: prepared.message },
-            });
-            return;
-          }
+        if (!isStructurallyValidListen(message)) {
+          listens.delete(id);
+          deliver(message);
+          return;
         }
+        if (isListenCancelled(state)) {
+          listens.delete(id);
+          return;
+        }
+        await ensurePathGuard();
+        const prepared = await prepareListenWatchers(message, pathGuard, registry, sink);
+        if (!prepared.ok) {
+          listens.delete(id);
+          await wire.send({
+            jsonrpc: JSONRPC_VERSION,
+            id,
+            error: { code: ProtocolErrorCode.InvalidParams, message: prepared.message },
+          });
+          return;
+        }
+        state.acquiredUris = prepared.acquiredUris;
+        if (isListenCancelled(state)) {
+          releaseListen(id);
+          return;
+        }
+        state.delivered = true;
         deliver(message);
       })
       .catch(async (error: unknown) => {
+        releaseListen(id);
         const failure =
           error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
         wire.onerror?.(failure);
         // The gate swallowed the message, so nothing downstream will answer it.
         // Without this the client waits out its whole request timeout.
-        const id = jsonRpcRequestId(message);
-        if (id === null) return;
         await wire
           .send({
             jsonrpc: JSONRPC_VERSION,
@@ -206,6 +294,7 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
 
   return {
     close: async () => {
+      for (const id of [...listens.keys()]) releaseListen(id);
       registry.destroy();
       try {
         activeCtx?.disposeRuntimeState();

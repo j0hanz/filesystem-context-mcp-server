@@ -54,7 +54,9 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
   it('HTTP-003: Reads static resource over in-process HTTP transport', async () => {
     const res = await httpHarness.client.readResource({ uri: INSTRUCTIONS_URI });
     assert.strictEqual(res.contents.length, 1);
-    assert.strictEqual(res.contents[0].mimeType, 'text/markdown');
+    const content = res.contents[0];
+    assert.ok(content);
+    assert.strictEqual(content.mimeType, 'text/markdown');
   });
 
   it('HTTP-004: Tool business error returns failed summary over HTTP', async () => {
@@ -77,6 +79,7 @@ describe('HTTP In-Process Transport (createMcpHandler / handler.fetch)', () => {
     // Spec PR #3002: server identity rides _meta['io.modelcontextprotocol/serverInfo']
     // on 2026-era responses; getServerVersion() reads the discover result's stamp.
     const version = httpHarness.client.getServerVersion();
+    assert.ok(version, 'the modern discover result must retain server identity');
     assert.strictEqual(version?.name, 'filesystem-mcp');
     assert.ok(version.version, 'the _meta serverInfo stamp must carry a version');
 

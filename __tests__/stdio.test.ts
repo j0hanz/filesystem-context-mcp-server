@@ -5,11 +5,13 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
   cleanupTestRoot,
+  createRawStdioServer,
   createStdioClient,
   createTestRoot,
   firstTextBlock,
@@ -112,5 +114,420 @@ describe('Stdio Transport (real subprocess)', () => {
         return true;
       },
     );
+  });
+
+  it('STDIO-012: pagination snapshots survive separate stdio requests', async () => {
+    const pageDir = join(tmpDir, 'stdio-pages');
+    await writeTestFile(pageDir, 'alpha.txt', 'alpha');
+    await writeTestFile(pageDir, 'bravo.txt', 'bravo');
+
+    const first = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: pageDir, maxEntries: 1 },
+    });
+    const cursor = (first.structuredContent as { nextCursor?: string }).nextCursor;
+    assert.ok(cursor);
+
+    const second = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: pageDir, maxEntries: 10, cursor },
+    });
+    assert.notStrictEqual(second.isError, true);
+    assert.deepStrictEqual(
+      (second.structuredContent as { entries?: { name: string }[] }).entries?.map(
+        (entry) => entry.name,
+      ),
+      ['bravo.txt'],
+    );
+  });
+});
+
+describe('Stdio subscription lease lifecycle', () => {
+  it('STDIO-006: closing a listen frees a one-slot watcher budget', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createStdioClient(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const fileA = await writeTestFile(tmpDir, 'lease-a.txt', 'A');
+      const fileB = await writeTestFile(tmpDir, 'lease-b.txt', 'B');
+      const first = await harness.client.listen({
+        resourceSubscriptions: [buildFileResourceUri(fileA)],
+      });
+
+      await first.close();
+
+      const second = await harness.client.listen({
+        resourceSubscriptions: [buildFileResourceUri(fileB)],
+      });
+      await second.close();
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-007: an SDK-rejected listen does not consume watcher capacity', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const invalidFile = await writeTestFile(tmpDir, 'invalid-listen.txt', 'invalid');
+      const validFile = await writeTestFile(tmpDir, 'valid-listen.txt', 'valid');
+
+      const meta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+      };
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: { _meta: meta },
+      });
+      const discover = await harness.nextMessage();
+      assert.ok('result' in discover, JSON.stringify(discover));
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'invalid',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(invalidFile), 42 as never],
+          },
+        },
+      });
+      const rejected = await harness.nextMessage();
+      assert.ok('error' in rejected);
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'valid',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(validFile)],
+          },
+        },
+      });
+      const acknowledged = await harness.nextMessage();
+      assert.ok('method' in acknowledged, JSON.stringify(acknowledged));
+      assert.strictEqual(acknowledged.method, 'notifications/subscriptions/acknowledged');
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-008: cancelling an accepted listen frees its watcher lease', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const fileA = await writeTestFile(tmpDir, 'cancel-a.txt', 'A');
+      const fileB = await writeTestFile(tmpDir, 'cancel-b.txt', 'B');
+      const meta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+      };
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: { _meta: meta },
+      });
+      assert.ok('result' in (await harness.nextMessage()));
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'first',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(fileA)],
+          },
+        },
+      });
+      const firstAck = await harness.nextMessage();
+      assert.ok('method' in firstAck);
+
+      await harness.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 'first' },
+      });
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'second',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(fileB)],
+          },
+        },
+      });
+      const secondAck = await harness.nextMessage();
+      assert.ok('method' in secondAck, JSON.stringify(secondAck));
+      assert.strictEqual(secondAck.method, 'notifications/subscriptions/acknowledged');
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-009: cancellation queued with a pending listen suppresses admission', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const fileA = await writeTestFile(tmpDir, 'pending-a.txt', 'A');
+      const fileB = await writeTestFile(tmpDir, 'pending-b.txt', 'B');
+      const meta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+      };
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: { _meta: meta },
+      });
+      assert.ok('result' in (await harness.nextMessage()));
+
+      await harness.sendMany([
+        {
+          jsonrpc: '2.0',
+          id: 'pending',
+          method: 'subscriptions/listen',
+          params: {
+            _meta: meta,
+            notifications: {
+              resourceSubscriptions: [buildFileResourceUri(fileA)],
+            },
+          },
+        },
+        {
+          jsonrpc: '2.0',
+          method: 'notifications/cancelled',
+          params: { requestId: 'pending' },
+        },
+      ]);
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'after-pending-cancel',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(fileB)],
+          },
+        },
+      });
+      const acknowledged = await harness.nextMessage();
+      assert.ok('method' in acknowledged, JSON.stringify(acknowledged));
+      assert.strictEqual(acknowledged.method, 'notifications/subscriptions/acknowledged');
+      assert.equal(
+        acknowledged.params?._meta?.['io.modelcontextprotocol/subscriptionId'],
+        'after-pending-cancel',
+      );
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-010: shared URI listens release one lease per cancellation', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const sharedFile = await writeTestFile(tmpDir, 'shared.txt', 'shared');
+      const otherFile = await writeTestFile(tmpDir, 'other.txt', 'other');
+      const sharedUri = buildFileResourceUri(sharedFile);
+      const otherUri = buildFileResourceUri(otherFile);
+      const meta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+      };
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: { _meta: meta },
+      });
+      assert.ok('result' in (await harness.nextMessage()));
+
+      for (const id of ['shared-1', 'shared-2']) {
+        await harness.send({
+          jsonrpc: '2.0',
+          id,
+          method: 'subscriptions/listen',
+          params: {
+            _meta: meta,
+            notifications: { resourceSubscriptions: [sharedUri] },
+          },
+        });
+        assert.ok('method' in (await harness.nextMessage()));
+      }
+
+      await harness.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 'shared-1' },
+      });
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'blocked',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: { resourceSubscriptions: [otherUri] },
+        },
+      });
+      const blocked = await harness.nextMessage();
+      assert.ok('error' in blocked, JSON.stringify(blocked));
+      assert.strictEqual(blocked.error.code, ProtocolErrorCode.InvalidParams);
+
+      await harness.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 'shared-2' },
+      });
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'released',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: { resourceSubscriptions: [otherUri] },
+        },
+      });
+      const released = await harness.nextMessage();
+      assert.ok('method' in released, JSON.stringify(released));
+      assert.strictEqual(released.method, 'notifications/subscriptions/acknowledged');
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-011: an SDK version rejection releases an acquired watcher lease', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir, {
+      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+    });
+    try {
+      const rejectedFile = await writeTestFile(tmpDir, 'version-rejected.txt', 'rejected');
+      const validFile = await writeTestFile(tmpDir, 'version-valid.txt', 'valid');
+      const clientInfo = { name: 'raw-stdio-test', version: '1.0.0' };
+      const validMeta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': clientInfo,
+      };
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'discover',
+        method: 'server/discover',
+        params: { _meta: validMeta },
+      });
+      assert.ok('result' in (await harness.nextMessage()));
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'unsupported-version',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: {
+            ...validMeta,
+            'io.modelcontextprotocol/protocolVersion': '1900-01-01',
+          },
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(rejectedFile)],
+          },
+        },
+      });
+      const rejected = await harness.nextMessage();
+      assert.ok('error' in rejected, JSON.stringify(rejected));
+      assert.strictEqual(rejected.error.code, -32022);
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'after-version-rejection',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: validMeta,
+          notifications: {
+            resourceSubscriptions: [buildFileResourceUri(validFile)],
+          },
+        },
+      });
+      const acknowledged = await harness.nextMessage();
+      assert.ok('method' in acknowledged, JSON.stringify(acknowledged));
+      assert.strictEqual(acknowledged.method, 'notifications/subscriptions/acknowledged');
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
+  });
+
+  it('STDIO-013: a listen sent as the first modern request attaches its watcher', async () => {
+    const tmpDir = await createTestRoot();
+    const harness = await createRawStdioServer(tmpDir);
+    try {
+      const file = await writeTestFile(tmpDir, 'first-request-listen.txt', 'before');
+      const uri = buildFileResourceUri(file);
+      const meta = {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': {},
+        'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+      };
+
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'first-request-listen',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: meta,
+          notifications: { resourceSubscriptions: [uri] },
+        },
+      });
+      const acknowledged = await harness.nextMessage();
+      assert.ok('method' in acknowledged, JSON.stringify(acknowledged));
+      assert.strictEqual(acknowledged.method, 'notifications/subscriptions/acknowledged');
+
+      await writeFile(file, 'after');
+      const updated = await Promise.race([
+        harness.nextMessage(),
+        setTimeout(750).then(() => {
+          throw new Error('timed out waiting for the first-request watcher');
+        }),
+      ]);
+      assert.ok('method' in updated, JSON.stringify(updated));
+      assert.strictEqual(updated.method, 'notifications/resources/updated');
+      assert.strictEqual(updated.params?.['uri'], uri);
+    } finally {
+      await harness.close();
+      await cleanupTestRoot(tmpDir);
+    }
   });
 });

@@ -9,6 +9,7 @@ import packageJson from '../package.json' with { type: 'json' };
 import { GuardedFileSystem } from './core/fs.js';
 import { requestStateCodec } from './core/input-required.js';
 import { Logger } from './core/observability.js';
+import { PageSnapshotStore } from './core/page-store.js';
 import type { ServerOptions } from './core/path.js';
 import { PathGuard } from './core/path.js';
 import { ResourceStore } from './core/store.js';
@@ -35,26 +36,34 @@ export class FilesystemServerContext {
   public readonly mcp: McpServer;
   public readonly pathGuard: PathGuard;
   public readonly fs: GuardedFileSystem;
+  public readonly pages: PageSnapshotStore;
   public readonly resources: ResourceStore;
+  /** False when the store is shared across instances and outlives this one. */
+  private readonly ownsPages: boolean;
   private readonly resourceDisposable?: { dispose(): void } | undefined;
   private cleanedUp = false;
 
   constructor(
     mcp: McpServer,
     pathGuard: PathGuard,
+    pages: PageSnapshotStore,
     resources: ResourceStore,
+    ownsPages: boolean,
     resourceDisposable?: { dispose(): void },
   ) {
     this.mcp = mcp;
     this.pathGuard = pathGuard;
     this.fs = new GuardedFileSystem(pathGuard);
+    this.pages = pages;
     this.resources = resources;
+    this.ownsPages = ownsPages;
     this.resourceDisposable = resourceDisposable;
   }
 
   disposeRuntimeState(): void {
     if (this.cleanedUp) return;
     this.cleanedUp = true;
+    if (this.ownsPages) this.pages.clear();
     this.resourceDisposable?.dispose();
   }
 
@@ -86,6 +95,11 @@ export async function createServer(
      * where the pinned instance owns its store for the connection.
      */
     resourceStore?: ResourceStore;
+    /**
+     * Pagination snapshots shared by every modern HTTP request. Omitted on
+     * stdio, where the connection-owned context clears its store on close.
+     */
+    pageStore?: PageSnapshotStore;
     /** The protocol era this instance serves; omitted where the caller does not know. */
     era?: 'legacy' | 'modern';
     /**
@@ -165,6 +179,7 @@ export async function createServer(
         Logger.debug('resource list_changed not delivered', { error: String(error) });
       });
     });
+  const pageStore = extraDeps?.pageStore ?? new PageSnapshotStore();
 
   const pathGuard = extraDeps?.pathGuard ?? new PathGuard(options, true);
   // Recompute once per guard, keyed on the guard's own state rather than on
@@ -178,6 +193,7 @@ export async function createServer(
   const deps = {
     server,
     pathGuard,
+    pageStore,
     resourceStore,
     cacheScope,
     ...(options.readOnly ? { readOnly: true } : {}),
@@ -190,5 +206,12 @@ export async function createServer(
   registerPrompts(deps);
   registerTools(deps);
 
-  return new FilesystemServerContext(server, pathGuard, resourceStore, resourceDisposable);
+  return new FilesystemServerContext(
+    server,
+    pathGuard,
+    pageStore,
+    resourceStore,
+    extraDeps?.pageStore === undefined,
+    resourceDisposable,
+  );
 }

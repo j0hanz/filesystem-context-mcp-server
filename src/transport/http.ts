@@ -21,6 +21,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import { assertFleetRequestStateKey } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
+import { PageSnapshotStore } from '../core/page-store.js';
 import { PathGuard } from '../core/path.js';
 import type { ServerOptions } from '../core/path.js';
 import { ResourceStore } from '../core/store.js';
@@ -90,6 +91,7 @@ function makeHttpModernFactory(
   sharedRegistry: WatcherRegistry,
   sharedPathGuard: PathGuard,
   sharedStore: ResourceStore,
+  sharedPageStore: PageSnapshotStore,
   apiKey: string | undefined,
 ): McpServerFactory {
   return async ({ era }) => {
@@ -99,6 +101,7 @@ function makeHttpModernFactory(
       notifier,
       pathGuard: sharedPathGuard,
       resourceStore: sharedStore,
+      pageStore: sharedPageStore,
       era,
       ...(apiKey !== undefined ? { apiKey } : {}),
     });
@@ -275,10 +278,15 @@ export async function startHttpServer(
 ): Promise<Server> {
   const httpHost = config.httpHost ?? '127.0.0.1';
   const { apiKey, eventBus } = config;
+  const fleet = config.deploymentMode === 'fleet';
   assertHttpBindingPolicy(httpHost, apiKey);
-  // A multi-instance HTTP fleet needs a shared requestState key; refuse to boot
-  // when an API key is set and the key is missing/weak (see input-required.ts).
-  assertFleetRequestStateKey(apiKey);
+  if (fleet && !apiKey) {
+    throw new Error('Fleet deployment mode requires an API key.');
+  }
+  if (fleet && !eventBus) {
+    throw new Error('Fleet deployment mode requires a shared event bus.');
+  }
+  assertFleetRequestStateKey(fleet);
   const allowedHosts = resolveAllowedHosts(httpHost, process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,
@@ -286,11 +294,6 @@ export async function startHttpServer(
     process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
   );
 
-  if (apiKey && !eventBus) {
-    Logger.warn(
-      "[HTTP] subscriptions/listen resource_updated events are delivered on the handler's default in-process bus. A multi-instance fleet behind a load balancer needs a shared backend, passed via createMcpHandler's bus option, or events on one instance will not reach listeners on another. See README.md#multi-instance-http-deployments for an example.",
-    );
-  }
   const sharedRegistry = createWatcherRegistry();
   // One store for the whole endpoint, same lifetime and same one-credential
   // trust argument as the shared guard below: a result a tool externalized in
@@ -302,6 +305,7 @@ export async function startHttpServer(
   const sharedStore = new ResourceStore(() => {
     modernHandler.notify.resourcesChanged();
   });
+  const sharedPageStore = new PageSnapshotStore();
   // One guard for the whole endpoint. The modern leg builds a fresh McpServer
   // per request, so a per-instance guard would discard every accepted access
   // grant the moment the request ended — re-prompting on each subsequent call
@@ -320,6 +324,7 @@ export async function startHttpServer(
       sharedRegistry,
       sharedPathGuard,
       sharedStore,
+      sharedPageStore,
       apiKey,
     ),
     {
@@ -359,6 +364,7 @@ export async function startHttpServer(
   const originalClose = httpServer.close.bind(httpServer);
   httpServer.close = function (callback?: (error?: Error) => void) {
     sharedRegistry.destroy();
+    sharedPageStore.clear();
     modernHandler
       .close()
       .then(() => {
@@ -377,6 +383,7 @@ export async function startHttpServer(
   return new Promise((resolve, reject) => {
     const onError = (err: Error) => {
       sharedRegistry.destroy();
+      sharedPageStore.clear();
       modernHandler.close().catch((closeErr: unknown) => {
         Logger.error(
           '[HTTP] Error closing handler on startup failure:',

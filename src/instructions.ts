@@ -32,6 +32,8 @@ function buildToolsOverview(readOnly: boolean): string {
 }
 
 export const INSTRUCTIONS_URI = 'internal://instructions';
+export const NO_POSITIONAL_ROOTS_GUIDANCE =
+  'No positional directories specified. Configure roots with directory arguments, FS_ALLOWED_DIRS, or --allow-cwd. Modern clients with elicitation can also call a tool with a concrete path and approve the requested grant.';
 
 /**
  * The one statement of what this server is and how to approach it. The server's
@@ -41,7 +43,7 @@ export const INSTRUCTIONS_URI = 'internal://instructions';
  */
 export const INSTRUCTIONS_SUMMARY =
   'Navigation guide for filesystem-mcp tools and constraints. ' +
-  'Start with: list_roots -> list/find_files -> stat -> read. Never guess paths.';
+  'Use list_roots to inspect configured or accepted roots, then list/find_files -> stat -> read. Never guess paths.';
 
 export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
   const maxFileMb = Math.floor(getMaxTextFileSize() / 1024 / 1024);
@@ -49,7 +51,8 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     guidelines: [
       'Guidelines:',
       '```',
-      `root_access: Call ${LIST_ALLOWED_DIRECTORIES.name} first; every other tool is scoped to those roots.`,
+      `root_access: ${LIST_ALLOWED_DIRECTORIES.name} lists configured or accepted roots; every other tool is scoped to them.`,
+      'modern_root_grants: Modern clients do not automatically send workspace roots. Call a tool with a concrete path and approve its grant when elicitation is available.',
       `path_resolution: Confirm a path with ${LIST.name} or ${SEARCH_FILES.name} before acting on it.`,
       '```',
     ].join('\n'),
@@ -62,7 +65,8 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     constraints: [
       'Constraints:',
       '```',
-      `allowed_roots: Operate within allowed roots only (from the client roots capability, CLI paths, or FS_ALLOWED_DIRS). Call ${LIST_ALLOWED_DIRECTORIES.name} to read them.`,
+      `allowed_roots: Startup roots come from CLI paths, FS_ALLOWED_DIRS, or --allow-cwd; accepted modern grants are additive. Call ${LIST_ALLOWED_DIRECTORIES.name} to read the current set.`,
+      'legacy_roots: Legacy clients may additionally seed roots through the deprecated roots/list flow.',
       'sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.',
       `enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.`,
       'ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after ~60 seconds, eviction, or restart.',
@@ -71,7 +75,7 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
     error_recovery: [
       'Error Recovery:',
       '```',
-      `ACCESS_DENIED: Run ${LIST_ALLOWED_DIRECTORIES.name} to list allowed directories, retry with a valid path.`,
+      `ACCESS_DENIED: Run ${LIST_ALLOWED_DIRECTORIES.name}; configure a missing startup root or retry a concrete path and approve the grant.`,
       `NOT_FOUND: Run ${LIST.name} or ${SEARCH_FILES.name} to verify the path.`,
       `TOO_LARGE: Use ${READ_FILE.name} with head/tail or startLine/endLine, or split across several calls.`,
       'TIMEOUT: Reduce scope, depth, or maxResults.',

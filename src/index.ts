@@ -9,6 +9,7 @@ import * as z from 'zod/v4';
 
 import { CliExitError, parseArgs, runPrintConfig } from './cli.js';
 import { logRuntimeFailure } from './core/observability.js';
+import { NO_POSITIONAL_ROOTS_GUIDANCE } from './instructions.js';
 import { startHttpServer, startServer } from './transport.js';
 
 z.config(z.locales.en());
@@ -133,9 +134,7 @@ async function main(): Promise<void> {
       console.error(`- ${dir}`);
     }
   } else {
-    console.error(
-      `No directories specified via CLI. Use the list_roots tool to discover accessible paths.`,
-    );
+    console.error(NO_POSITIONAL_ROOTS_GUIDANCE);
   }
 
   if (readOnly) {

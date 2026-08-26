@@ -17,10 +17,37 @@ import {
   requestStateCodec,
 } from '../src/core/input-required.js';
 
+// The installed codec type requires a ServerContext even when no bind callback
+// is configured; its implementation does not read the context in that mode.
+const NO_BIND_CONTEXT = undefined as never;
+
+describe('fleet request-state key initialization', () => {
+  it('binds the codec to a shared key configured after import but before fleet startup', async () => {
+    const stateKey = 'a'.repeat(32);
+    const saved = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = stateKey;
+    try {
+      assertFleetRequestStateKey(true);
+      const wire = await requestStateCodec.mint({ op: 'delete', paths: ['/fleet'] });
+      const reference = createRequestStateCodec<{ op: string; paths: string[] }>({
+        key: stateKey,
+      });
+      const decoded = await reference.verify(wire, NO_BIND_CONTEXT);
+      assert.deepStrictEqual(decoded, { op: 'delete', paths: ['/fleet'] });
+    } finally {
+      if (saved === undefined) {
+        Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_REQUEST_STATE_KEY');
+      } else {
+        process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = saved;
+      }
+    }
+  });
+});
+
 describe('input_required multi-round-trip infrastructure', () => {
   it('1. requestStateCodec mint/verify round-trip', async () => {
     const wire = await requestStateCodec.mint({ op: 'delete', paths: ['/a', '/b'] });
-    const decoded = await requestStateCodec.verify(wire);
+    const decoded = await requestStateCodec.verify(wire, NO_BIND_CONTEXT);
     assert.strictEqual(decoded.op, 'delete');
     assert.deepStrictEqual(decoded.paths, ['/a', '/b']);
   });
@@ -30,7 +57,7 @@ describe('input_required multi-round-trip infrastructure', () => {
     assert.ok(wire.length > 10);
     const tampered = wire.slice(0, 10) + (wire[10] === 'X' ? 'Y' : 'X') + wire.slice(11);
     await assert.rejects(async () => {
-      await requestStateCodec.verify(tampered);
+      await requestStateCodec.verify(tampered, NO_BIND_CONTEXT);
     });
   });
 
@@ -41,11 +68,13 @@ describe('input_required multi-round-trip infrastructure', () => {
     });
     const wire = await codec.mint({ op: 'delete', paths: ['/a'] });
     await new Promise((r) => setTimeout(r, 2100));
-    await assert.rejects(() => codec.verify(wire));
+    await assert.rejects(() => codec.verify(wire, NO_BIND_CONTEXT));
   });
 
   it('2c. requestStateCodec.verify rejects a malformed token', async () => {
-    await assert.rejects(() => requestStateCodec.verify('not-a-valid-state-string'));
+    await assert.rejects(() =>
+      requestStateCodec.verify('not-a-valid-state-string', NO_BIND_CONTEXT),
+    );
   });
 
   it('3. pendingRoundTrip with no requestState mints a fresh input_required', async () => {
@@ -61,7 +90,7 @@ describe('input_required multi-round-trip infrastructure', () => {
 
   it('4. pendingRoundTrip same-op + same paths returns undefined (proceed)', async () => {
     const wire = await requestStateCodec.mint({ op: 'move', paths: ['/x'] });
-    const decoded = await requestStateCodec.verify(wire);
+    const decoded = await requestStateCodec.verify(wire, NO_BIND_CONTEXT);
     const result = await pendingRoundTrip({
       op: 'move',
       pending: ['/x'],
@@ -73,7 +102,7 @@ describe('input_required multi-round-trip infrastructure', () => {
 
   it('5. pendingRoundTrip same-op + different paths throws FsError(INVALID_INPUT) (R9)', async () => {
     const wire = await requestStateCodec.mint({ op: 'move', paths: ['/x'] });
-    const decoded = await requestStateCodec.verify(wire);
+    const decoded = await requestStateCodec.verify(wire, NO_BIND_CONTEXT);
     await assert.rejects(
       async () => {
         await pendingRoundTrip({
@@ -90,7 +119,7 @@ describe('input_required multi-round-trip infrastructure', () => {
 
   it('6. pendingRoundTrip different-op mints fresh input_required', async () => {
     const wire = await requestStateCodec.mint({ op: 'grant', paths: ['/x'] });
-    const decoded = await requestStateCodec.verify(wire);
+    const decoded = await requestStateCodec.verify(wire, NO_BIND_CONTEXT);
     const result = await pendingRoundTrip({
       op: 'delete',
       pending: ['/x'],
@@ -106,6 +135,7 @@ describe('input_required multi-round-trip infrastructure', () => {
       confirmInput('confirm_0', 'Delete /a?'),
     ]);
     assert.strictEqual(isInputRequiredResult(r), true);
+    assert.ok(r.inputRequests);
     assert.ok(r.inputRequests['confirm_0'] !== undefined);
     assert.strictEqual(typeof r.requestState, 'string');
     assert.ok(typeof r.requestState === 'string' && r.requestState.length > 0);
@@ -155,6 +185,7 @@ describe('input_required multi-round-trip infrastructure', () => {
       ),
     ]);
     assert.strictEqual(isInputRequiredResult(r), true);
+    assert.ok(r.inputRequests);
     assert.ok(r.inputRequests['confirm_0'] !== undefined);
     assert.strictEqual(typeof r.requestState, 'string');
     assert.ok(typeof r.requestState === 'string' && r.requestState.length > 0);
@@ -211,6 +242,7 @@ describe('input_required multi-round-trip infrastructure', () => {
       multiSelectInput('grant', 'Grant access to these directories?', grantChoices),
     ]);
     assert.strictEqual(isInputRequiredResult(r), true);
+    assert.ok(r.inputRequests);
     assert.ok(r.inputRequests['grant'] !== undefined);
     assert.strictEqual(typeof r.requestState, 'string');
   });
@@ -261,9 +293,8 @@ describe('input_required multi-round-trip infrastructure', () => {
 });
 
 describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
-  // The API key is an argument now, not an env read: `startHttpServer` passes
-  // the value the CLI resolved. Only the request-state key still comes from the
-  // process, so only it is saved and restored here.
+  // Deployment topology is an explicit argument. Only the request-state key
+  // comes from the process, so only it is saved and restored here.
   const STATE_KEY = 'FILESYSTEM_MCP_REQUEST_STATE_KEY';
   let saved: string | undefined;
 
@@ -276,33 +307,23 @@ describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
     else process.env[STATE_KEY] = saved;
   });
 
-  it('throws when an api key is set and the request state key is missing', () => {
+  it('throws when fleet mode is set and the request state key is missing', () => {
     Reflect.deleteProperty(process.env, STATE_KEY);
-    assert.throws(() => assertFleetRequestStateKey('sekret'), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
+    assert.throws(() => assertFleetRequestStateKey(true), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
   });
 
-  it('throws when an api key is set and the request state key is <32 bytes', () => {
+  it('throws when fleet mode is set and the request state key is <32 bytes', () => {
     process.env[STATE_KEY] = 'short';
-    assert.throws(() => assertFleetRequestStateKey('sekret'), />=32 bytes/);
+    assert.throws(() => assertFleetRequestStateKey(true), />=32 bytes/);
   });
 
-  it('is a no-op when no api key is set (stdio / public HTTP)', () => {
+  it('is a no-op outside fleet mode', () => {
     Reflect.deleteProperty(process.env, STATE_KEY);
-    assert.doesNotThrow(() => assertFleetRequestStateKey(undefined));
+    assert.doesNotThrow(() => assertFleetRequestStateKey(false));
   });
 
-  it('is a no-op when an api key is set and the request state key is >=32 bytes', () => {
+  it('is a no-op in fleet mode when the request state key is >=32 bytes', () => {
     process.env[STATE_KEY] = 'a'.repeat(32);
-    assert.doesNotThrow(() => assertFleetRequestStateKey('sekret'));
-  });
-
-  it('ignores API_KEY in the environment — the argument is the only source', () => {
-    process.env['API_KEY'] = 'sekret';
-    Reflect.deleteProperty(process.env, STATE_KEY);
-    try {
-      assert.doesNotThrow(() => assertFleetRequestStateKey(undefined));
-    } finally {
-      Reflect.deleteProperty(process.env, 'API_KEY');
-    }
+    assert.doesNotThrow(() => assertFleetRequestStateKey(true));
   });
 });
