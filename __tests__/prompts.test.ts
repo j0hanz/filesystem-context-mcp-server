@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import { buildSectionsRecord, renderSections } from '../src/instructions.js';
-import { PROMPT_ENTRIES } from '../src/prompts.js';
 import {
   cleanupTestRoot,
   createTestClientPair,
@@ -35,9 +34,7 @@ describe('MCP Prompts Tests (MCP Client)', () => {
   });
 
   describe('Prompt Definitions & Registration', () => {
-    it('TC-FUNC-067: PROMPT_ENTRIES and client.listPrompts() return the get-help prompt', async () => {
-      assert.equal(PROMPT_ENTRIES.length, 1);
-
+    it('TC-FUNC-067: client.listPrompts() returns the get-help prompt', async () => {
       const promptsList = await harness.client.listPrompts();
       const promptNames = promptsList.prompts.map((p) => p.name);
       assert.deepEqual(promptNames, ['get-help']);

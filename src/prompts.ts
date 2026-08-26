@@ -11,12 +11,7 @@ import * as z from 'zod/v4';
 import { formatUnknownErrorMessage, fsErrorCode, hasErrorShape } from './core/errors.js';
 import { Logger } from './core/observability.js';
 import { isBlank, SHELL_METACHAR_RE } from './core/schema.js';
-import {
-  buildSectionsRecord,
-  INSTRUCTIONS_SUMMARY,
-  INSTRUCTIONS_URI,
-  renderSections,
-} from './instructions.js';
+import { buildSectionsRecord, INSTRUCTIONS_SUMMARY, renderSections } from './instructions.js';
 
 // --- Types ---
 
@@ -29,17 +24,6 @@ interface PromptContract {
 interface PromptRegistrarDeps {
   readonly server: McpServer;
   readonly readOnly?: boolean;
-}
-
-interface PromptRegistrationOptions {
-  sections: Record<string, string>;
-  instructions: string;
-  instructionsUri: string;
-}
-
-interface PromptEntry {
-  readonly contract: PromptContract;
-  readonly register: (server: McpServer, options: PromptRegistrationOptions) => void;
 }
 
 // --- Helpers ---
@@ -97,62 +81,46 @@ async function wrapHandler<T>(contract: PromptContract, fn: () => Promise<T> | T
 
 // --- Prompt entries ---
 
-const GET_HELP: PromptEntry = {
-  contract: {
-    name: 'get-help',
-    title: 'Get Help',
-    description: INSTRUCTIONS_SUMMARY,
-  },
-  register(server, options) {
-    const topics = Object.keys(options.sections);
-    server.registerPrompt(
-      GET_HELP.contract.name,
-      {
-        title: GET_HELP.contract.title,
-        description: GET_HELP.contract.description,
-        argsSchema: z.strictObject({
-          topic: topicArg(
-            topics,
-            `Section key to filter instructions (one of: ${topics.join(', ')}); omit to return all instructions.`,
-          ).optional(),
-        }),
-      },
-      ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
-        wrapHandler(GET_HELP.contract, () => {
-          const lowerTopic = topic?.toLowerCase();
-          const section =
-            lowerTopic && Object.hasOwn(options.sections, lowerTopic)
-              ? options.sections[lowerTopic]
-              : undefined;
-          if (topic && !section) {
-            Logger.debug('get-help: unknown topic requested', { topic });
-          }
-          const text =
-            section ??
-            (topic
-              ? `Section '${topic}' not found. Available: ${topics.join(', ')}\n\n${options.instructions}`
-              : options.instructions);
-          return {
-            description: GET_HELP.contract.description,
-            messages: [userText(text)],
-          };
-        }),
-    );
-  },
+const GET_HELP: PromptContract = {
+  name: 'get-help',
+  title: 'Get Help',
+  description: INSTRUCTIONS_SUMMARY,
 };
-
-const PROMPT_ENTRIES: PromptEntry[] = [GET_HELP];
 
 export function registerPrompts(deps: PromptRegistrarDeps): void {
   const sections = buildSectionsRecord(deps.readOnly ?? false);
-  const options = {
-    sections,
-    instructions: renderSections(sections),
-    instructionsUri: INSTRUCTIONS_URI,
-  };
-  for (const { register } of PROMPT_ENTRIES) {
-    register(deps.server, options);
-  }
-}
+  const instructions = renderSections(sections);
+  const topics = Object.keys(sections);
 
-export { PROMPT_ENTRIES };
+  deps.server.registerPrompt(
+    GET_HELP.name,
+    {
+      title: GET_HELP.title,
+      description: GET_HELP.description,
+      argsSchema: z.strictObject({
+        topic: topicArg(
+          topics,
+          `Section key to filter instructions (one of: ${topics.join(', ')}); omit to return all instructions.`,
+        ).optional(),
+      }),
+    },
+    ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
+      wrapHandler(GET_HELP, () => {
+        const lowerTopic = topic?.toLowerCase();
+        const section =
+          lowerTopic && Object.hasOwn(sections, lowerTopic) ? sections[lowerTopic] : undefined;
+        if (topic && !section) {
+          Logger.debug('get-help: unknown topic requested', { topic });
+        }
+        const text =
+          section ??
+          (topic
+            ? `Section '${topic}' not found. Available: ${topics.join(', ')}\n\n${instructions}`
+            : instructions);
+        return {
+          description: GET_HELP.description,
+          messages: [userText(text)],
+        };
+      }),
+  );
+}
