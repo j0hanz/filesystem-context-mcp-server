@@ -8,7 +8,8 @@ import { after, before, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { buildFileResourceUri, encodeFileUriPath, extractPath } from '../src/core/file-uri.js';
-import { isSamePath, PathGuard } from '../src/core/path.js';
+import { isSamePath } from '../src/core/path-utils.js';
+import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import {

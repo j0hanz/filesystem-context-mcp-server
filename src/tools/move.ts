@@ -17,7 +17,7 @@ import { joinRoster, pathLabel } from '../core/fmt.js';
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { readAcceptedChoice } from '../core/input-required.js';
-import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path.js';
+import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path-utils.js';
 import { defaultFalseBoolean, pairFailureSchema, RequiredPath } from '../core/schema.js';
 import type { PairExecResult, PairPlanResult } from './batch.js';
 import { pairFailure, runOverPairs } from './batch.js';

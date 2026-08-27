@@ -1,7 +1,7 @@
 import type { Stats } from 'node:fs';
 import { lstat, readlink, realpath, stat } from 'node:fs/promises';
-import { homedir, platform } from 'node:os';
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 
 import { timedSignal, withAbort } from './concurrency.js';
 import { cli } from './config.js';
@@ -19,8 +19,15 @@ import {
 } from './errors.js';
 import { Logger } from './observability.js';
 import { findProjectRoot, isUnsafeCwdPath, resolveConfiguredDirs } from './path-discovery.js';
-import { getReservedDeviceNameForPath, isWindowsDriveRelativePath } from './path-utils.js';
-import { IS_WINDOWS, isSlash, parseTrueEnvFlag, toPosixPath } from './primitives.js';
+import {
+  getReservedDeviceNameForPath,
+  isPathWithinDirectories,
+  isSamePath,
+  isWindowsDriveRelativePath,
+  normalizeAllowedDirectory,
+  normalizePath,
+} from './path-utils.js';
+import { isSlash, parseTrueEnvFlag, toPosixPath } from './primitives.js';
 import type { EntryType } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
@@ -101,99 +108,9 @@ async function filterRootsWithin(
   });
 }
 
-const CHAR_COLON = 58;
-const HOMEDIR = homedir();
-const PATH_SEPARATOR = sep;
-
 /** `path.relative` with forward slashes, so displayed paths match across platforms. */
 export function toPosixRelative(from: string, to: string): string {
   return toPosixPath(relative(from, to));
-}
-
-function expandHome(filepath: string): string {
-  if (filepath === '~' || filepath.startsWith('~/') || filepath.startsWith('~\\')) {
-    const rest = filepath.slice(1).replace(/^[/\\]+/, '');
-    return rest ? join(HOMEDIR, rest) : HOMEDIR;
-  }
-  return filepath;
-}
-
-export function normalizePath(p: string): string {
-  const resolved = resolve(expandHome(p));
-
-  // On Windows only the drive letter is lowercased (e.g. "C:\Foo\Bar").
-  // The rest of the path retains its original casing.
-  // IMPORTANT: callers must use isSamePath / isPathInsideDirectory for all
-  // equality and containment checks — never raw string equality — because
-  // those helpers apply full case-folding before comparing.
-  if (IS_WINDOWS && resolved.length >= 2 && resolved.charCodeAt(1) === CHAR_COLON) {
-    return resolved.charAt(0).toLowerCase() + resolved.slice(1);
-  }
-
-  return resolved;
-}
-
-export const IS_CASE_INSENSITIVE_FS = IS_WINDOWS || platform() === 'darwin';
-
-function normalizeCaseForComparison(value: string): string {
-  return IS_CASE_INSENSITIVE_FS ? value.toLowerCase() : value;
-}
-
-export function isSamePath(left: string, right: string): boolean {
-  if (left === right) {
-    return true;
-  }
-  const leftResolved = normalizeCaseForComparison(resolve(left));
-  const rightResolved = normalizeCaseForComparison(resolve(right));
-  return leftResolved === rightResolved;
-}
-
-function stripTrailingSeparator(normalized: string): string {
-  return normalized.length > 1 && normalized.endsWith(PATH_SEPARATOR)
-    ? normalized.slice(0, -1)
-    : normalized;
-}
-
-function normalizeAllowedDirectory(dir: string): string {
-  const trimmed = dir.trim();
-  if (trimmed.length === 0) return '';
-
-  const normalized = normalizePath(trimmed);
-  const { root } = parse(normalized);
-
-  // Keep filesystem roots as-is ("/", "c:\\", "\\\\server\\share\\").
-  if (isSamePath(normalized, root)) {
-    return root;
-  }
-
-  return stripTrailingSeparator(normalized);
-}
-
-export function isPathInsideDirectory(
-  normalizedDirectory: string,
-  normalizedCandidate: string,
-): boolean {
-  const root = normalizeCaseForComparison(normalizedDirectory);
-  const candidate = normalizeCaseForComparison(normalizedCandidate);
-
-  if (root === candidate) return true;
-  if (!candidate.startsWith(root)) return false;
-
-  if (isSlash(root.charCodeAt(root.length - 1))) return true;
-  return isSlash(candidate.charCodeAt(root.length));
-}
-
-export function isPathWithinDirectories(
-  normalizedPath: string,
-  allowedDirs: readonly string[],
-): boolean {
-  for (const allowedDir of allowedDirs) {
-    if (isPathInsideDirectory(allowedDir, normalizedPath)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 export interface AllowedDirectoriesState {

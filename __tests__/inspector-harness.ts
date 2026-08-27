@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve as pathResolve } from 'node:path';
 import process from 'node:process';
 
-import { normalizePath } from '../src/core/path.js';
+import { normalizePath } from '../src/core/path-utils.js';
 
 export type InspectorMethod =
   | 'initialize'

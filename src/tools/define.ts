@@ -37,8 +37,8 @@ import {
 import { Logger } from '../core/observability.js';
 import type { LoggingLevel } from '../core/observability.js';
 import type { PageSnapshotStore } from '../core/page-store.js';
+import { isSamePath } from '../core/path-utils.js';
 import type { PathGuard } from '../core/path.js';
-import { isSamePath } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
 import type { ProgressSink } from './progress.js';
 import { McpProgressSink, ProgressSession } from './progress.js';

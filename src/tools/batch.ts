@@ -3,7 +3,7 @@ import type { InputRequiredResult } from '@modelcontextprotocol/server';
 import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js';
 import { choiceInput, pendingRoundTrip } from '../core/input-required.js';
-import { IS_CASE_INSENSITIVE_FS } from '../core/path.js';
+import { IS_CASE_INSENSITIVE_FS } from '../core/path-utils.js';
 import type { PairFailureItem } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';

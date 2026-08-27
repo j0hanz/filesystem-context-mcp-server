@@ -3,15 +3,9 @@ import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:p
 
 import { isNodeError, isNotFoundErrno, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
+import { isPathWithinDirectories, isSamePath, normalizePath } from './path-utils.js';
 import type { PathGuard } from './path.js';
-import {
-  isPathWithinDirectories,
-  isSamePath,
-  isSlash,
-  normalizePath,
-  resolveRealPath,
-  toPosixPath,
-} from './path.js';
+import { isSlash, resolveRealPath, toPosixPath } from './path.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;

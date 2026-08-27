@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import type { Server } from 'node:http';
 
-import { normalizePath } from '../src/core/path.js';
+import { normalizePath } from '../src/core/path-utils.js';
 import { startHttpServer } from '../src/transport.js';
 
 export interface InspectorServerConfigEntry {

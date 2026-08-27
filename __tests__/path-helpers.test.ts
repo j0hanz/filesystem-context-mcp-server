@@ -6,9 +6,9 @@ import {
   isPathInsideDirectory,
   isPathWithinDirectories,
   isSamePath,
-  normalizeAllowedDirectories,
   normalizePath,
-} from '../src/core/path.js';
+} from '../src/core/path-utils.js';
+import { normalizeAllowedDirectories } from '../src/core/path.js';
 
 // Pure lexical containment primitives — no fs. These pin the off-by-one
 // boundary (prefix `/foo` must NOT match `/fooboar`) and the trailing-slash

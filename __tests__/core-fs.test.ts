@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
-import { normalizePath } from '../src/core/path.js';
+import { normalizePath } from '../src/core/path-utils.js';
 import { searchContent, searchFiles } from '../src/core/search.js';
 import type { FilesystemServerContext } from '../src/server.js';
 import {

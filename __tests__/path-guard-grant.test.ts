@@ -5,7 +5,8 @@ import { join, parse } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
-import { isSamePath, PathGuard } from '../src/core/path.js';
+import { isSamePath } from '../src/core/path-utils.js';
+import { PathGuard } from '../src/core/path.js';
 import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
 
 // Grant round-trip: precheckAccess → applyGrant → the guard's

@@ -4,7 +4,7 @@ import { dirname, join, parse } from 'node:path';
 
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
-import { isPathWithinDirectories, isSamePath, normalizePath } from './path.js';
+import { isPathWithinDirectories, isSamePath, normalizePath } from './path-utils.js';
 import { parseEnvDirList, splitDirList } from './primitives.js';
 
 // Resolve a configured env-var directory list (FS_ALLOWED_DIRS / ROOT_BOUNDARY)

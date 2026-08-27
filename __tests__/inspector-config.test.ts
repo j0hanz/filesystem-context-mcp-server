@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { normalizePath } from '../src/core/path.js';
+import { normalizePath } from '../src/core/path-utils.js';
 import { cleanupTestRoot, createTestRoot } from './helpers.js';
 import { createInspectorConfigFile } from './inspector-fixtures.js';
 import { executeInspectorCli, inspectorSkipReason } from './inspector-harness.js';
