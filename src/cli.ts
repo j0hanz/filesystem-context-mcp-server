@@ -144,10 +144,11 @@ function deduplicateAllowedDirectories(dirs: readonly string[]): string[] {
 }
 
 function parsePortOption(raw: unknown): number | undefined {
-  if (raw === undefined) return undefined;
+  // '' reads as unset: FS_PORT set-but-empty (compose templating) means stdio.
+  if (raw === undefined || raw === '') return undefined;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 65535) {
-    throw new CliExitError(`Error: --port must be an integer between 1 and 65535`, 1);
+    throw new CliExitError(`Error: --port / FS_PORT must be an integer between 1 and 65535`, 1);
   }
   return n;
 }
@@ -208,8 +209,9 @@ export async function parseArgs(): Promise<{
     // core readers (path, sensitive, observability, util) consult before
     // falling back to the operator's environment. Nothing writes process.env.
     const httpHost =
-      typeof vals['http-host'] === 'string' ? vals['http-host'] : process.env['HTTP_HOST'];
-    const apiKey = typeof vals['api-key'] === 'string' ? vals['api-key'] : process.env['API_KEY'];
+      typeof vals['http-host'] === 'string' ? vals['http-host'] : process.env['FS_HTTP_HOST'];
+    const apiKey =
+      typeof vals['api-key'] === 'string' ? vals['api-key'] : process.env['FS_API_KEY'];
 
     if (typeof vals['log-level'] === 'string') cli.logLevel = vals['log-level'];
     if (typeof vals['max-file-size'] === 'string') cli.maxFileSize = vals['max-file-size'];
@@ -228,14 +230,14 @@ export async function parseArgs(): Promise<{
     const allowCwd =
       (vals['allow-cwd'] as boolean) ||
       (vals['walk-cwd'] as boolean) ||
-      parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
+      parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK'], 'FS_ALLOW_CWD_WALK');
     const readOnly = (vals['read-only'] as boolean) || (vals['safe'] as boolean);
     const printConfig = vals['print-config'] as boolean;
     const json = vals['json'] as boolean;
-    const port = parsePortOption(parsed.values.port);
+    const port = parsePortOption(parsed.values.port ?? process.env['FS_PORT']);
     const allowMissingRoots =
       (vals['allow-missing-roots'] as boolean) ||
-      parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
+      parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS'], 'FS_ALLOW_MISSING_ROOTS');
 
     let allowedDirs: string[] = [];
     try {

@@ -113,7 +113,7 @@ describe('Real HTTP Server integration', () => {
   });
 
   it('5. POST /mcp with an oversized body -> 413', async () => {
-    const tooBig = 'x'.repeat(5 * 1024 * 1024); // > default 4 MiB FS_CONTEXT_MAX_REQUEST_BYTES
+    const tooBig = 'x'.repeat(5 * 1024 * 1024); // > default 4 MiB FS_MAX_REQUEST_BYTES
     const r = await fetch(base, {
       method: 'POST',
       headers: {
@@ -195,10 +195,10 @@ describe('the api key travels as config, not env', () => {
 
   beforeEach(async () => {
     tmpDir = await createTestRoot();
-    savedApiKey = process.env['API_KEY'];
-    savedStateKey = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-    Reflect.deleteProperty(process.env, 'API_KEY');
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = 'a'.repeat(32);
+    savedApiKey = process.env['FS_API_KEY'];
+    savedStateKey = process.env['FS_REQUEST_STATE_KEY'];
+    Reflect.deleteProperty(process.env, 'FS_API_KEY');
+    process.env['FS_REQUEST_STATE_KEY'] = 'a'.repeat(32);
   });
 
   afterEach(async () => {
@@ -208,11 +208,11 @@ describe('the api key travels as config, not env', () => {
         else resolve();
       });
     });
-    if (savedApiKey === undefined) Reflect.deleteProperty(process.env, 'API_KEY');
-    else process.env['API_KEY'] = savedApiKey;
+    if (savedApiKey === undefined) Reflect.deleteProperty(process.env, 'FS_API_KEY');
+    else process.env['FS_API_KEY'] = savedApiKey;
     if (savedStateKey === undefined) {
-      Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_REQUEST_STATE_KEY');
-    } else process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = savedStateKey;
+      Reflect.deleteProperty(process.env, 'FS_REQUEST_STATE_KEY');
+    } else process.env['FS_REQUEST_STATE_KEY'] = savedStateKey;
     await cleanupTestRoot(tmpDir);
   });
 
@@ -235,7 +235,7 @@ describe('the api key travels as config, not env', () => {
   });
 
   it('an exported API_KEY does not switch auth on when the option is omitted', async () => {
-    process.env['API_KEY'] = TEST_API_KEY;
+    process.env['FS_API_KEY'] = TEST_API_KEY;
     httpServer = await startHttpServer(0, { cliAllowedDirs: [tmpDir] });
     const port = (httpServer.address() as AddressInfo).port;
 
@@ -249,7 +249,7 @@ describe('the api key travels as config, not env', () => {
 });
 
 describe('explicit HTTP deployment mode', () => {
-  const STATE_KEY = 'FILESYSTEM_MCP_REQUEST_STATE_KEY';
+  const STATE_KEY = 'FS_REQUEST_STATE_KEY';
   let tmpDir: string;
   let savedStateKey: string | undefined;
   const servers: Server[] = [];
@@ -318,7 +318,7 @@ describe('explicit HTTP deployment mode', () => {
           eventBus: new InMemoryServerEventBus(),
         },
       ),
-      /FILESYSTEM_MCP_REQUEST_STATE_KEY/,
+      /FS_REQUEST_STATE_KEY/,
     );
   });
 
@@ -345,7 +345,7 @@ describe('rate limiting', () => {
 
   beforeEach(async () => {
     tmpDir = await createTestRoot();
-    http = await bootHttpTest([tmpDir], { FILESYSTEM_MCP_RATE_LIMIT_RPM: '2' });
+    http = await bootHttpTest([tmpDir], { FS_RATE_LIMIT_RPM: '2' });
     ({ base } = http);
   });
 

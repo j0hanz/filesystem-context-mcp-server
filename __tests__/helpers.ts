@@ -65,15 +65,15 @@ export async function waitFor(condition: () => boolean, timeoutMs = 3000): Promi
   }
 }
 
-/** Run `fn` with ROOT_BOUNDARY set to `boundary`, restoring the prior value after. */
+/** Run `fn` with FS_ROOT_BOUNDARY set to `boundary`, restoring the prior value after. */
 export async function withBoundary<T>(boundary: string, fn: () => Promise<T>): Promise<T> {
-  const previous = process.env['ROOT_BOUNDARY'];
-  process.env['ROOT_BOUNDARY'] = boundary;
+  const previous = process.env['FS_ROOT_BOUNDARY'];
+  process.env['FS_ROOT_BOUNDARY'] = boundary;
   try {
     return await fn();
   } finally {
-    if (previous === undefined) Reflect.deleteProperty(process.env, 'ROOT_BOUNDARY');
-    else process.env['ROOT_BOUNDARY'] = previous;
+    if (previous === undefined) Reflect.deleteProperty(process.env, 'FS_ROOT_BOUNDARY');
+    else process.env['FS_ROOT_BOUNDARY'] = previous;
   }
 }
 
@@ -285,7 +285,7 @@ export interface HttpTestContext {
  * Boot a real HTTP server on an ephemeral port for one test file, with the env
  * it needs and every client it opens tracked for teardown.
  *
- * `extraEnv` adds to (or overrides) `HTTP_TEST_ENV` — e.g. `ROOT_BOUNDARY` so
+ * `extraEnv` adds to (or overrides) `HTTP_TEST_ENV` — e.g. `FS_ROOT_BOUNDARY` so
  * an access grant sticks, or a rate-limit cap. Every key touched is saved
  * before it is set and restored on `close`, so a var the process already
  * carried survives the test.

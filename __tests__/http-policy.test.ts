@@ -687,8 +687,8 @@ describe('keyless bind rate limiting', () => {
   // authenticated binds. A keyless bind is loopback-only, so its cap is looser
   // than the authenticated 120/min — but it exists.
   it('TC-SEC-036b: a keyless server still mounts the rate limiter', async () => {
-    const saved = process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'];
-    process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = '2';
+    const saved = process.env['FS_RATE_LIMIT_RPM'];
+    process.env['FS_RATE_LIMIT_RPM'] = '2';
     const dir = await createTestRoot();
     const httpServer = await startHttpServer(0, { cliAllowedDirs: [dir] }, {});
     const port = (httpServer.address() as AddressInfo).port;
@@ -713,8 +713,8 @@ describe('keyless bind rate limiting', () => {
         });
       });
       await cleanupTestRoot(dir);
-      if (saved === undefined) Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_RATE_LIMIT_RPM');
-      else process.env['FILESYSTEM_MCP_RATE_LIMIT_RPM'] = saved;
+      if (saved === undefined) Reflect.deleteProperty(process.env, 'FS_RATE_LIMIT_RPM');
+      else process.env['FS_RATE_LIMIT_RPM'] = saved;
     }
   });
 });

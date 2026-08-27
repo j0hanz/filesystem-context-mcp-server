@@ -7,12 +7,12 @@ import { Logger } from './observability.js';
 import { isPathWithinDirectories, isSamePath, normalizePath } from './path-utils.js';
 import { parseEnvDirList, splitDirList } from './primitives.js';
 
-// Resolve a configured env-var directory list (FS_ALLOWED_DIRS / ROOT_BOUNDARY)
+// Resolve a configured env-var directory list (FS_ALLOWED_DIRS / FS_ROOT_BOUNDARY)
 // into normalized, verified directories. Each entry is stat'd; a non-directory
 // warns and is dropped, a missing entry warns unless `allowMissing` is set (in
 // which case the normalized path is kept). When `resolveReal` is set, a
 // directory entry is pushed as its realpath (normalized) instead of the raw
-// path — ROOT_BOUNDARY uses this so a symlinked root resolves to its target.
+// path — FS_ROOT_BOUNDARY uses this so a symlinked root resolves to its target.
 // A CLI override supplies `rawValue`, which beats the environment entirely.
 // Both warning messages are templated on `envVar` so operator output is stable.
 export async function resolveConfiguredDirs(

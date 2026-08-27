@@ -14,10 +14,29 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export const ENTRY_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
 
-export function parseTrueEnvFlag(value: string | undefined): boolean {
+const warnedFlagValues = new Set<string>();
+
+/**
+ * Parse a boolean env flag: `true`/`1` enable, `false`/`0`/empty disable.
+ * Any other value warns once per var (when `name` is given) and reads as
+ * false, so a typo like `FS_ALLOW_SENSITIVE=yes` is never silent.
+ */
+export function parseTrueEnvFlag(value: string | undefined, name?: string): boolean {
   if (value === undefined) return false;
   const trimmed = value.trim().toLowerCase();
-  return trimmed === 'true' || trimmed === '1';
+  if (trimmed === 'true' || trimmed === '1') return true;
+  if (name && trimmed !== '' && trimmed !== 'false' && trimmed !== '0') {
+    const key = `${name}:${trimmed}`;
+    if (!warnedFlagValues.has(key)) {
+      warnedFlagValues.add(key);
+      // console.error, not Logger: this module stays dependency-free to avoid
+      // import cycles (same precedent as parseLogLevel in observability.ts).
+      console.error(
+        `[warning] Invalid ${name} value: ${value} (must be "true" or "1"). Using default: false`,
+      );
+    }
+  }
+  return false;
 }
 
 export function escapeRegexLiteral(str: string): string {

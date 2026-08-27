@@ -80,8 +80,8 @@ export const ROOTS_TIMEOUT_MS = 5000;
 
 export function getMaxTextFileSize(): number {
   return parseIntSetting(
-    'MAX_FILE_SIZE',
-    cli.maxFileSize ?? process.env['MAX_FILE_SIZE'],
+    'FS_MAX_FILE_SIZE',
+    cli.maxFileSize ?? process.env['FS_MAX_FILE_SIZE'],
     10 * MIB,
     MIB,
     100 * MIB,
@@ -89,13 +89,13 @@ export function getMaxTextFileSize(): number {
 }
 
 export function getDefaultReadManyMaxTotalSize(): number {
-  return parseEnvInt('MAX_READ_MANY_TOTAL_SIZE', 512 * KIB, 10 * KIB, 100 * MIB);
+  return parseEnvInt('FS_MAX_READ_MANY_BYTES', 512 * KIB, 10 * KIB, 100 * MIB);
 }
 
 /** Default line chunk size for read continuation when no explicit range was given. */
 export const DEFAULT_CONTINUATION_CHUNK_SIZE = 200;
 
-export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt('DEFAULT_SEARCH_TIMEOUT', 5000, 100, 60000);
+export const DEFAULT_SEARCH_TIMEOUT_MS = parseEnvInt('FS_SEARCH_TIMEOUT_MS', 5000, 100, 60000);
 
 export const MAX_TREE_DEPTH = 50;
 export const DEFAULT_TREE_ENTRIES = 1000;

@@ -26,7 +26,7 @@ function parseLogLevel(raw: string | undefined): LoggingLevel {
   if (raw === 'warn') return 'warning';
   if (isLoggingLevel(raw)) return raw;
   console.error(
-    `[warning] Invalid LOG_LEVEL value: ${raw} (must be ${LEVEL_ORDER.join('|')}). Using default: info`,
+    `[warning] Invalid FS_LOG_LEVEL value: ${raw} (must be ${LEVEL_ORDER.join('|')}). Using default: info`,
   );
   return 'info';
 }
@@ -37,13 +37,13 @@ let cachedRaw: string | undefined;
 let cachedLevel: LoggingLevel = 'info';
 
 /**
- * Minimum severity that reaches stderr, from `LOG_LEVEL` / `--log-level`.
+ * Minimum severity that reaches stderr, from `FS_LOG_LEVEL` / `--log-level`.
  * Memoized on the raw value, not resolved once: `cli.logLevel` lands after
  * `parseArgs`, and writes happen before that. Keying on the raw string keeps it
  * live while the invalid-value warning fires once per setting, not per line.
  */
 function getLogLevel(): LoggingLevel {
-  const raw = (cli.logLevel ?? process.env['LOG_LEVEL'])?.trim().toLowerCase();
+  const raw = (cli.logLevel ?? process.env['FS_LOG_LEVEL'])?.trim().toLowerCase();
   if (raw !== cachedRaw) {
     cachedRaw = raw;
     cachedLevel = parseLogLevel(raw);

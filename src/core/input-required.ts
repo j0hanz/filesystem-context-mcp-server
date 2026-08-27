@@ -67,7 +67,7 @@ export interface PendingInput {
 
 /**
  * HMAC key for the requestState codec. Read once from
- * `FILESYSTEM_MCP_REQUEST_STATE_KEY` (UTF-8, must be >=32 bytes); a random
+ * `FS_REQUEST_STATE_KEY` (UTF-8, must be >=32 bytes); a random
  * 32-byte key is generated at boot when the env var is unset or too short. A
  * per-process key is correct for stdio and the single-node HTTP leg (decision
  * record 11). For a multi-instance HTTP fleet behind a load balancer, a random
@@ -75,17 +75,17 @@ export interface PendingInput {
  * different instance — `assertFleetRequestStateKey()` is the boot-time HTTP
  * guard that refuses to start the HTTP leg in that state. It is NOT called at
  * module load (the codec is constructed at module scope, before the stdio/HTTP
- * decision in `main()`), so a stdio launch with `API_KEY` exported still boots.
+ * decision in `main()`), so a stdio launch with `FS_API_KEY` exported still boots.
  * A server restart invalidates in-flight tokens; the client re-requests, which
  * is fail-closed and safe.
  */
 function configuredRequestStateKey(): Uint8Array | undefined {
-  const env = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
+  const env = process.env['FS_REQUEST_STATE_KEY'];
   if (env) {
     const bytes = Buffer.from(env, 'utf8');
     if (bytes.length >= 32) return bytes;
     Logger.warn(
-      `FILESYSTEM_MCP_REQUEST_STATE_KEY is ${String(bytes.length)} bytes; 32 are required. Falling back to a random per-boot key — in-flight input_required rounds will not survive a restart.`,
+      `FS_REQUEST_STATE_KEY is ${String(bytes.length)} bytes; 32 are required. Falling back to a random per-boot key — in-flight input_required rounds will not survive a restart.`,
     );
   }
   return undefined;
@@ -103,8 +103,8 @@ function getRequestStateCodec(): RequestStateCodec<PendingState> {
 }
 
 /**
- * Boot-time HTTP guard: when the HTTP leg is active (`API_KEY` set) and
- * `FILESYSTEM_MCP_REQUEST_STATE_KEY` is missing or <32 bytes, refuse to start —
+ * Boot-time HTTP guard: when the HTTP leg is active (`FS_API_KEY` set) and
+ * `FS_REQUEST_STATE_KEY` is missing or <32 bytes, refuse to start —
  * a multi-instance fleet behind a load balancer would otherwise silently break
  * every `input_required` round that lands on a different instance (each node
  * mints tokens with its own random per-boot key). No-op outside explicit fleet
@@ -113,9 +113,7 @@ function getRequestStateCodec(): RequestStateCodec<PendingState> {
 export function assertFleetRequestStateKey(fleet: boolean): void {
   if (!fleet) return;
   if (!configuredRequestStateKey()) {
-    throw new Error(
-      'FILESYSTEM_MCP_REQUEST_STATE_KEY must be >=32 bytes in fleet deployment mode.',
-    );
+    throw new Error('FS_REQUEST_STATE_KEY must be >=32 bytes in fleet deployment mode.');
   }
   getRequestStateCodec();
 }

@@ -9,7 +9,7 @@ import { parseEnvInt } from './util.js';
 
 // Cap concurrent file watchers to avoid exhausting OS-level watch handles
 // (e.g. Linux inotify, default ~8192/user). One subscription == one watcher.
-export const MAX_WATCHERS = parseEnvInt('FILESYSTEM_MCP_MAX_WATCHERS', 256, 1, 4096);
+export const MAX_WATCHERS = parseEnvInt('FS_MAX_WATCHERS', 256, 1, 4096);
 
 function warnWatcherCap(uri: string): void {
   Logger.warn(`Cannot subscribe to ${uri}: MAX_WATCHERS limit (${MAX_WATCHERS}) reached.`);

@@ -96,9 +96,9 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
     });
 
     it('readEditableText rejects files above the configured text limit', async () => {
-      const previous = process.env['MAX_FILE_SIZE'];
+      const previous = process.env['FS_MAX_FILE_SIZE'];
       const limit = 1024 * 1024;
-      process.env['MAX_FILE_SIZE'] = String(limit);
+      process.env['FS_MAX_FILE_SIZE'] = String(limit);
       try {
         const filePath = join(tmpDir, 'too-large.txt');
         await writeFile(filePath, Buffer.alloc(limit + 1, 0x61));
@@ -111,8 +111,8 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
             error.message.includes('File too large for edit'),
         );
       } finally {
-        if (previous === undefined) delete process.env['MAX_FILE_SIZE'];
-        else process.env['MAX_FILE_SIZE'] = previous;
+        if (previous === undefined) delete process.env['FS_MAX_FILE_SIZE'];
+        else process.env['FS_MAX_FILE_SIZE'] = previous;
       }
     });
 

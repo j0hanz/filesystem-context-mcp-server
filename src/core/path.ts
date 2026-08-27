@@ -55,7 +55,7 @@ export interface ServerOptions {
   readOnly?: boolean;
 }
 
-/** True when `normalizedRoot` really resolves inside `bounds` (ROOT_BOUNDARY). */
+/** True when `normalizedRoot` really resolves inside `bounds` (FS_ROOT_BOUNDARY). */
 async function isRootWithin(
   normalizedRoot: string,
   bounds: readonly string[],
@@ -214,7 +214,7 @@ export class PathGuard {
    * These are NOT filtered against the baseline. A granted directory is
    * out-of-baseline by definition, so a baseline filter dropped every one while
    * `applyGrant` still reported success — the whole round-trip prompted the
-   * user and then changed nothing. ROOT_BOUNDARY and the unsafe-path denylist
+   * user and then changed nothing. FS_ROOT_BOUNDARY and the unsafe-path denylist
    * remain the limits, both checked in `applyGrant` — the only writer of this
    * field — so the recompute can rebuild from it without re-filtering.
    */
@@ -378,7 +378,7 @@ export class PathGuard {
   /**
    * Pre-check (no mutation, no callback): given the paths a tool is about to
    * operate on, return the sorted, de-duplicated grant-target directories for
-   * those that are outside the allowed roots AND grantable (within ROOT_BOUNDARY
+   * those that are outside the allowed roots AND grantable (within FS_ROOT_BOUNDARY
    * when it is configured). A path whose nearest existing ancestor escapes the
    * boundary is NOT grantable and is omitted — the operation will fail with
    * ACCESS_DENIED for it rather than prompt. The caller returns an
@@ -402,7 +402,7 @@ export class PathGuard {
       }
       const targetDir = normalizePath(await this.resolveGrantTargetDir(normalized));
       // Never offer a grant into a bare filesystem root or an unsafe path (home,
-      // /etc, C:\Windows, ...). Without ROOT_BOUNDARY, isWithinBoundary returns
+      // /etc, C:\Windows, ...). Without FS_ROOT_BOUNDARY, isWithinBoundary returns
       // true for everything, so this is the one guard that still rejects roots a
       // misleading grant could reach. Mirrors the check gating --allow-cwd.
       if (await this.isUnsafeGrantTarget(targetDir)) {
@@ -420,7 +420,7 @@ export class PathGuard {
   }
 
   /**
-   * Apply an accepted access grant: enforce ROOT_BOUNDARY again (a TOCTOU
+   * Apply an accepted access grant: enforce FS_ROOT_BOUNDARY again (a TOCTOU
    * re-check against the boundary resolved at config time), then extend the
    * allowed roots for the remainder of the session (R8, A4). Returns false when
    * the boundary or the unsafe-path denylist blocks the grant, AND when the
@@ -466,7 +466,7 @@ export class PathGuard {
     });
   }
 
-  // The guard already realpath-resolved ROOT_BOUNDARY into rootBoundaries
+  // The guard already realpath-resolved FS_ROOT_BOUNDARY into rootBoundaries
   // during recomputeAllowedDirectories. Reuse that single source of truth so
   // grant paths check the same boundary the rest of the guard enforces,
   // instead of re-reading the env and re-resolving each entry.
@@ -539,7 +539,7 @@ export class PathGuard {
       // the executor's pre-check (precheckAccess) BEFORE the operation runs, so
       // by the time validation reaches here any grantable out-of-root path has
       // already been accepted and added to the allowed set. A path still out of
-      // root here was either declined, ungrantable (outside ROOT_BOUNDARY), or
+      // root here was either declined, ungrantable (outside FS_ROOT_BOUNDARY), or
       // never pre-checked — fail closed.
       this.throwAccessDenied(requestedPath, accessDeniedHint);
     }
@@ -867,11 +867,12 @@ export class PathGuard {
 
     // Parse allowed directories from environment variable
     const allowMissing =
-      cli.allowMissingRoots ?? parseTrueEnvFlag(process.env['ALLOW_MISSING_ROOTS']);
+      cli.allowMissingRoots ??
+      parseTrueEnvFlag(process.env['FS_ALLOW_MISSING_ROOTS'], 'FS_ALLOW_MISSING_ROOTS');
     const envAllowedDirs = await resolveConfiguredDirs('FS_ALLOWED_DIRS', { allowMissing });
 
-    // Parse ROOT_BOUNDARY (the --root-boundary flag beats the env var)
-    const boundaries = await resolveConfiguredDirs('ROOT_BOUNDARY', {
+    // Parse FS_ROOT_BOUNDARY (the --root-boundary flag beats the env var)
+    const boundaries = await resolveConfiguredDirs('FS_ROOT_BOUNDARY', {
       resolveReal: true,
       ...(cli.rootBoundary !== undefined ? { rawValue: cli.rootBoundary } : {}),
     });
@@ -880,7 +881,8 @@ export class PathGuard {
     const allowCwdDirs: string[] = [];
     if (allowCwd) {
       let cwd = normalizePath(process.cwd());
-      const walkCwd = cli.allowCwdWalk ?? parseTrueEnvFlag(process.env['ALLOW_CWD_WALK']);
+      const walkCwd =
+        cli.allowCwdWalk ?? parseTrueEnvFlag(process.env['FS_ALLOW_CWD_WALK'], 'FS_ALLOW_CWD_WALK');
       if (walkCwd) {
         cwd = await findProjectRoot(cwd, [...boundaries, homedir()]);
       }
@@ -897,7 +899,7 @@ export class PathGuard {
     const baseline = [...cliAllowedDirs, ...envAllowedDirs, ...allowCwdDirs];
 
     const signal = timedSignal(undefined, ROOTS_TIMEOUT_MS);
-    // ROOT_BOUNDARY is the only filter grants answer to (see
+    // FS_ROOT_BOUNDARY is the only filter grants answer to (see
     // `grantedDirectories`); without one they pass through as accepted.
     const grantsToInclude =
       boundaries.length > 0

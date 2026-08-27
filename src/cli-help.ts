@@ -17,7 +17,10 @@ const OPTIONS_HELP: HelpRow[] = [
   { flags: '-h, --help', desc: 'Show this help message' },
   { flags: '-v, --version', desc: 'Show the server version' },
   { flags: '--allow-cwd', desc: 'Add the current working directory as an allowed root' },
-  { flags: '--port <number>', desc: 'Start HTTP transport on this port (Node Streamable HTTP)' },
+  {
+    flags: '--port <number>',
+    desc: 'Start HTTP transport on this port (env: FS_PORT)',
+  },
   {
     flags: '--read-only',
     desc: `Disable write tools: ${[...MUTATING_TOOL_NAMES].sort().join(', ')}`,
@@ -30,24 +33,24 @@ const OPTIONS_HELP: HelpRow[] = [
   { flags: '--json', desc: 'Output --print-config as JSON' },
   {
     flags: '--log-level <level>',
-    desc: 'Log level: debug|info|warn|error (env: LOG_LEVEL)',
+    desc: 'Log level, RFC 5424: debug|info|notice|warn|error|critical|alert|emergency (env: FS_LOG_LEVEL)',
   },
-  { flags: '--http-host <host>', desc: 'HTTP server bind address (env: HTTP_HOST)' },
+  { flags: '--http-host <host>', desc: 'HTTP server bind address (env: FS_HTTP_HOST)' },
   {
     flags: '--api-key <key>',
-    desc: 'Require this API key on HTTP requests; prefer API_KEY (argv is world-readable)',
+    desc: 'Require this API key on HTTP requests; prefer FS_API_KEY (argv is world-readable)',
   },
   {
     flags: '--allow-sensitive',
-    desc: 'Allow access to sensitive system paths (env: ALLOW_SENSITIVE)',
+    desc: 'Allow access to sensitive system paths (env: FS_ALLOW_SENSITIVE)',
   },
   {
     flags: '--root-boundary <path>',
-    desc: 'Require all allowed roots to fall under this path (env: ROOT_BOUNDARY)',
+    desc: 'Require all allowed roots to fall under this path (env: FS_ROOT_BOUNDARY)',
   },
   {
     flags: '--max-file-size <bytes>',
-    desc: 'Maximum file size for reads in bytes (env: MAX_FILE_SIZE)',
+    desc: 'Maximum file size for reads in bytes (env: FS_MAX_FILE_SIZE)',
   },
   { flags: '--walk-cwd', desc: 'Walk up from CWD to find a project root; implies --allow-cwd' },
   { flags: '--deny <pattern>', desc: 'Block paths matching this pattern; repeatable' },
@@ -58,66 +61,74 @@ const OPTIONS_HELP: HelpRow[] = [
 ];
 
 const ENV_HELP: HelpRow[] = [
-  { flags: 'LOG_LEVEL', desc: 'Log level: debug|info|warn|error' },
-  { flags: 'HTTP_HOST', desc: 'HTTP bind address' },
-  { flags: 'API_KEY', desc: 'HTTP API key' },
   {
-    flags: 'FILESYSTEM_MCP_TRUST_PROXY',
+    flags: 'FS_LOG_LEVEL',
+    desc: 'Log level, RFC 5424: debug|info|notice|warn|error|critical|alert|emergency',
+  },
+  { flags: 'FS_PORT', desc: 'Start HTTP transport on this port (unset = stdio)' },
+  { flags: 'FS_HTTP_HOST', desc: 'HTTP bind address' },
+  { flags: 'FS_API_KEY', desc: 'HTTP API key' },
+  {
+    flags: 'FS_TRUST_PROXY',
     desc: 'Express trust-proxy setting: hop count or expression (unset = do not trust X-Forwarded-*)',
   },
   {
-    flags: 'ALLOW_SENSITIVE',
-    desc: 'Allow sensitive system paths (any value enables this)',
+    flags: 'FS_ALLOW_SENSITIVE',
+    desc: 'Allow sensitive system paths ("true" or "1" enables this)',
   },
-  { flags: 'ROOT_BOUNDARY', desc: 'Path prefix all allowed roots must fall under' },
-  { flags: 'MAX_FILE_SIZE', desc: 'Maximum file size for reads in bytes' },
+  { flags: 'FS_ROOT_BOUNDARY', desc: 'Path prefix all allowed roots must fall under' },
+  { flags: 'FS_MAX_FILE_SIZE', desc: 'Maximum file size for reads in bytes' },
   {
     flags: 'FS_ALLOWED_DIRS',
     desc: 'Allowed dirs: colon-separated (Unix), semicolon-separated (Windows)',
   },
   {
-    flags: 'ALLOW_CWD_WALK',
-    desc: 'Walk up from CWD to find a project root (any value enables this)',
+    flags: 'FS_ALLOW_CWD_WALK',
+    desc: 'Walk up from CWD to find a project root ("true" or "1" enables this)',
   },
-  { flags: 'DENYLIST', desc: 'Paths/patterns to block, comma-separated' },
+  { flags: 'FS_DENYLIST', desc: 'Paths/patterns to block, comma-separated' },
   {
-    flags: 'ALLOW_MISSING_ROOTS',
-    desc: 'Start even if configured allowed directories do not exist (any value enables this)',
+    flags: 'FS_ALLOW_MISSING_ROOTS',
+    desc: 'Start even if configured allowed directories do not exist ("true" or "1" enables this)',
   },
   {
-    flags: 'FILESYSTEM_MCP_ALLOWED_HOSTS',
+    flags: 'FS_ALLOWED_HOSTS',
     desc: 'Comma-separated Host header values to accept (HTTP transport)',
   },
-  { flags: 'FILESYSTEM_MCP_ALLOWED_ORIGINS', desc: 'Comma-separated origin hostnames for CORS' },
+  { flags: 'FS_ALLOWED_ORIGINS', desc: 'Comma-separated origin hostnames for CORS' },
   {
-    flags: 'FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS',
-    desc: 'Set to 1 to bind a wildcard host with no Host validation (accepts the risk)',
+    flags: 'FS_ALLOW_UNRESTRICTED_HOSTS',
+    desc: 'Bind a wildcard host with no Host validation, accepts the risk ("true" or "1" enables this)',
   },
-  { flags: 'FILESYSTEM_MCP_PUBLIC_URL', desc: 'Resource identifier URL for RFC 9728 discovery' },
+  { flags: 'FS_PUBLIC_URL', desc: 'Resource identifier URL for RFC 9728 discovery' },
   {
-    flags: 'FILESYSTEM_MCP_RATE_LIMIT_RPM',
+    flags: 'FS_RATE_LIMIT_RPM',
     desc: 'Per-client-IP requests/min (default 120 authenticated, 6000 keyless loopback; 1–100000)',
   },
   {
-    flags: 'FS_CONTEXT_MAX_REQUEST_BYTES',
+    flags: 'FS_MAX_REQUEST_BYTES',
     desc: 'Max HTTP request body bytes (default 4194304, 1024–268435456)',
   },
   {
-    flags: 'FILESYSTEM_MCP_MAX_WATCHERS',
+    flags: 'FS_KEEPALIVE_TIMEOUT_MS',
+    desc: 'HTTP keep-alive timeout; set above any fronting proxy idle timeout (default 5000, 1000–600000)',
+  },
+  {
+    flags: 'FS_MAX_WATCHERS',
     desc: 'Max concurrent file watchers (default 256, 1–4096)',
   },
   {
-    flags: 'FS_CONTEXT_MAX_INLINE_MATCHES',
+    flags: 'FS_MAX_INLINE_MATCHES',
     desc: 'Max inline content matches per search (default 50, 1–10000)',
   },
   {
-    flags: 'MAX_READ_MANY_TOTAL_SIZE',
+    flags: 'FS_MAX_READ_MANY_BYTES',
     desc: 'Max total bytes across one batch read (default 524288, 10240–104857600)',
   },
-  { flags: 'DEFAULT_SEARCH_TIMEOUT', desc: 'Search timeout in ms (default 5000, 100–60000)' },
+  { flags: 'FS_SEARCH_TIMEOUT_MS', desc: 'Search timeout in ms (default 5000, 100–60000)' },
   { flags: 'NO_COLOR', desc: 'Any value disables ANSI color output' },
   {
-    flags: 'FILESYSTEM_MCP_REQUEST_STATE_KEY',
+    flags: 'FS_REQUEST_STATE_KEY',
     desc: 'HMAC key for input_required state; optional outside fleet mode, shared and >=32 bytes in fleet mode',
   },
 ];

@@ -127,7 +127,7 @@ describe('Security (P0)', () => {
       assert.strictEqual(matcher.isSensitive('.env:stream'), true);
     });
 
-    it('TC-SEC-012: ALLOW_SENSITIVE=1 override allows sensitive files', () => {
+    it('TC-SEC-012: FS_ALLOW_SENSITIVE=1 override allows sensitive files', () => {
       const matcher = new SensitiveMatcher([]);
       assert.strictEqual(
         matcher.isSensitive('.env'),
@@ -137,7 +137,7 @@ describe('Security (P0)', () => {
       assert.strictEqual(matcher.isSensitive('server.pem'), false);
     });
 
-    it('TC-SEC-013: Custom DENYLIST rules', () => {
+    it('TC-SEC-013: Custom FS_DENYLIST rules', () => {
       const matcher = new SensitiveMatcher(['*.secret']);
       assert.strictEqual(matcher.isSensitive('data.secret'), true, 'Should match custom pattern');
       assert.strictEqual(

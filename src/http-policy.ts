@@ -81,7 +81,7 @@ function originHostname(origin: string): string | undefined {
  * origins are always accepted via {@link isAllowedLocalhostOrigin}; a remote
  * origin is accepted iff its parsed hostname is in the set. Both the SDK app's
  * `allowedOrigins` and this OPTIONS-handler check consume hostname-form, so a
- * remote origin allowed via `FILESYSTEM_MCP_ALLOWED_ORIGINS` is reflected
+ * remote origin allowed via `FS_ALLOWED_ORIGINS` is reflected
  * end-to-end in `Access-Control-Allow-Origin`.
  */
 export function isOriginAllowed(origin: string, allowedHostnames: readonly string[]): boolean {
@@ -138,12 +138,12 @@ export function assertHttpBindingPolicy(host: string, apiKey: string | undefined
 }
 
 /**
- * The Host header values this bind accepts. `FILESYSTEM_MCP_ALLOWED_HOSTS` wins
+ * The Host header values this bind accepts. `FS_ALLOWED_HOSTS` wins
  * when set; otherwise a loopback bind takes the whole localhost hostname set (a
  * client dialing http://localhost:<port> sends `Host: localhost`, which a bare
  * ['127.0.0.1'] list would 403), a wildcard bind takes none, and a concrete
  * non-loopback bind takes itself. An empty result means no Host validation is
- * mounted — only reachable under FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1.
+ * mounted — only reachable under FS_ALLOW_UNRESTRICTED_HOSTS=1.
  */
 export function resolveAllowedHosts(
   httpHost: string,
@@ -157,7 +157,7 @@ export function resolveAllowedHosts(
 }
 
 /**
- * Express's `trust proxy` setting from `FILESYSTEM_MCP_TRUST_PROXY`. A
+ * Express's `trust proxy` setting from `FS_TRUST_PROXY`. A
  * non-negative integer hop count parses to a number (Express counts hops from
  * the socket); anything else (a subnet name/expression, or a negative/
  * non-integer string) passes through unchanged for Express to interpret.
@@ -172,10 +172,10 @@ export function resolveTrustProxySetting(value: string | undefined): number | st
 
 /**
  * Refuse to bind a wildcard host (`0.0.0.0` / `::`) without an explicit
- * `FILESYSTEM_MCP_ALLOWED_HOSTS` list. Clients never send `Host: 0.0.0.0`, so
+ * `FS_ALLOWED_HOSTS` list. Clients never send `Host: 0.0.0.0`, so
  * defaulting the allowed-host set to the wildcard string would reject all real
  * traffic. Operators who accept the risk can set
- * `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1` to restore warn-and-bind.
+ * `FS_ALLOW_UNRESTRICTED_HOSTS=1` to restore warn-and-bind.
  * Loopback and concrete non-loopback hosts are unaffected.
  */
 export function assertHttpHostPolicy(
@@ -190,7 +190,7 @@ export function assertHttpHostPolicy(
   if (allowedHosts.length > 0) return;
   throw new FsError(
     ErrorCode.PERMISSION_DENIED,
-    `Refusing to bind wildcard host '${host}' without FILESYSTEM_MCP_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1 to accept the risk.`,
+    `Refusing to bind wildcard host '${host}' without FS_ALLOWED_HOSTS. Set it to the public hostname(s) clients send, or set FS_ALLOW_UNRESTRICTED_HOSTS=true to accept the risk.`,
   );
 }
 
@@ -220,10 +220,10 @@ export function protectedResourceUrl(
     const parsed = URL.parse(configured);
     if (parsed) return parsed;
     Logger.warn(
-      `[HTTP] Ignoring unparseable FILESYSTEM_MCP_PUBLIC_URL: ${configured}. Deriving the resource identifier from the Host header instead.`,
+      `[HTTP] Ignoring unparseable FS_PUBLIC_URL: ${configured}. Deriving the resource identifier from the Host header instead.`,
     );
   }
-  // With no Host validator mounted (FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS=1)
+  // With no Host validator mounted (FS_ALLOW_UNRESTRICTED_HOSTS=1)
   // the Host header is attacker-controlled, and naming a resource from it would
   // publish an identifier the operator does not own. Answer with nothing instead.
   if (!hostValidated) return null;
@@ -309,7 +309,7 @@ export function bearerAuthMiddleware(
  * Env-derived CORS origins (hostname-form, no scheme/port — matches the SDK
  * app's `allowedOrigins` consumer). Defaults to the SDK's loopback hostname set
  * so loopback browser clients keep working; operators set
- * `FILESYSTEM_MCP_ALLOWED_ORIGINS` to allow remote clients on non-loopback
+ * `FS_ALLOWED_ORIGINS` to allow remote clients on non-loopback
  * binds. An empty value reads as unset, matching how parseAllowedHostsEnv
  * treats an all-empty list. The same set is consulted by corsPreflightHandler
  * so a remote origin is reflected end-to-end in Access-Control-Allow-Origin.
@@ -323,7 +323,7 @@ export function computeAllowedOriginHostnames(originsEnv: string | undefined): s
 
 /**
  * Reflect a present Origin on the response if it is allowed — localhost, or
- * in the env-derived `FILESYSTEM_MCP_ALLOWED_ORIGINS` set — and avoid
+ * in the env-derived `FS_ALLOWED_ORIGINS` set — and avoid
  * emitting a wildcard fallback. Shared by the OPTIONS preflight and the real
  * POST response: `createMcpExpressApp`'s `allowedOrigins` only gates which
  * Origins are accepted, it never sets `Access-Control-Allow-Origin` on the

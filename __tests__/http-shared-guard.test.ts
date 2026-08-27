@@ -38,7 +38,7 @@ describe('HTTP shared PathGuard (grant persistence + watcher visibility)', () =>
 
     // Without a boundary an applied grant is filtered back out on recompute
     // (see TC-PG-005), so the grant must be inside one to actually stick.
-    http = await bootHttpTest([rootDir], { ROOT_BOUNDARY: tmpdir() });
+    http = await bootHttpTest([rootDir], { FS_ROOT_BOUNDARY: tmpdir() });
     client = await http.makeClient('http-shared-guard', () => {
       elicitCount += 1;
       return { action: 'accept' as const, content: { confirm: true } };

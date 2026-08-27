@@ -24,6 +24,7 @@ import { Logger } from '../core/observability.js';
 import { PageSnapshotStore } from '../core/page-store.js';
 import { PathGuard } from '../core/path.js';
 import type { ServerOptions } from '../core/path.js';
+import { parseTrueEnvFlag } from '../core/primitives.js';
 import { ResourceStore } from '../core/store.js';
 import { MIB, parseEnvInt } from '../core/util.js';
 import {
@@ -53,12 +54,7 @@ import {
   prepareListenWatchers,
 } from './shared.js';
 
-const MAX_REQUEST_BODY_BYTES = parseEnvInt(
-  'FS_CONTEXT_MAX_REQUEST_BYTES',
-  4 * MIB,
-  1024,
-  256 * MIB,
-);
+const MAX_REQUEST_BODY_BYTES = parseEnvInt('FS_MAX_REQUEST_BYTES', 4 * MIB, 1024, 256 * MIB);
 
 /**
  * The code the SDK's own non-POST rejection carries. Not a `ProtocolErrorCode`
@@ -128,12 +124,10 @@ function setupExpressApp(
   sharedRegistry: WatcherRegistry,
   notifier: ServerNotifier,
 ): Express {
-  const allowedOriginHostnames = computeAllowedOriginHostnames(
-    process.env['FILESYSTEM_MCP_ALLOWED_ORIGINS'],
-  );
+  const allowedOriginHostnames = computeAllowedOriginHostnames(process.env['FS_ALLOWED_ORIGINS']);
   // Read once here and passed down, like every other env-derived policy input:
   // http-policy holds no state and reads no env of its own.
-  const publicUrl = process.env['FILESYSTEM_MCP_PUBLIC_URL'];
+  const publicUrl = process.env['FS_PUBLIC_URL'];
 
   const app = createMcpExpressApp({
     host: httpHost,
@@ -142,14 +136,14 @@ function setupExpressApp(
     ...(allowedOriginHostnames.length > 0 ? { allowedOrigins: [...allowedOriginHostnames] } : {}),
   });
 
-  const trustProxy = resolveTrustProxySetting(process.env['FILESYSTEM_MCP_TRUST_PROXY']);
+  const trustProxy = resolveTrustProxySetting(process.env['FS_TRUST_PROXY']);
   if (trustProxy !== undefined) {
     app.set('trust proxy', trustProxy);
   }
 
   if (allowedHosts.length === 0) {
     Logger.warn(
-      '[HTTP] FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS is set: binding globally without Host validation.',
+      '[HTTP] FS_ALLOW_UNRESTRICTED_HOSTS is set: binding globally without Host validation.',
     );
   }
 
@@ -158,7 +152,7 @@ function setupExpressApp(
 
   // Unconditional: the spec's rate-limit MUST is not scoped to authenticated
   // binds. A keyless bind is loopback-only, so the cap is looser, not absent.
-  const rpm = parseEnvInt('FILESYSTEM_MCP_RATE_LIMIT_RPM', apiKey ? 120 : 6_000, 1, 100_000);
+  const rpm = parseEnvInt('FS_RATE_LIMIT_RPM', apiKey ? 120 : 6_000, 1, 100_000);
   app.use('/mcp', createRateLimiter(rpm));
 
   if (apiKey && allowedHosts.length > 0) {
@@ -166,7 +160,7 @@ function setupExpressApp(
       const resource = protectedResourceUrl(req, true, publicUrl);
       if (!resource) {
         // Unreachable for the unrestricted case (the gate above excludes it),
-        // but defend a FILESYSTEM_MCP_PUBLIC_URL parse failure with a bodyless
+        // but defend a FS_PUBLIC_URL parse failure with a bodyless
         // 404 — a generic OAuth client cannot parse a JSON-RPC error envelope.
         res.status(404).end();
         return;
@@ -301,11 +295,11 @@ export async function startHttpServer(
     throw new Error('Fleet deployment mode requires a shared event bus.');
   }
   assertFleetRequestStateKey(fleet);
-  const allowedHosts = resolveAllowedHosts(httpHost, process.env['FILESYSTEM_MCP_ALLOWED_HOSTS']);
+  const allowedHosts = resolveAllowedHosts(httpHost, process.env['FS_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,
     allowedHosts,
-    process.env['FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS'] === '1',
+    parseTrueEnvFlag(process.env['FS_ALLOW_UNRESTRICTED_HOSTS'], 'FS_ALLOW_UNRESTRICTED_HOSTS'),
   );
 
   const sharedRegistry = createWatcherRegistry();
@@ -362,9 +356,12 @@ export async function startHttpServer(
   );
 
   const httpServer = createHttpServer(app);
-  httpServer.headersTimeout = 10_000;
+  // Must exceed the idle timeout of any proxy in front of this server, or the
+  // proxy reuses connections the server already closed (intermittent 502s).
+  const keepAliveMs = parseEnvInt('FS_KEEPALIVE_TIMEOUT_MS', 5_000, 1_000, 600_000);
+  httpServer.keepAliveTimeout = keepAliveMs;
+  httpServer.headersTimeout = keepAliveMs + 5_000;
   httpServer.requestTimeout = DEFAULT_REQUEST_TIMEOUT_MSEC;
-  httpServer.keepAliveTimeout = 5_000;
 
   const onHttpServerError = (error: Error): void => {
     Logger.error('[HTTP] runtime server error', {

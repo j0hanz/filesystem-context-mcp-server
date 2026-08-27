@@ -39,7 +39,7 @@ import { defineTool, type ToolCtx } from './define.js';
  * Configuration constants for the Search Content tool.
  */
 const CONFIG = {
-  MAX_INLINE_MATCHES: parseEnvInt('FS_CONTEXT_MAX_INLINE_MATCHES', 50, 1, 10_000),
+  MAX_INLINE_MATCHES: parseEnvInt('FS_MAX_INLINE_MATCHES', 50, 1, 10_000),
 } as const;
 
 // Type Definitions

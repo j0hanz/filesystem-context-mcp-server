@@ -56,7 +56,7 @@ function cancelledRequestId(message: unknown): string | number | null {
  * on a 2026-07-28 connection, where clients pass paths as tool arguments and
  * the access-grant round-trip covers out-of-root paths instead. Every root
  * still passes `applyGrant`'s boundary and unsafe-path guards, so a client
- * cannot root-declare its way into $HOME or past ROOT_BOUNDARY — a refused
+ * cannot root-declare its way into $HOME or past FS_ROOT_BOUNDARY — a refused
  * root is skipped and its paths fail closed at validateAccess like any other.
  */
 export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise<number> {

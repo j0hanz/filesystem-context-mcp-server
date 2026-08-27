@@ -24,8 +24,8 @@ const NO_BIND_CONTEXT = undefined as never;
 describe('fleet request-state key initialization', () => {
   it('binds the codec to a shared key configured after import but before fleet startup', async () => {
     const stateKey = 'a'.repeat(32);
-    const saved = process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'];
-    process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = stateKey;
+    const saved = process.env['FS_REQUEST_STATE_KEY'];
+    process.env['FS_REQUEST_STATE_KEY'] = stateKey;
     try {
       assertFleetRequestStateKey(true);
       const wire = await requestStateCodec.mint({ op: 'delete', paths: ['/fleet'] });
@@ -36,9 +36,9 @@ describe('fleet request-state key initialization', () => {
       assert.deepStrictEqual(decoded, { op: 'delete', paths: ['/fleet'] });
     } finally {
       if (saved === undefined) {
-        Reflect.deleteProperty(process.env, 'FILESYSTEM_MCP_REQUEST_STATE_KEY');
+        Reflect.deleteProperty(process.env, 'FS_REQUEST_STATE_KEY');
       } else {
-        process.env['FILESYSTEM_MCP_REQUEST_STATE_KEY'] = saved;
+        process.env['FS_REQUEST_STATE_KEY'] = saved;
       }
     }
   });
@@ -295,7 +295,7 @@ describe('input_required multi-round-trip infrastructure', () => {
 describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
   // Deployment topology is an explicit argument. Only the request-state key
   // comes from the process, so only it is saved and restored here.
-  const STATE_KEY = 'FILESYSTEM_MCP_REQUEST_STATE_KEY';
+  const STATE_KEY = 'FS_REQUEST_STATE_KEY';
   let saved: string | undefined;
 
   beforeEach(() => {
@@ -309,7 +309,7 @@ describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
 
   it('throws when fleet mode is set and the request state key is missing', () => {
     Reflect.deleteProperty(process.env, STATE_KEY);
-    assert.throws(() => assertFleetRequestStateKey(true), /FILESYSTEM_MCP_REQUEST_STATE_KEY/);
+    assert.throws(() => assertFleetRequestStateKey(true), /FS_REQUEST_STATE_KEY/);
   });
 
   it('throws when fleet mode is set and the request state key is <32 bytes', () => {

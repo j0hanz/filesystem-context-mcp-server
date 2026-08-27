@@ -30,12 +30,12 @@ describe('PathGuard grant round-trip', () => {
   beforeEach(async () => {
     root = await createTestRoot();
     createdDirs = [];
-    savedBoundary = process.env['ROOT_BOUNDARY'];
+    savedBoundary = process.env['FS_ROOT_BOUNDARY'];
   });
 
   afterEach(async () => {
-    if (savedBoundary === undefined) delete process.env['ROOT_BOUNDARY'];
-    else process.env['ROOT_BOUNDARY'] = savedBoundary;
+    if (savedBoundary === undefined) delete process.env['FS_ROOT_BOUNDARY'];
+    else process.env['FS_ROOT_BOUNDARY'] = savedBoundary;
     for (const d of createdDirs) await cleanupTestRoot(d);
     if (root) await cleanupTestRoot(root);
   });
@@ -49,10 +49,10 @@ describe('PathGuard grant round-trip', () => {
     assert.deepStrictEqual(grants, []);
   });
 
-  it('TC-PG-002: within ROOT_BOUNDARY, precheckAccess offers the ancestor and applyGrant extends access', async () => {
+  it('TC-PG-002: within FS_ROOT_BOUNDARY, precheckAccess offers the ancestor and applyGrant extends access', async () => {
     const boundary = tmpdir();
     const outOfRoot = await mkDir(createdDirs, 'fsmcp-pg002-');
-    process.env['ROOT_BOUNDARY'] = boundary;
+    process.env['FS_ROOT_BOUNDARY'] = boundary;
 
     const guard = new PathGuard({ cliAllowedDirs: [root] });
     await guard.recomputeAllowedDirectories();
@@ -73,9 +73,9 @@ describe('PathGuard grant round-trip', () => {
     );
   });
 
-  it('TC-PG-003: outside ROOT_BOUNDARY, precheckAccess offers nothing and applyGrant denies', async () => {
+  it('TC-PG-003: outside FS_ROOT_BOUNDARY, precheckAccess offers nothing and applyGrant denies', async () => {
     // Boundary is the test root itself: any sibling tmpdir is outside it.
-    process.env['ROOT_BOUNDARY'] = root;
+    process.env['FS_ROOT_BOUNDARY'] = root;
     const outOfRoot = await mkDir(createdDirs, 'fsmcp-pg003-');
 
     const guard = new PathGuard({ cliAllowedDirs: [root] });
@@ -109,14 +109,14 @@ describe('PathGuard grant round-trip', () => {
     assert.deepStrictEqual(grants, [], 'must never offer the whole filesystem root');
   });
 
-  it('TC-PG-005: with configured allowed dirs and no ROOT_BOUNDARY, an accepted grant lands', async () => {
+  it('TC-PG-005: with configured allowed dirs and no FS_ROOT_BOUNDARY, an accepted grant lands', async () => {
     // Regression: the recompute used to filter granted dirs against the
     // baseline (cliAllowedDirs), which a granted dir is outside by definition.
     // applyGrant returned true and the allowed set never changed, so the whole
     // round-trip prompted the user and then did nothing.
     const outOfRoot = await mkDir(createdDirs, 'fsmcp-pg005-');
 
-    delete process.env['ROOT_BOUNDARY'];
+    delete process.env['FS_ROOT_BOUNDARY'];
     const guard = new PathGuard({ cliAllowedDirs: [root] });
     await guard.recomputeAllowedDirectories();
 
@@ -146,7 +146,7 @@ describe('PathGuard grant round-trip', () => {
     const first = await mkDir(createdDirs, 'fsmcp-pg005b1-');
     const second = await mkDir(createdDirs, 'fsmcp-pg005b2-');
 
-    delete process.env['ROOT_BOUNDARY'];
+    delete process.env['FS_ROOT_BOUNDARY'];
     const guard = new PathGuard({ cliAllowedDirs: [root] });
     await guard.recomputeAllowedDirectories();
 
@@ -160,7 +160,7 @@ describe('PathGuard grant round-trip', () => {
   });
 
   it('TC-PG-006: two concurrent applyGrant calls on different dirs both land', async () => {
-    process.env['ROOT_BOUNDARY'] = tmpdir();
+    process.env['FS_ROOT_BOUNDARY'] = tmpdir();
     const dir1 = await mkDir(createdDirs, 'fsmcp-pg006a-');
     const dir2 = await mkDir(createdDirs, 'fsmcp-pg006b-');
 
@@ -176,11 +176,11 @@ describe('PathGuard grant round-trip', () => {
     assert.ok(containsPath(allowed, dir2), `dir2 (${dir2}) should be in allowed dirs`);
   });
 
-  it('TC-PG-011: with no ROOT_BOUNDARY, precheckAccess never offers and applyGrant never accepts an unsafe path', async () => {
-    // No ROOT_BOUNDARY: isWithinBoundary returns true for everything, so the
+  it('TC-PG-011: with no FS_ROOT_BOUNDARY, precheckAccess never offers and applyGrant never accepts an unsafe path', async () => {
+    // No FS_ROOT_BOUNDARY: isWithinBoundary returns true for everything, so the
     // unsafe-path denylist is the only guard keeping a grant out of /etc,
     // C:\Windows, or the home directory. isUnsafeCwdPath flags the path used.
-    delete process.env['ROOT_BOUNDARY'];
+    delete process.env['FS_ROOT_BOUNDARY'];
     const unsafeDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
 
     const guard = new PathGuard({ cliAllowedDirs: [root] });
@@ -202,7 +202,7 @@ describe('PathGuard grant round-trip', () => {
     // string while expandAllowedDirectories pushed each root's realpath into the
     // allowed set, so the link went in under an innocuous name and dragged the
     // unsafe target with it — and the confirmation prompt showed the alias.
-    delete process.env['ROOT_BOUNDARY'];
+    delete process.env['FS_ROOT_BOUNDARY'];
     const unsafeDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
     const holder = await mkDir(createdDirs, 'fsmcp-pg012-');
     const alias = join(holder, 'innocuous');

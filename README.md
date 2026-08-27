@@ -361,46 +361,52 @@ filesystem-mcp /path/to/project1 /path/to/project2
 | `--allow-cwd`             | `false` | Also allow the current working directory as a root                                 |
 | `--walk-cwd`              | `false` | Walk up from CWD to find a project root; implies `--allow-cwd`                     |
 | `--allow-missing-roots`   | `false` | Start even if configured allowed directories do not exist                          |
-| `--port <n>`              | —       | Enable Streamable HTTP transport on the given port                                 |
-| `--http-host <host>`      | —       | HTTP server bind address (env: `HTTP_HOST`)                                        |
-| `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `API_KEY`)                             |
+| `--port <n>`              | —       | Enable Streamable HTTP transport on the given port (env: `FS_PORT`)                |
+| `--http-host <host>`      | —       | HTTP server bind address (env: `FS_HTTP_HOST`)                                     |
+| `--api-key <key>`         | —       | Require this API key on HTTP requests (env: `FS_API_KEY`)                          |
 | `--read-only`             | `false` | Disable write tools: `create`, `edit`, `delete`, `move`, `patch`, `replace_text`   |
 | `--safe`                  | `false` | Alias for `--read-only`                                                            |
 | `--deny <pattern>`        | —       | Block paths matching this pattern; repeatable                                      |
-| `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `ALLOW_SENSITIVE`)                    |
-| `--root-boundary <path>`  | —       | Require all allowed roots to fall under this path (env: `ROOT_BOUNDARY`)           |
-| `--max-file-size <bytes>` | —       | Maximum file size for reads in bytes (env: `MAX_FILE_SIZE`)                        |
-| `--log-level <level>`     | `info`  | Log level: debug, info, warn, or error (env: `LOG_LEVEL`)                          |
+| `--allow-sensitive`       | `false` | Allow access to sensitive system paths (env: `FS_ALLOW_SENSITIVE`)                 |
+| `--root-boundary <path>`  | —       | Require all allowed roots to fall under this path (env: `FS_ROOT_BOUNDARY`)        |
+| `--max-file-size <bytes>` | —       | Maximum file size for reads in bytes (env: `FS_MAX_FILE_SIZE`)                     |
+| `--log-level <level>`     | `info`  | RFC 5424 log level, `debug` through `emergency` (env: `FS_LOG_LEVEL`)              |
 | `--print-config`          | `false` | Print the active configuration and exit (use `--json` for machine-readable output) |
 | `--json`                  | `false` | Output `--print-config` as JSON                                                    |
 
 #### Environment variables
 
-| Variable                                  | Purpose                                                                                                                                                                                                           |
-| :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FS_ALLOWED_DIRS`                         | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.                                                                                                                            |
-| `ROOT_BOUNDARY`                           | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                                                                                                                                        |
-| `ALLOW_CWD_WALK`                          | Set to any value to walk up from CWD to find a project root (mirrors `--walk-cwd`).                                                                                                                               |
-| `ALLOW_MISSING_ROOTS`                     | Set to any value to start even if configured directories do not exist.                                                                                                                                            |
-| `ALLOW_SENSITIVE`                         | Set to any value to allow access to sensitive system paths (mirrors `--allow-sensitive`).                                                                                                                         |
-| `DENYLIST`                                | Comma-separated list of paths or patterns to block (mirrors `--deny`).                                                                                                                                            |
-| `MAX_FILE_SIZE`                           | Maximum file size for reads in bytes (mirrors `--max-file-size`).                                                                                                                                                 |
-| `LOG_LEVEL`                               | Log level: debug, info, warn, or error (mirrors `--log-level`).                                                                                                                                                   |
-| `HTTP_HOST`                               | HTTP server bind address (mirrors `--http-host`).                                                                                                                                                                 |
-| `API_KEY`                                 | API key required on HTTP requests (mirrors `--api-key`).                                                                                                                                                          |
-| `FILESYSTEM_MCP_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                                                                                                                     |
-| `FILESYSTEM_MCP_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                                                                                                                                                    |
-| `FILESYSTEM_MCP_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                                                                                                                                        |
-| `FILESYSTEM_MCP_ALLOW_UNRESTRICTED_HOSTS` | Set to 1 to bind a wildcard host with no Host validation (accepts the risk).                                                                                                                                      |
-| `FILESYSTEM_MCP_PUBLIC_URL`               | Resource identifier URL for RFC 9728 discovery.                                                                                                                                                                   |
-| `FILESYSTEM_MCP_RATE_LIMIT_RPM`           | Per-client-IP requests/minute (default 120 with API-key authentication, 6,000 for keyless loopback; range 1–100000).                                                                                              |
-| `FS_CONTEXT_MAX_REQUEST_BYTES`            | Max HTTP request body bytes (default 4194304, 1024–268435456).                                                                                                                                                    |
-| `FILESYSTEM_MCP_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                                                                                                                                               |
-| `FS_CONTEXT_MAX_INLINE_MATCHES`           | Max inline content matches per search (default 50, 1–10000).                                                                                                                                                      |
-| `MAX_READ_MANY_TOTAL_SIZE`                | Max total bytes across read_many (default 524288, 10240–104857600).                                                                                                                                               |
-| `DEFAULT_SEARCH_TIMEOUT`                  | Search timeout in ms (default 5000, 100–60000).                                                                                                                                                                   |
-| `NO_COLOR`                                | Any value disables ANSI color output.                                                                                                                                                                             |
-| `FILESYSTEM_MCP_REQUEST_STATE_KEY`        | HMAC key sealing `input_required` requestState across retry rounds. Optional for stdio and single-instance HTTP (random per boot if unset); mandatory and shared across every fleet instance (UTF-8, >=32 bytes). |
+All boolean variables accept `true` or `1` to enable and `false`, `0`, or
+unset to disable; any other value logs a warning and reads as disabled.
+Flags take precedence when both are set.
+
+| Variable                      | Purpose                                                                                                                                                                                                           |
+| :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FS_ALLOWED_DIRS`             | Colon-separated (POSIX) or semicolon-separated (Windows) list of directories to allow.                                                                                                                            |
+| `FS_ROOT_BOUNDARY`            | Path prefix all allowed roots must fall under (mirrors `--root-boundary`).                                                                                                                                        |
+| `FS_ALLOW_CWD_WALK`           | Walk up from CWD to find a project root (mirrors `--walk-cwd`).                                                                                                                                                   |
+| `FS_ALLOW_MISSING_ROOTS`      | Start even if configured directories do not exist (mirrors `--allow-missing-roots`).                                                                                                                              |
+| `FS_ALLOW_SENSITIVE`          | Allow access to sensitive system paths (mirrors `--allow-sensitive`).                                                                                                                                             |
+| `FS_DENYLIST`                 | Comma-separated list of paths or patterns to block (mirrors `--deny`).                                                                                                                                            |
+| `FS_MAX_FILE_SIZE`            | Maximum file size for reads in bytes (mirrors `--max-file-size`).                                                                                                                                                 |
+| `FS_LOG_LEVEL`                | RFC 5424 log level: `debug`, `info`, `notice`, `warn`/`warning`, `error`, `critical`, `alert`, or `emergency` (mirrors `--log-level`).                                                                            |
+| `FS_PORT`                     | Start the Streamable HTTP transport on this port; unset = stdio (mirrors `--port`).                                                                                                                               |
+| `FS_HTTP_HOST`                | HTTP server bind address (mirrors `--http-host`).                                                                                                                                                                 |
+| `FS_API_KEY`                  | API key required on HTTP requests (mirrors `--api-key`).                                                                                                                                                          |
+| `FS_TRUST_PROXY`              | Express `trust proxy` setting: hop count or expression. Unset = do not trust `X-Forwarded-*`.                                                                                                                     |
+| `FS_ALLOWED_HOSTS`            | Comma-separated Host header values to accept (HTTP transport).                                                                                                                                                    |
+| `FS_ALLOWED_ORIGINS`          | Comma-separated origin hostnames for CORS.                                                                                                                                                                        |
+| `FS_ALLOW_UNRESTRICTED_HOSTS` | Bind a wildcard host with no Host validation (accepts the risk).                                                                                                                                                  |
+| `FS_PUBLIC_URL`               | Resource identifier URL for RFC 9728 discovery.                                                                                                                                                                   |
+| `FS_RATE_LIMIT_RPM`           | Per-client-IP requests/minute (default 120 with API-key authentication, 6,000 for keyless loopback; range 1–100000).                                                                                              |
+| `FS_MAX_REQUEST_BYTES`        | Max HTTP request body bytes (default 4194304, 1024–268435456).                                                                                                                                                    |
+| `FS_KEEPALIVE_TIMEOUT_MS`     | HTTP keep-alive timeout in ms; set above any fronting proxy's idle timeout (default 5000, 1000–600000).                                                                                                           |
+| `FS_MAX_WATCHERS`             | Max concurrent file watchers (default 256, 1–4096).                                                                                                                                                               |
+| `FS_MAX_INLINE_MATCHES`       | Max inline content matches per search (default 50, 1–10000).                                                                                                                                                      |
+| `FS_MAX_READ_MANY_BYTES`      | Max total bytes across read_many (default 524288, 10240–104857600).                                                                                                                                               |
+| `FS_SEARCH_TIMEOUT_MS`        | Search timeout in ms (default 5000, 100–60000).                                                                                                                                                                   |
+| `NO_COLOR`                    | Any value disables ANSI color output.                                                                                                                                                                             |
+| `FS_REQUEST_STATE_KEY`        | HMAC key sealing `input_required` requestState across retry rounds. Optional for stdio and single-instance HTTP (random per boot if unset); mandatory and shared across every fleet instance (UTF-8, >=32 bytes). |
 
 #### Multi-instance HTTP deployments
 
@@ -446,8 +452,8 @@ class RedisServerEventBus implements ServerEventBus {
 }
 
 const eventBus = new RedisServerEventBus();
-const apiKey = process.env['API_KEY'];
-if (!apiKey) throw new Error('API_KEY is required for a multi-instance HTTP deployment');
+const apiKey = process.env['FS_API_KEY'];
+if (!apiKey) throw new Error('FS_API_KEY is required for a multi-instance HTTP deployment');
 
 await startHttpServer(
   3000,

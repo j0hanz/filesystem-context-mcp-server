@@ -146,7 +146,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-006: closing a listen frees a one-slot watcher budget', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createStdioClient(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const fileA = await writeTestFile(tmpDir, 'lease-a.txt', 'A');
@@ -170,7 +170,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-007: an SDK-rejected listen does not consume watcher capacity', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createRawStdioServer(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const invalidFile = await writeTestFile(tmpDir, 'invalid-listen.txt', 'invalid');
@@ -227,7 +227,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-008: cancelling an accepted listen frees its watcher lease', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createRawStdioServer(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const fileA = await writeTestFile(tmpDir, 'cancel-a.txt', 'A');
@@ -289,7 +289,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-009: cancellation queued with a pending listen suppresses admission', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createRawStdioServer(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const fileA = await writeTestFile(tmpDir, 'pending-a.txt', 'A');
@@ -354,7 +354,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-010: shared URI listens release one lease per cancellation', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createRawStdioServer(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const sharedFile = await writeTestFile(tmpDir, 'shared.txt', 'shared');
@@ -432,7 +432,7 @@ describe('Stdio subscription lease lifecycle', () => {
   it('STDIO-011: an SDK version rejection releases an acquired watcher lease', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createRawStdioServer(tmpDir, {
-      FILESYSTEM_MCP_MAX_WATCHERS: '1',
+      FS_MAX_WATCHERS: '1',
     });
     try {
       const rejectedFile = await writeTestFile(tmpDir, 'version-rejected.txt', 'rejected');

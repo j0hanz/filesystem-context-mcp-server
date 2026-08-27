@@ -139,8 +139,9 @@ const DEFAULT_SENSITIVE_PATTERNS = [
 ] as const;
 
 function buildSensitivePatterns(): readonly string[] {
-  const allowSensitive = cli.allowSensitive ?? parseTrueEnvFlag(process.env['ALLOW_SENSITIVE']);
-  const envValue = process.env['DENYLIST'];
+  const allowSensitive =
+    cli.allowSensitive ?? parseTrueEnvFlag(process.env['FS_ALLOW_SENSITIVE'], 'FS_ALLOW_SENSITIVE');
+  const envValue = process.env['FS_DENYLIST'];
   const envDenylist = envValue
     ? envValue
         .split(/[,\n]/u)
@@ -148,7 +149,7 @@ function buildSensitivePatterns(): readonly string[] {
         .filter((t) => t.length > 0)
     : [];
   const flagDenylist = cli.denyPatterns ?? [];
-  // ALLOW_SENSITIVE suppresses built-ins only; deny entries (env and --deny)
+  // FS_ALLOW_SENSITIVE suppresses built-ins only; deny entries (env and --deny)
   // always apply. Set-dedupe so a pattern in both sources matches once.
   return [
     ...(allowSensitive ? [] : DEFAULT_SENSITIVE_PATTERNS),

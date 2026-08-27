@@ -330,7 +330,7 @@ describe('HTTP recursive directory watch', () => {
 // notifier.resourcesChanged() -> bus.publish resources_list_changed, and the
 // SDK listen router narrows that notification to subscriptions that opted into
 // `resourcesListChanged`. Modeled on http-shared-guard: HTTP server,
-// elicitation-capable client, ROOT_BOUNDARY=tmpdir() so a grant sticks.
+// elicitation-capable client, FS_ROOT_BOUNDARY=tmpdir() so a grant sticks.
 describe('HTTP resourcesListChanged listen filter', () => {
   let rootDir: string;
   let outDir: string;
@@ -344,7 +344,7 @@ describe('HTTP resourcesListChanged listen filter', () => {
     outDir = await mkdtemp(join(tmpdir(), 'fsmcp-listchanged-'));
     outFile = await writeTestFile(outDir, 'granted.txt', 'initial');
 
-    http = await bootHttpTest([rootDir], { ROOT_BOUNDARY: tmpdir() });
+    http = await bootHttpTest([rootDir], { FS_ROOT_BOUNDARY: tmpdir() });
     client = await http.makeClient('http-list-changed', () => ({
       action: 'accept' as const,
       content: { confirm: true },
