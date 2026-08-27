@@ -81,6 +81,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/inspector": "^2.4.0",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24",

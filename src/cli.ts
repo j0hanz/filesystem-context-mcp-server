@@ -449,6 +449,9 @@ export interface PrintConfigOptions {
   allowCwd: boolean;
   readOnly: boolean;
   json: boolean;
+  /** Resolved `--port`. Present means the launch this reports on is an HTTP bind. */
+  port?: number;
+  httpHost?: string;
   apiKey?: string;
   stdout?: (chunk: string) => void;
 }
@@ -465,8 +468,13 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
 
   const tools = registeredTools(options.readOnly).map((t) => t.name);
 
+  // Derived, never assumed: `--print-config --port 3000` reports the HTTP bind
+  // that `--port` would actually have started, not the stdio default.
   const config: EffectiveConfig = {
-    transport: 'stdio',
+    transport:
+      options.port !== undefined
+        ? `http://${options.httpHost ?? '127.0.0.1'}:${String(options.port)}`
+        : 'stdio',
     readOnly: options.readOnly,
     allowedRoots,
     tools,

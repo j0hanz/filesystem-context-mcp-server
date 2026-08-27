@@ -6,11 +6,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { normalizePath } from '../src/core/path.js';
 import { cleanupTestRoot, createTestRoot } from './helpers.js';
 import { createInspectorConfigFile } from './inspector-fixtures.js';
-import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
+import { executeInspectorCli, inspectorSkipReason } from './inspector-harness.js';
 
 describe(
   'Inspector CLI: Declarative Configuration & Roots (--config)',
-  { skip: !isInspectorInstalled() ? 'inspector not installed' : undefined },
+  { skip: inspectorSkipReason() },
   () => {
     let tmpDir: string;
     let configFile: string;

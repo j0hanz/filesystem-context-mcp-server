@@ -298,7 +298,8 @@ export class PathGuard {
    * out-of-baseline by definition, so a baseline filter dropped every one while
    * `applyGrant` still reported success — the whole round-trip prompted the
    * user and then changed nothing. ROOT_BOUNDARY and the unsafe-path denylist
-   * remain the limits, checked in `applyGrant` and re-applied in the recompute.
+   * remain the limits, both checked in `applyGrant` — the only writer of this
+   * field — so the recompute can rebuild from it without re-filtering.
    */
   private grantedDirectories: string[] = [];
   private rootBoundaries: string[] = [];
@@ -418,6 +419,28 @@ export class PathGuard {
     return isSamePath(normalizedPath, parse(normalizedPath).root);
   }
 
+  /**
+   * True when a grant must never admit `targetDir` — a bare filesystem root, or
+   * an unsafe path (home, /etc, C:\Windows, ...). Checked on the lexical path
+   * AND on the one it resolves to: `expandAllowedDirectories` pushes each root's
+   * realpath into the allowed set, so a lexical-only check let a symlink or
+   * junction aliasing $HOME/C:\Windows in under an innocuous name — and the
+   * confirmation prompt showed the alias, not the target. A target that cannot
+   * be resolved is judged lexically; it does not exist to escape into.
+   */
+  private async isUnsafeGrantTarget(targetDir: string): Promise<boolean> {
+    const isRefused = (dir: string): boolean => this.isFilesystemRoot(dir) || isUnsafeCwdPath(dir);
+    const normalized = normalizePath(targetDir);
+    if (isRefused(normalized)) return true;
+    let resolved: string;
+    try {
+      resolved = normalizePath(await realpath(normalized));
+    } catch {
+      return false;
+    }
+    return !isSamePath(resolved, normalized) && isRefused(resolved);
+  }
+
   /** Walk up from a blocked path to the closest existing ancestor directory. */
   private async resolveGrantTargetDir(blockedPath: string): Promise<string> {
     let targetDir = blockedPath;
@@ -461,18 +484,11 @@ export class PathGuard {
         continue;
       }
       const targetDir = normalizePath(await this.resolveGrantTargetDir(normalized));
-      // A grant target that IS a bare filesystem root means every intermediate
-      // directory in the requested path was missing — never offer the whole
-      // drive/filesystem as a one-click grant target (mirrors the
-      // --allow-cwd root check in isUnsafeCwdPath).
-      if (this.isFilesystemRoot(targetDir)) {
-        continue;
-      }
-      // Never offer a grant into an unsafe path (home, /etc, C:\Windows, ...).
-      // Without ROOT_BOUNDARY, isWithinBoundary returns true for everything, so
-      // this is the one guard that still rejects roots a misleading grant could
-      // reach. Mirrors the isUnsafeCwdPath check gating --allow-cwd.
-      if (isUnsafeCwdPath(targetDir)) {
+      // Never offer a grant into a bare filesystem root or an unsafe path (home,
+      // /etc, C:\Windows, ...). Without ROOT_BOUNDARY, isWithinBoundary returns
+      // true for everything, so this is the one guard that still rejects roots a
+      // misleading grant could reach. Mirrors the check gating --allow-cwd.
+      if (await this.isUnsafeGrantTarget(targetDir)) {
         continue;
       }
       if (grantDirs.includes(targetDir)) {
@@ -500,8 +516,9 @@ export class PathGuard {
   async applyGrant(targetDir: string): Promise<boolean> {
     // Defense-in-depth: even a tampered/accepted grant cannot extend roots into
     // an unsafe path. The precheckAccess guard already refuses to offer these;
-    // this catches a grant that arrived by another route.
-    if (isUnsafeCwdPath(normalizePath(targetDir))) {
+    // this catches a grant that arrived by another route — the legacy stdio
+    // `roots/list` seeding, which has no confirmation round-trip at all.
+    if (await this.isUnsafeGrantTarget(targetDir)) {
       return false;
     }
     if (!(await this.isWithinBoundary(targetDir))) {

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import { cleanupTestRoot, createTestRoot, getStdioServerCommand } from './helpers.js';
-import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
+import { executeInspectorCli, inspectorSkipReason } from './inspector-harness.js';
 
 describe(
   'Inspector CLI: MCP App Metadata Probing (--app-info)',
-  { skip: !isInspectorInstalled() ? 'inspector not installed' : undefined },
+  { skip: inspectorSkipReason() },
   () => {
     let tmpDir: string;
     let serverCmd: string[];

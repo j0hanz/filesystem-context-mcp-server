@@ -43,7 +43,7 @@ export interface InspectorCliResult<T = unknown> {
 let resolvedInspectorBin: string | undefined;
 let hasResolvedInspector = false;
 
-export function resolveInspectorBin(): string | undefined {
+function resolveInspectorBin(): string | undefined {
   if (hasResolvedInspector) return resolvedInspectorBin;
   hasResolvedInspector = true;
   const req = createRequire(import.meta.url);
@@ -60,8 +60,24 @@ export function resolveInspectorBin(): string | undefined {
   return resolvedInspectorBin;
 }
 
-export function isInspectorInstalled(): boolean {
-  return resolveInspectorBin() !== undefined;
+/**
+ * The `skip` reason for the Inspector suites, or `undefined` to run them.
+ *
+ * `@modelcontextprotocol/inspector` is a devDependency, so on CI its absence is
+ * a broken install, not a missing optional tool — throwing there fails the file
+ * loudly. Skipping instead is how ~25 conformance assertions disappeared from
+ * every green run: the resolve is dynamic (`createRequire`), so neither knip nor
+ * the type-checker can see the dependency go missing. Locally, a plain skip
+ * still lets someone run the rest of the suite against a partial install.
+ */
+export function inspectorSkipReason(): string | undefined {
+  if (resolveInspectorBin() !== undefined) return undefined;
+  if (process.env['CI']) {
+    throw new Error(
+      '@modelcontextprotocol/inspector is not installed, so the Inspector conformance suites cannot run. Run `npm ci`.',
+    );
+  }
+  return 'inspector not installed';
 }
 
 /**

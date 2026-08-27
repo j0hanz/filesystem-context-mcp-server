@@ -5,11 +5,11 @@ import { after, before, describe, it } from 'node:test';
 
 import { cleanupTestRoot, createTestRoot } from './helpers.js';
 import { startInspectorHttp } from './inspector-fixtures.js';
-import { executeInspectorCli, isInspectorInstalled } from './inspector-harness.js';
+import { executeInspectorCli, inspectorSkipReason } from './inspector-harness.js';
 
 describe(
   'Inspector CLI: Streamable HTTP Transport & Authentication',
-  { skip: !isInspectorInstalled() ? 'inspector not installed' : undefined },
+  { skip: inspectorSkipReason() },
   () => {
     let tmpDir: string;
     let server: Server;

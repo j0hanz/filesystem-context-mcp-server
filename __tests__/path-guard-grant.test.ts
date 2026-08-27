@@ -194,6 +194,37 @@ describe('PathGuard grant round-trip', () => {
     const allowed = guard.getAllowedDirectories();
     assert.ok(!containsPath(allowed, unsafeDir), 'unsafe path must not appear in allowed dirs');
   });
+
+  it('TC-PG-012: an unsafe path aliased behind a symlink is refused by both grant gates', async (t) => {
+    // TC-PG-011 grants the unsafe path by its literal name. This grants a link
+    // that merely *resolves* there: the denylist used to run on the lexical
+    // string while expandAllowedDirectories pushed each root's realpath into the
+    // allowed set, so the link went in under an innocuous name and dragged the
+    // unsafe target with it — and the confirmation prompt showed the alias.
+    delete process.env['ROOT_BOUNDARY'];
+    const unsafeDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+    const holder = await mkDir(createdDirs, 'fsmcp-pg012-');
+    const alias = join(holder, 'innocuous');
+    if (!(await trySymlink(unsafeDir, alias, () => t.skip('symlink creation not permitted')))) {
+      return;
+    }
+
+    const guard = new PathGuard({ cliAllowedDirs: [root] });
+    await guard.recomputeAllowedDirectories();
+
+    const grants = await guard.precheckAccess([join(alias, 'target.txt')]);
+    assert.deepStrictEqual(grants, [], 'must never offer a link resolving to an unsafe path');
+
+    const accepted = await guard.applyGrant(alias);
+    assert.strictEqual(accepted, false, 'applyGrant must refuse a link to an unsafe path');
+
+    const allowed = guard.getAllowedDirectories();
+    assert.ok(!containsPath(allowed, alias), 'the alias must not appear in allowed dirs');
+    assert.ok(
+      !containsPath(allowed, unsafeDir),
+      'the resolved unsafe path must not appear in allowed dirs',
+    );
+  });
 });
 
 // Shared assertion helper for the write/delete block.

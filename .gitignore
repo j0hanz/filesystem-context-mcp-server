@@ -75,7 +75,4 @@ temp_refs/
 reports/
 metrics/
 scripts/*
-!scripts/build.mjs
-!scripts/validate-fetch.mjs
 !scripts/tasks.mjs
-!scripts/inspector-smoke.mjs

@@ -123,6 +123,8 @@ async function main(): Promise<void> {
       allowCwd,
       readOnly,
       json,
+      ...(port !== undefined ? { port } : {}),
+      ...(httpHost !== undefined ? { httpHost } : {}),
       ...(apiKey !== undefined ? { apiKey } : {}),
     });
     return;
