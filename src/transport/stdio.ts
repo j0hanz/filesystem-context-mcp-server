@@ -2,7 +2,7 @@
 // gated transport that attaches listen-filter watchers before the SDK sees the
 // message.
 import type { McpServerFactory } from '@modelcontextprotocol/server';
-import { JSONRPC_VERSION, ProtocolErrorCode, specTypeSchemas } from '@modelcontextprotocol/server';
+import { JSONRPC_VERSION, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import {
   serveStdio,
   type StdioServerHandle,
@@ -19,17 +19,17 @@ import { createWatcherRegistry } from '../core/watcher-registry.js';
 import type { FilesystemServerContext } from '../server.js';
 import { createServer } from '../server.js';
 import type { RuntimeConfig } from './shared.js';
-import { jsonRpcRequestId, listenSubscriptionUris, prepareListenWatchers } from './shared.js';
+import {
+  isStructurallyValidListen,
+  jsonRpcRequestId,
+  listenSubscriptionUris,
+  prepareListenWatchers,
+} from './shared.js';
 
 interface StdioListenState {
   acquiredUris: string[];
   cancelled: boolean;
   delivered: boolean;
-}
-
-function isStructurallyValidListen(message: unknown): boolean {
-  const result = specTypeSchemas.SubscriptionsListenRequest['~standard'].validate(message);
-  return !('issues' in result);
 }
 
 // Read through a function, not `state.cancelled` directly: a cancellation lands

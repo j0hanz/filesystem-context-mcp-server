@@ -1158,9 +1158,13 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     const firstStructured = first.structuredContent as {
       results?: { path: string }[];
       nextCursor?: string;
+      resourceUri?: string;
     };
     const cursor = firstStructured.nextCursor;
     assert.ok(cursor);
+    // The overflow entry is minted by this call and runs on ResourceStore's own
+    // clock, not the page snapshot's.
+    assert.ok(firstStructured.resourceUri, 'page one carries the overflow URI');
 
     await rm(dir, { recursive: true, force: true });
     const second = await harness.client.callTool({
@@ -1168,12 +1172,20 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: dir, pattern: '*.txt', maxResults: 10, cursor },
     });
     assert.notStrictEqual(second.isError, true);
-    const secondStructured = second.structuredContent as { results?: { path: string }[] };
+    const secondStructured = second.structuredContent as {
+      results?: { path: string }[];
+      resourceUri?: string;
+    };
     assert.deepStrictEqual(
       [...(firstStructured.results ?? []), ...(secondStructured.results ?? [])].map(
         (entry) => entry.path,
       ),
       ['bravo.txt', 'charlie.txt'],
+    );
+    assert.strictEqual(
+      secondStructured.resourceUri,
+      undefined,
+      'later pages must not replay a URI that expires on a different clock',
     );
 
     const replay = await harness.client.callTool({

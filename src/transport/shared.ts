@@ -3,6 +3,7 @@
 // same message shape; only where the lease is released differs (connection
 // close vs response close).
 import type { ServerEventBus } from '@modelcontextprotocol/server';
+import { specTypeSchemas } from '@modelcontextprotocol/server';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
@@ -27,6 +28,19 @@ export interface RuntimeConfig {
   eventBus?: ServerEventBus;
   /** Explicit topology; fleet mode requires shared state and event delivery. */
   deploymentMode?: 'single' | 'fleet';
+}
+
+/**
+ * True when `message` really is a `subscriptions/listen` request, not merely a
+ * body carrying that method string. Both legs gate watcher attachment on this:
+ * a malformed listen cannot succeed downstream, so creating and tearing down
+ * `fs.watch` handles for it is pure waste — and on HTTP the teardown depended on
+ * the response-close listener firing. Non-listen bodies fail it too, which is
+ * the same answer `listenSubscriptionUris` gives them.
+ */
+export function isStructurallyValidListen(message: unknown): boolean {
+  const result = specTypeSchemas.SubscriptionsListenRequest['~standard'].validate(message);
+  return !('issues' in result);
 }
 
 /** The request id of a parsed JSON-RPC body, for error-envelope echo. */

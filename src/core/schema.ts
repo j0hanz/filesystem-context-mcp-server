@@ -403,12 +403,12 @@ export const ContinuationSchema = z.strictObject({
 // validation, so loosening the client-facing schema to the alphabet is safe.
 const base64urlCursor = z.string().regex(/^[A-Za-z0-9_-]+$/);
 
+// Ships once per paginated tool — wording is budgeted (TOOL-SURFACE-002).
 export const CursorSchema = base64urlCursor
   .optional()
   .describe(
-    'Opaque pagination cursor from a prior response; pass unchanged for the next page. ' +
-      'Each page re-runs the query, so entries may shift, duplicate, or be skipped if files ' +
-      'change between pages.',
+    'Opaque pagination cursor; pass unchanged for the next page. Pages slice one snapshot ' +
+      'taken on the first call; it expires after ~60s — re-request without a cursor if rejected.',
   );
 
 export const NextCursorSchema = base64urlCursor

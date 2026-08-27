@@ -69,7 +69,7 @@ const SearchFilesOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full results JSON in the resource store (present when results are paginated)',
+      'URI to the full results JSON in the resource store; first page only, when results are paginated',
     ),
   nextCursor: NextCursorSchema,
 });
@@ -146,8 +146,11 @@ async function handleSearchFiles(
       cursor: args.cursor,
       pageSize: args.maxResults,
     });
+    // First page only — see the same note in list.ts: the overflow entry expires
+    // on ResourceStore's clock, not this snapshot's.
+    const { resourceUri: _firstPageOnly, ...pageMetadata } = paged.metadata;
     return {
-      structured: searchFilesOutput(paged.page, paged.metadata, paged.nextCursor),
+      structured: searchFilesOutput(paged.page, pageMetadata, paged.nextCursor),
     };
   }
 

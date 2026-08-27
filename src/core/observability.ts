@@ -20,8 +20,7 @@ function isLoggingLevel(value: string): value is LoggingLevel {
   return (LEVEL_ORDER as readonly string[]).includes(value);
 }
 
-function parseLogLevelEnv(): LoggingLevel {
-  const raw = (cli.logLevel ?? process.env['LOG_LEVEL'])?.trim().toLowerCase();
+function parseLogLevel(raw: string | undefined): LoggingLevel {
   if (!raw) return 'info';
   // `warn` is the common short form; the canonical RFC 5424 level is `warning`.
   if (raw === 'warn') return 'warning';
@@ -32,12 +31,24 @@ function parseLogLevelEnv(): LoggingLevel {
   return 'info';
 }
 
+// Seeded to the value `parseLogLevel(undefined)` returns, so an unset
+// LOG_LEVEL — the initial `cachedRaw` — needs no first-call special case.
+let cachedRaw: string | undefined;
+let cachedLevel: LoggingLevel = 'info';
+
 /**
  * Minimum severity that reaches stderr, from `LOG_LEVEL` / `--log-level`.
- * Evaluated lazily on access.
+ * Memoized on the raw value, not resolved once: `cli.logLevel` lands after
+ * `parseArgs`, and writes happen before that. Keying on the raw string keeps it
+ * live while the invalid-value warning fires once per setting, not per line.
  */
 function getLogLevel(): LoggingLevel {
-  return parseLogLevelEnv();
+  const raw = (cli.logLevel ?? process.env['LOG_LEVEL'])?.trim().toLowerCase();
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedLevel = parseLogLevel(raw);
+  }
+  return cachedLevel;
 }
 
 /** True when `level` is at least as severe as the configured minimum. */

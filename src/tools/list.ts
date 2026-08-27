@@ -236,9 +236,9 @@ const ListOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full entry list in the resource store, present only when total entries exceed the hard cap ' +
-        '(the same cap that bounds pagination; page via nextCursor below it). The stored list is itself ' +
-        'capped at that limit and marked truncated if exceeded.',
+      'URI to the full entry list in the resource store; first page only, when total entries exceed the ' +
+        'hard cap (the same cap that bounds pagination; page via nextCursor below it). The stored list is ' +
+        'itself capped at that limit and marked truncated if exceeded.',
     ),
   nextCursor: NextCursorSchema,
 });
@@ -297,8 +297,11 @@ async function handleList(
       cursor: args.cursor,
       pageSize: args.maxEntries,
     });
+    // First page only: the overflow entry runs on ResourceStore's own TTL and
+    // LRU, not this snapshot's, so replaying it hands back a dead pointer.
+    const { resourceUri: _firstPageOnly, ...pageMetadata } = paged.metadata;
     return {
-      structured: listOutput(paged.page, paged.metadata, paged.nextCursor),
+      structured: listOutput(paged.page, pageMetadata, paged.nextCursor),
       markdown: renderMarkdown(basename(paged.metadata.path), [...paged.page]),
     };
   }

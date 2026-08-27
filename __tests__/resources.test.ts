@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
-import { buildFileResourceUri } from '../src/core/file-uri.js';
-import { PathGuard } from '../src/core/path.js';
+import { buildFileResourceUri, encodeFileUriPath, extractPath } from '../src/core/file-uri.js';
+import { isSamePath, PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import {
@@ -600,5 +600,46 @@ describe('MCP Resources', () => {
       await server.close();
       await cleanupTestRoot(root);
     }
+  });
+});
+
+describe('filesystem resource path completion', () => {
+  let root: string;
+
+  before(async () => {
+    root = await createTestRoot();
+  });
+
+  after(async () => {
+    await cleanupTestRoot(root);
+  });
+
+  // Completion values are expanded into `filesystem-mcp://file/{+path}` verbatim
+  // by the client, so they must be in the same encoded form the server's own
+  // encoder emits. A raw OS path with a '#' in it builds a URI whose fragment
+  // starts mid-filename, and extractPath then names a different file.
+  it('returns {+path} values that round-trip back to the file they named', async () => {
+    const hashFile = await writeTestFile(root, 'has#hash.txt', 'x');
+    const pathGuard = await PathGuard.fromAllowedDirectories([root]);
+    const contracts = getResourceContracts({
+      resourceStore: new ResourceStore(),
+      pathGuard,
+      readOnly: false,
+    });
+    const fileContract = contracts.find((c) => c.name === 'filesystem-mcp-file');
+    assert.ok(fileContract?.complete, 'file contract should expose a path completer');
+
+    // The partial is in the encoded form a prior suggestion would have had, so
+    // this exercises the decode side too.
+    const suggestions = await fileContract.complete('path', encodeFileUriPath(join(root, 'has#')));
+
+    // isSamePath, not ===: extractPath yields POSIX separators on every
+    // platform and normalizePath lower-cases the Windows drive letter, so the
+    // round-trip is path-equal rather than string-equal.
+    const match = suggestions.find((s) =>
+      isSamePath(extractPath(`filesystem-mcp://file/${s}`) ?? '', hashFile),
+    );
+    assert.ok(match, `no suggestion round-tripped to ${hashFile}: ${JSON.stringify(suggestions)}`);
+    assert.ok(!match.includes('#'), `'#' must be percent-encoded in the template value: ${match}`);
   });
 });

@@ -1,5 +1,9 @@
 import { Client, type McpSubscription } from '@modelcontextprotocol/client';
-import { InMemoryServerEventBus, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import {
+  InMemoryServerEventBus,
+  LATEST_PROTOCOL_VERSION,
+  ProtocolErrorCode,
+} from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -17,6 +21,7 @@ import {
   createTestHttpHarness,
   createTestRoot,
   type HttpTestContext,
+  TEST_API_KEY,
   waitFor,
   writeTestFile,
 } from './helpers.js';
@@ -81,6 +86,37 @@ describe('HTTP watcher fan-out and listen admission', () => {
     } finally {
       await subscription.close();
     }
+  });
+
+  // The watcher gate runs off the raw body, ahead of the SDK.
+  // `listenSubscriptionUris` filters `resourceSubscriptions` to its string
+  // entries, so a mixed-type array still yields URIs to attach — for a request
+  // the schema rejects outright. Without the gate those fs.watch handles get
+  // created and then depend on the response-close release to come back. The
+  // client cannot send this shape, so it goes over raw fetch; the assertion is
+  // decisive because the ungated path answers with its own message.
+  it('does not attach watchers for a structurally invalid listen', async () => {
+    const missingUri = buildFileResourceUri(join(tmpDir, 'never-created.txt'));
+    const response = await fetch(http.base, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TEST_API_KEY}`,
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
+        'mcp-method': 'subscriptions/listen',
+        'mcp-name': 'listen-gate-test',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'subscriptions/listen',
+        // 42 fails the schema; missingUri survives listenSubscriptionUris.
+        params: { notifications: { resourceSubscriptions: [42, missingUri] } },
+      }),
+    });
+
+    const body = await response.text();
+    assert.doesNotMatch(body, /Cannot subscribe to/);
   });
 });
 

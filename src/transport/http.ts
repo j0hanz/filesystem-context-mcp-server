@@ -46,7 +46,12 @@ import {
 } from '../http-policy.js';
 import { createServer } from '../server.js';
 import type { RuntimeConfig } from './shared.js';
-import { jsonRpcRequestId, listenSubscriptionUris, prepareListenWatchers } from './shared.js';
+import {
+  isStructurallyValidListen,
+  jsonRpcRequestId,
+  listenSubscriptionUris,
+  prepareListenWatchers,
+} from './shared.js';
 
 const MAX_REQUEST_BODY_BYTES = parseEnvInt(
   'FS_CONTEXT_MAX_REQUEST_BYTES',
@@ -195,6 +200,15 @@ function setupExpressApp(
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     void (async () => {
       const parsedBody = req.body as unknown;
+      // Only a structurally valid listen gets watchers, mirroring the stdio
+      // gate. A malformed one cannot succeed downstream, so attaching handles
+      // for it only gives the response-close release something to undo — and
+      // everything that is not a listen takes no watchers either way.
+      if (!isStructurallyValidListen(parsedBody)) {
+        await modernNodeHandler(req, res, parsedBody);
+        return;
+      }
+
       // Reject an over-cap listen before the ack so the client does not believe
       // every requested URI is watched when the watcher budget is exhausted.
       // The per-URI `capped` failure below would also reject, but only after

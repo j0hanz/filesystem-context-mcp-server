@@ -70,6 +70,7 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
       'sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.',
       `enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.`,
       'ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after ~60 seconds, eviction, or restart.',
+      'pagination: nextCursor is backed by a snapshot on the same ~60s clock. Page through promptly; if a cursor is rejected, start again without one. resourceUri appears on the first page only.',
       '```',
     ].join('\n'),
     error_recovery: [

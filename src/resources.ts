@@ -28,7 +28,12 @@ import {
   hasErrorShape,
   isFsError,
 } from './core/errors.js';
-import { extractPath, FILESYSTEM_FILE_URI_TEMPLATE } from './core/file-uri.js';
+import {
+  decodeFileUriPath,
+  encodeFileUriPath,
+  extractPath,
+  FILESYSTEM_FILE_URI_TEMPLATE,
+} from './core/file-uri.js';
 import { GuardedFileSystem } from './core/fs.js';
 import { Logger } from './core/observability.js';
 import { PathCompleter } from './core/path-completer.js';
@@ -204,6 +209,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     description: 'Read a file from the workspace. Subscribe to get updates when the file changes.',
     uriTemplate: FILESYSTEM_FILE_URI_TEMPLATE,
     annotations: { audience: ['assistant'], priority: 0.8 },
+    // Without this the SDK falls back to its conservative `{ ttlMs: 0,
+    // cacheScope: 'private' }`, making every file read uncacheable — and this
+    // is the one resource with a live invalidation channel, so TTL and the
+    // watcher compose exactly as the spec's caching section describes. The TTL
+    // stays short because a non-subscriber gets no invalidation signal at all.
+    cacheHint: { cacheScope: options.cacheScope ?? 'public', ttlMs: 5_000 },
 
     // No `list`: the template registers with `list: undefined` — readable but
     // not enumerable. Listing each allowed root as a concrete resource
@@ -246,7 +257,12 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     async complete(variable, value) {
-      return variable === 'path' && completer ? completer.suggest(value) : [];
+      if (variable !== 'path' || !completer) return [];
+      // Both ends speak the `{+path}` form (see encodeFileUriPath), not raw OS
+      // paths: the partial arriving here is whatever this returned last, so the
+      // decode mirrors the encode. An undecodable partial is matched as typed.
+      const suggestions = await completer.suggest(decodeFileUriPath(value) ?? value);
+      return suggestions.map(encodeFileUriPath);
     },
 
     subscribe(uri, notify) {

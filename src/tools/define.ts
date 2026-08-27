@@ -247,6 +247,12 @@ function isTotalBatchFailure(structured: unknown): boolean {
   return len(result.files) + len(result.moves) + len(result.skipped) === 0;
 }
 
+/**
+ * The spec asks a structured result to *also* carry the JSON as a text block,
+ * for clients that read only `content`. Where a tool supplies its own `text`
+ * (list's ASCII tree, read's file) that serves such a client better, so it
+ * wins; tools with no `text` still fall back to the JSON.
+ */
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
   const text = result.text ?? JSON.stringify(result.structured);
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
