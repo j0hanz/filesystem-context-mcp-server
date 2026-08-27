@@ -11,13 +11,7 @@
   },
   "homepage": "https://github.com/j0hanz/filesystem-mcp#readme",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
     "./transport": {
       "types": "./dist/transport.d.ts",
       "default": "./dist/transport.js"

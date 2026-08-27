@@ -34,6 +34,22 @@
           "description": "Allow the current working directory as an additional access root.",
           "format": "boolean",
           "isRequired": false
+        },
+        {
+          "type": "named",
+          "name": "--read-only",
+          "description": "Disable all write, edit, move, and delete tools.",
+          "format": "boolean",
+          "isRequired": false
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "FS_ALLOWED_DIRS",
+          "description": "Allowed directories; ':'-separated on Unix, ';'-separated on Windows. Alternative to positional arguments.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
         }
       ]
     },
@@ -43,7 +59,56 @@
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-i",
+          "description": "Keep stdin open for stdio transport.",
+          "format": "boolean",
+          "isRequired": true
+        },
+        {
+          "type": "named",
+          "name": "--rm",
+          "description": "Remove the container on exit.",
+          "format": "boolean",
+          "isRequired": true
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{host_dir}:/workspace:ro",
+          "description": "Mount the directory to expose to the server.",
+          "isRequired": true,
+          "isRepeated": true,
+          "variables": {
+            "host_dir": {
+              "description": "Host directory path to expose to the server.",
+              "isRequired": true,
+              "format": "filepath"
+            }
+          }
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "valueHint": "/workspace",
+          "description": "Container path of the mounted directory.",
+          "default": "/workspace",
+          "isRequired": true
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "FS_ALLOWED_DIRS",
+          "description": "Allowed directories inside the container, ':'-separated. Alternative to positional arguments.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
     }
   ]
 }
