@@ -17,22 +17,22 @@ The tool surface was consolidated from 17 tools to 13. Batch behaviour moved
 into the single-item tools rather than living in separate `*_many` tools, and
 the remaining names were made consistent.
 
-| 1.x tool             | 2.0 equivalent                              |
-| :------------------- | :------------------------------------------ |
-| `ls`                 | `list`                                      |
-| `grep`               | `search_text`                               |
-| `find`               | `find_files`                                |
-| `mv`                 | `move`                                      |
-| `rm`                 | `delete`                                    |
-| `roots`              | `list_roots`                                |
-| `apply_patch`        | `patch`                                     |
-| `diff_files`         | `diff`                                      |
-| `search_and_replace` | `replace_text`                              |
-| `write`              | `create`                                    |
-| `tree`               | `list` with `maxDepth`                      |
-| `stat_many`          | `stat` with `paths[]`                       |
-| `calculate_hash`     | `read` with `includeHash: true`             |
-| `mkdir`              | removed — see below                         |
+| 1.x tool             | 2.0 equivalent                  |
+| :------------------- | :------------------------------ |
+| `ls`                 | `list`                          |
+| `grep`               | `search_text`                   |
+| `find`               | `find_files`                    |
+| `mv`                 | `move`                          |
+| `rm`                 | `delete`                        |
+| `roots`              | `list_roots`                    |
+| `apply_patch`        | `patch`                         |
+| `diff_files`         | `diff`                          |
+| `search_and_replace` | `replace_text`                  |
+| `write`              | `create`                        |
+| `tree`               | `list` with `maxDepth`          |
+| `stat_many`          | `stat` with `paths[]`           |
+| `calculate_hash`     | `read` with `includeHash: true` |
+| `mkdir`              | removed — see below             |
 
 `edit`, `read`, and `stat` keep their names. Both `read` and `stat` accept
 either a single `path` or a `paths[]` batch.
@@ -49,18 +49,18 @@ name. A configuration file carrying 1.x names will be read as entirely unset,
 which for `FS_API_KEY` means an HTTP server starts unauthenticated. Audit
 deployment configuration before upgrading.
 
-| 1.19.1 variable                 | 2.0 variable            |
-| :------------------------------ | :---------------------- |
-| `FILESYSTEM_MCP_API_KEY`        | `FS_API_KEY`            |
-| `FILESYSTEM_MCP_HTTP_HOST`      | `FS_HTTP_HOST`          |
-| `FILESYSTEM_MCP_LOG_LEVEL`      | `FS_LOG_LEVEL`          |
-| `FS_CONTEXT_ALLOW_SENSITIVE`    | `FS_ALLOW_SENSITIVE`    |
-| `FS_CONTEXT_DENYLIST`           | `FS_DENYLIST`           |
-| `FS_CONTEXT_MAX_REQUEST_BYTES`  | `FS_MAX_REQUEST_BYTES`  |
-| `FS_CONTEXT_MAX_INLINE_MATCHES` | `FS_MAX_INLINE_MATCHES` |
-| `MAX_FILE_SIZE`                 | `FS_MAX_FILE_SIZE`      |
-| `MAX_READ_MANY_TOTAL_SIZE`      | `FS_MAX_READ_MANY_BYTES`|
-| `DEFAULT_SEARCH_TIMEOUT`        | `FS_SEARCH_TIMEOUT_MS`  |
+| 1.19.1 variable                 | 2.0 variable             |
+| :------------------------------ | :----------------------- |
+| `FILESYSTEM_MCP_API_KEY`        | `FS_API_KEY`             |
+| `FILESYSTEM_MCP_HTTP_HOST`      | `FS_HTTP_HOST`           |
+| `FILESYSTEM_MCP_LOG_LEVEL`      | `FS_LOG_LEVEL`           |
+| `FS_CONTEXT_ALLOW_SENSITIVE`    | `FS_ALLOW_SENSITIVE`     |
+| `FS_CONTEXT_DENYLIST`           | `FS_DENYLIST`            |
+| `FS_CONTEXT_MAX_REQUEST_BYTES`  | `FS_MAX_REQUEST_BYTES`   |
+| `FS_CONTEXT_MAX_INLINE_MATCHES` | `FS_MAX_INLINE_MATCHES`  |
+| `MAX_FILE_SIZE`                 | `FS_MAX_FILE_SIZE`       |
+| `MAX_READ_MANY_TOTAL_SIZE`      | `FS_MAX_READ_MANY_BYTES` |
+| `DEFAULT_SEARCH_TIMEOUT`        | `FS_SEARCH_TIMEOUT_MS`   |
 
 `FS_ALLOWED_DIRS` and `NO_COLOR` keep their names.
 
