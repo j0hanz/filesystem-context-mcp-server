@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "id": "TC-PERF-001",
+      "title": "Enforced limits — file size, search timeout, watcher cap",
+      "traceability": "F24-adjacent",
+      "profile": "limited",
+      "steps": [
+        {
+          "name": "read above --max-file-size is refused",
+          "method": "tools/call",
+          "tool": "read",
+          "args": {
+            "path": "${FIXTURE}/big.txt"
+          },
+          "expect": {
+            "isError": true
+          }
+        },
+        {
+          "name": "a file under the cap still reads",
+          "method": "tools/call",
+          "tool": "read",
+          "args": {
+            "path": "${FIXTURE}/src/ten.txt"
+          },
+          "expect": {
+            "isError": false
+          }
+        },
+        {
+          "name": "watcher cap rejection before acknowledgement",
+          "skip": "E7 — needs subscriptions/listen, which the Inspector CLI cannot send"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "cases": [
+    {
+      "id": "TC-INT-001",
+      "title": "Resource surfaces — instructions, workspace file, cached result",
+      "traceability": "F16",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "resources/list",
+          "method": "resources/list",
+          "expect": {
+            "has": ["resources"]
+          }
+        },
+        {
+          "name": "resources/templates/list",
+          "method": "resources/templates/list",
+          "expect": {
+            "has": ["resourceTemplates"]
+          }
+        },
+        {
+          "name": "read the instructions resource",
+          "method": "resources/read",
+          "uri": "internal://instructions",
+          "expect": {
+            "has": ["contents"]
+          }
+        },
+        {
+          "name": "read a workspace file through the template",
+          "skip": "the file URI is percent-encoded per platform; the read tool's resourceUri covers the same path"
+        },
+        {
+          "name": "malformed file URI is rejected",
+          "method": "resources/read",
+          "uri": "filesystem-mcp://file/%ZZ",
+          "expect": {
+            "cliErrorCode": "error"
+          }
+        },
+        {
+          "name": "completion for the path template variable",
+          "skip": "E8 — the Inspector CLI exposes no completion/complete method"
+        }
+      ]
+    },
+    {
+      "id": "TC-INT-002",
+      "title": "File subscription delivers a change notification",
+      "traceability": "F17",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "subscribe, change on disk, expect a notification",
+          "skip": "E7 — the Inspector CLI supports no subscriptions or notifications"
+        }
+      ]
+    },
+    {
+      "id": "TC-INT-003",
+      "title": "Access-grant elicitation for a path outside the roots",
+      "traceability": "F18",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "call a tool with an ungranted path and answer the grant",
+          "skip": "E7 — the Inspector CLI supports no elicitation"
+        }
+      ]
+    },
+    {
+      "id": "TC-INT-004",
+      "title": "Destructive-operation confirmation",
+      "traceability": "F19",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "delete and copy-overwrite confirmations",
+          "skip": "E7 — the Inspector CLI supports no elicitation"
+        }
+      ]
+    },
+    {
+      "id": "TC-INT-005",
+      "title": "Progress notifications on a long-running search",
+      "traceability": "F20",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "search with a progressToken and observe notifications",
+          "skip": "E7 — the Inspector CLI supports no notifications"
+        }
+      ]
+    },
+    {
+      "id": "TC-INT-006",
+      "title": "HTTP transport endpoints — method gate, health, discovery",
+      "traceability": "F21",
+      "profile": "default",
+      "steps": [
+        {
+          "name": "405 on non-POST, /healthz, RFC 9728 discovery",
+          "skip": "raw HTTP semantics, not MCP methods — belongs to a curl check, not this runner"
+        }
+      ]
+    }
+  ]
+}

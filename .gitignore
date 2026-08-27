@@ -74,5 +74,4 @@ temp_refs/
 .jscpd/
 reports/
 metrics/
-scripts/*
-!scripts/tasks.mjs
+scripts/local/

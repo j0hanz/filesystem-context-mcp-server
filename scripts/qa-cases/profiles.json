@@ -1,0 +1,25 @@
+{
+  "profiles": {
+    "default": {
+      "args": ["${FIXTURE}"]
+    },
+    "envroots": {
+      "args": [],
+      "env": {
+        "FS_ALLOWED_DIRS": "${FIXTURE}"
+      }
+    },
+    "readonly": {
+      "args": ["--read-only", "${FIXTURE}"]
+    },
+    "denied": {
+      "args": ["--deny", "*.secret", "${FIXTURE}"]
+    },
+    "permissive": {
+      "args": ["--allow-sensitive", "--deny", "*.secret", "${FIXTURE}"]
+    },
+    "limited": {
+      "args": ["--max-file-size", "1048576", "${FIXTURE}"]
+    }
+  }
+}
