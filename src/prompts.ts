@@ -10,7 +10,6 @@ import * as z from 'zod/v4';
 
 import { formatUnknownErrorMessage, fsErrorCode, hasErrorShape } from './core/errors.js';
 import { Logger } from './core/observability.js';
-import { isBlank, SHELL_METACHAR_RE } from './core/schema.js';
 import { buildSectionsRecord, INSTRUCTIONS_SUMMARY, renderSections } from './instructions.js';
 
 // --- Types ---
@@ -33,16 +32,10 @@ function topicArg(
   description: string,
 ): ReturnType<typeof completable<z.ZodString>> {
   return completable(
-    z
-      .string()
-      .min(1, { message: 'Topic required' })
-      .refine((val) => !isBlank(val), {
-        message: 'Topic cannot be empty or whitespace-only',
-      })
-      .refine((val) => !SHELL_METACHAR_RE.test(val), {
-        message: 'Topic contains prohibited characters (newlines or shell metacharacters)',
-      })
-      .describe(description),
+    // No content validation beyond non-empty: the handler resolves a topic by
+    // `Object.hasOwn` against a frozen record, so anything unrecognized already
+    // falls through to the not-found reply without reaching an interpreter.
+    z.string().min(1, { message: 'Topic required' }).describe(description),
     (value) => {
       const lower = value.toLowerCase();
       return lower ? topics.filter((t) => t.startsWith(lower)) : [...topics];
