@@ -32,6 +32,7 @@ import {
   MAX_WATCHERS,
   type WatcherRegistry,
 } from '../core/watcher-registry.js';
+import { createServer } from '../server.js';
 import {
   assertHttpBindingPolicy,
   assertHttpHostPolicy,
@@ -44,8 +45,7 @@ import {
   resolveAllowedHosts,
   resolveTrustProxySetting,
   sendJsonRpcError,
-} from '../http-policy.js';
-import { createServer } from '../server.js';
+} from './http-policy.js';
 import type { RuntimeConfig } from './shared.js';
 import {
   isStructurallyValidListen,

@@ -19,7 +19,7 @@ import {
   resolveAllowedHosts,
   resolveTrustProxySetting,
   validateBearerAuthorization,
-} from '../src/http-policy.js';
+} from '../src/transport/http-policy.js';
 import { startHttpServer } from '../src/transport/http.js';
 import { cleanupTestRoot, createTestRoot } from './helpers.js';
 

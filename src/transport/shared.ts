@@ -1,8 +1,8 @@
-// Pieces both transport legs share: the runtime config contract and the
-// `subscriptions/listen` watcher-preparation ladder. stdio and HTTP gate the
-// same message shape; only where the lease is released differs (connection
-// close vs response close).
-import { specTypeSchemas } from '@modelcontextprotocol/server';
+// Pieces both transport legs share: the runtime config contract, the JSON-RPC
+// error envelope, and the `subscriptions/listen` watcher-preparation ladder.
+// stdio and HTTP gate the same message shape; only where the lease is released
+// differs (connection close vs response close).
+import { JSONRPC_VERSION, specTypeSchemas } from '@modelcontextprotocol/server';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
 import type { PathGuard } from '../core/path.js';
@@ -42,6 +42,19 @@ export function isStructurallyValidListen(message: unknown): boolean {
 export function jsonRpcRequestId(parsedBody: unknown): string | number | null {
   const id = (parsedBody as { id?: unknown } | null | undefined)?.id;
   return typeof id === 'string' || typeof id === 'number' ? id : null;
+}
+
+/**
+ * The one JSON-RPC error envelope both legs refuse in. HTTP wraps it in
+ * `sendJsonRpcError` to add status and headers; stdio hands it straight to the
+ * wire. A second hand-built literal is how the two drift apart.
+ */
+export function jsonRpcError<Id extends string | number | null>(
+  code: number,
+  message: string,
+  id: Id,
+): { jsonrpc: typeof JSONRPC_VERSION; id: Id; error: { code: number; message: string } } {
+  return { jsonrpc: JSONRPC_VERSION, id, error: { code, message } };
 }
 
 /** The `resourceSubscriptions` URIs of a `subscriptions/listen` body, de-duplicated. */

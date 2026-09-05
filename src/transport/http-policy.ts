@@ -1,14 +1,15 @@
 import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/express';
-import { JSONRPC_VERSION, localhostAllowedHostnames } from '@modelcontextprotocol/server';
+import { localhostAllowedHostnames } from '@modelcontextprotocol/server';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 
-import { ErrorCode, FsError } from './core/errors.js';
-import { Logger } from './core/observability.js';
-import { splitCsvList } from './core/util.js';
+import { ErrorCode, FsError } from '../core/errors.js';
+import { Logger } from '../core/observability.js';
+import { splitCsvList } from '../core/util.js';
+import { jsonRpcError } from './shared.js';
 
 const MAX_BEARER_TOKEN_LENGTH = 4096;
 
@@ -20,10 +21,10 @@ const MAX_BEARER_TOKEN_LENGTH = 4096;
 const JSONRPC_SERVER_ERROR = -32000;
 
 /**
- * The one JSON-RPC error envelope every HTTP refusal goes out in — this
- * module's pre-handler rejections and `transport.ts`'s. It lives here because
- * `transport.ts` already imports this module and not the other way round; a
- * second hand-built literal is how the two drift apart.
+ * The one way an HTTP refusal goes out — this module's pre-handler rejections
+ * and `http.ts`'s route-level ones. The envelope itself is `jsonRpcError` in
+ * `shared.ts`, so the stdio leg sends the same literal; this wrapper owns only
+ * what HTTP adds on top.
  *
  * `headers` carries what a particular refusal owes the client on top of the
  * JSON content type — `WWW-Authenticate` on a 401, `Retry-After` on a 429.
@@ -38,7 +39,10 @@ export function sendJsonRpcError(
   id: string | number | null = null,
   headers: Record<string, string> = {},
 ): void {
-  res.status(status).set(headers).json({ jsonrpc: JSONRPC_VERSION, id, error: { code, message } });
+  res
+    .status(status)
+    .set(headers)
+    .json(jsonRpcError(code, message, id));
 }
 
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/u;

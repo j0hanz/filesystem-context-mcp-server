@@ -2,7 +2,7 @@
 // gated transport that attaches listen-filter watchers before the SDK sees the
 // message.
 import type { McpServerFactory } from '@modelcontextprotocol/server';
-import { JSONRPC_VERSION, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 import {
   serveStdio,
   type StdioServerHandle,
@@ -21,6 +21,7 @@ import { createServer } from '../server.js';
 import type { RuntimeConfig } from './shared.js';
 import {
   isStructurallyValidListen,
+  jsonRpcError,
   jsonRpcRequestId,
   listenSubscriptionUris,
   prepareListenWatchers,
@@ -305,11 +306,7 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
         const prepared = await prepareListenWatchers(message, pathGuard, registry, sink);
         if (!prepared.ok) {
           listens.delete(id);
-          await wire.send({
-            jsonrpc: JSONRPC_VERSION,
-            id,
-            error: { code: ProtocolErrorCode.InvalidParams, message: prepared.message },
-          });
+          await wire.send(jsonRpcError(ProtocolErrorCode.InvalidParams, prepared.message, id));
           return;
         }
         state.acquiredUris = prepared.acquiredUris;
@@ -328,11 +325,7 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
         // The gate swallowed the message, so nothing downstream will answer it.
         // Without this the client waits out its whole request timeout.
         await wire
-          .send({
-            jsonrpc: JSONRPC_VERSION,
-            id,
-            error: { code: ProtocolErrorCode.InternalError, message: failure.message },
-          })
+          .send(jsonRpcError(ProtocolErrorCode.InternalError, failure.message, id))
           .catch(() => {
             /* the wire is gone; onerror above already reported it */
           });
