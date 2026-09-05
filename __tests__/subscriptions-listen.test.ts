@@ -432,8 +432,8 @@ describe('HTTP resourcesListChanged listen filter', () => {
       const result = (await client.callTool({
         name: 'diff',
         arguments: { a: fileA, b: fileB },
-      })) as { structuredContent?: { resourceUri?: string } };
-      const uri = result.structuredContent?.resourceUri;
+      })) as { _meta?: { resourceUri?: string } };
+      const uri = result._meta?.resourceUri;
       assert.ok(uri, 'diff must externalize a result resource');
 
       await waitFor(() => received);

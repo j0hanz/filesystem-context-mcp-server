@@ -384,9 +384,21 @@ export const LIST = defineTool({
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const { structured, markdown, link } = await handleList(args, ctx);
+    // The tree is what the model reads; nextCursor and the overflow notice used
+    // to reach it only through the structured half, which now ships as _meta.
+    // Both ride the text so paging needs no second lookup.
+    const trailer: string[] = [];
+    if (structured.nextCursor !== undefined) {
+      trailer.push(`nextCursor: ${structured.nextCursor}`);
+    }
+    if (structured.resourceUri !== undefined) {
+      trailer.push(
+        `truncated: ${String(structured.entryCount)} of ${String(structured.totalEntries)} entries shown; full tree at ${structured.resourceUri}`,
+      );
+    }
     return {
       structured,
-      text: markdown,
+      text: trailer.length > 0 ? `${markdown}\n\n${trailer.join('\n')}` : markdown,
       ...(link ? { resources: [link] } : {}),
     };
   },

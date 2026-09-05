@@ -339,6 +339,28 @@ function buildPerPathReadValue(
   };
 }
 
+/**
+ * The two facts the model cannot act on without: that lines were dropped, and
+ * the exact args to get the next chunk. Both used to live only in the structured
+ * half, which no longer reaches the model. Each line is `//` prefixed and set
+ * off by a blank line so it cannot be read as file bytes — do not drop either
+ * guard.
+ */
+function readTrailer(v: PerPathReadValue): string[] {
+  const lines: string[] = [];
+  if (v.continuation) {
+    lines.push(
+      `// truncated: ${v.continuation.hint} Continue: read ${JSON.stringify(v.continuation.args)}`,
+    );
+  } else if (v.hasMoreLines && v.linesRead !== undefined) {
+    // A tail read gets no continuation — there are no args that read *backwards*
+    // — so say what was shown rather than leaving the truncation silent.
+    lines.push(`// truncated: showing last ${String(v.linesRead)} lines`);
+  }
+  if (v.contentHash !== undefined) lines.push(`// sha256: ${v.contentHash}`);
+  return lines;
+}
+
 async function readOnePath(
   filePath: string,
   args: ReadFileInput,
@@ -392,9 +414,6 @@ export const READ_FILE = defineTool({
     'head, tail, and startLine/endLine are mutually exclusive — use exactly one.',
   input: ReadFileInputSchema,
   output: ReadFileOutputSchema,
-  // results[].value XOR results[].error, and value has no required field at all —
-  // not inferable from the description.
-  publishOutputSchema: true,
   annotations: {
     readOnlyHint: true,
     idempotentHint: true,
@@ -513,15 +532,23 @@ export const READ_FILE = defineTool({
     }
 
     const [firstOrdered] = ordered;
+    const body = (v: PerPathReadValue): string => {
+      const content = v.content ?? 'read failed';
+      const trailer = readTrailer(v);
+      if (trailer.length === 0) return content;
+      // Exactly one blank line between the bytes and the trailer, whether or not
+      // the file ended in a newline.
+      return `${content}${content.endsWith('\n') ? '\n' : '\n\n'}${trailer.join('\n')}`;
+    };
     const text =
       ordered.length === 1 && firstOrdered !== undefined
         ? 'error' in firstOrdered
           ? firstOrdered.error.message
-          : (firstOrdered.value.content ?? 'read failed')
+          : body(firstOrdered.value)
         : ordered
             .map((r) => {
               const header = `// ${r.path}`;
-              if ('value' in r) return `${header}\n${r.value.content}`;
+              if ('value' in r) return `${header}\n${body(r.value)}`;
               return `${header}\n// Error: ${r.error.message}`;
             })
             .join('\n\n');

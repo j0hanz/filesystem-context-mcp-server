@@ -125,7 +125,7 @@ describe('Stdio Transport (real subprocess)', () => {
       name: 'list',
       arguments: { path: pageDir, maxEntries: 1 },
     });
-    const cursor = (first.structuredContent as { nextCursor?: string }).nextCursor;
+    const cursor = (first._meta as { nextCursor?: string }).nextCursor;
     assert.ok(cursor);
 
     const second = await harness.client.callTool({
@@ -134,9 +134,7 @@ describe('Stdio Transport (real subprocess)', () => {
     });
     assert.notStrictEqual(second.isError, true);
     assert.deepStrictEqual(
-      (second.structuredContent as { entries?: { name: string }[] }).entries?.map(
-        (entry) => entry.name,
-      ),
+      (second._meta as { entries?: { name: string }[] }).entries?.map((entry) => entry.name),
       ['bravo.txt'],
     );
   });

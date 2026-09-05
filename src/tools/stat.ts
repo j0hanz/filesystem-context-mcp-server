@@ -5,7 +5,6 @@ import { parse } from 'node:path';
 import * as z from 'zod/v4';
 
 import { ErrorCode, rethrowIfAborted } from '../core/errors.js';
-import { formatBytes } from '../core/fmt.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
 import { getFileType, isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
@@ -245,21 +244,10 @@ export const GET_FILE_INFO = defineTool({
       resources.push(link);
     }
 
-    const text = perPathPayload
-      .map((r) => {
-        if (r.value) {
-          const { name, type, size } = r.value;
-          // A directory's own inode size says nothing about what is inside it
-          // (0 on Windows, 4096 on ext4), and "directory, 0 B" reads as empty.
-          // Use `list` for contents; report the byte size only where it means
-          // something.
-          if (type === 'directory') return `${name}: directory`;
-          return `${name}: ${type}, ${formatBytes(size)}`;
-        }
-        return `${r.path}: ${r.error?.message ?? 'error'}`;
-      })
-      .join('\n');
-
+    // No `text` on purpose. The one-liner this used to build (`AGENTS.md: file,
+    // 751 B`) dropped tokenEstimate, modified, mimeType and isHidden — the very
+    // fields a caller asks `stat` for. Supplying no text makes this a data tool,
+    // so `define.ts` renders the JSON and keeps it in `structuredContent`.
     return {
       structured: {
         results: perPathPayload,
@@ -268,7 +256,6 @@ export const GET_FILE_INFO = defineTool({
         dirCount,
         ...(resourceUri ? { resourceUri } : {}),
       },
-      text,
       ...(resources.length > 0 ? { resources } : {}),
     };
   },

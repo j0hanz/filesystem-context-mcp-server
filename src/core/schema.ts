@@ -144,7 +144,10 @@ export const FileInfoSchema = z.strictObject({
   name: z.string(),
   path: z.string(),
   type: FileType,
-  size: NonNegInt,
+  // A directory's own inode size says nothing about what is inside it — 0 on
+  // Windows, 4096 on ext4 — so say so rather than letting a caller read it as
+  // "empty". This caveat used to live in stat's text summary, which is gone.
+  size: NonNegInt.describe('Bytes; meaningless for a directory — use list for its contents'),
   tokenEstimate: NonNegInt.optional().describe('Rough token estimate; use to pre-screen read cost'),
   created: IsoDateTime,
   modified: IsoDateTime,

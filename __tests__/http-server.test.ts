@@ -76,9 +76,9 @@ describe('Real HTTP Server integration', () => {
         name: 'diff',
         arguments: { a: fileA, b: fileB },
       })) as {
-        structuredContent?: { resourceUri?: string };
+        _meta?: { resourceUri?: string };
       };
-      const uri = res.structuredContent?.resourceUri;
+      const uri = res._meta?.resourceUri;
       assert.ok(uri, 'diff must externalize a result uri');
       const read = await client.readResource({ uri });
       assert.ok(read.contents.length > 0, 'the externalized result must be readable');

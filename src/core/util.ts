@@ -3,9 +3,8 @@ import { availableParallelism } from 'node:os';
 import { cli } from './config.js';
 import { Logger } from './observability.js';
 
-export const KIB = 1024;
+const KIB = 1024;
 export const MIB = 1024 * KIB;
-export const GIB = 1024 * MIB;
 
 const loggedWarns = new Set<string>();
 

@@ -418,9 +418,6 @@ export const DELETE_FILE = defineTool({
     'Workspace root directories cannot be deleted.',
   input: DeleteInputSchema,
   output: DeleteOutputSchema,
-  // results[].value XOR results[].error, and `deleted: false` means the user
-  // chose Skip rather than a failure — not inferable from the description.
-  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,
