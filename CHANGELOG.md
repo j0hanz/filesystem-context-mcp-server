@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-09-05
+
+A fix release for two transport-boundary defects. No tool, no CLI flag, and no
+environment variable changes behaviour, and the wire format is untouched — an
+MCP client needs to do nothing.
+
+### Fixed
+
+- **`FS_MAX_REQUEST_BYTES` now applies to every POST, not just JSON ones.** The
+  Express body parser leaves `req.body` undefined for anything but
+  `application/json`, and handing that undefined body to the Node adapter made
+  it read the raw stream with no limit — so a `text/plain` upload, or one with
+  no `Content-Type` at all, was buffered unbounded before being rejected. Such
+  a POST is now answered `415` before its body is read, and a request with no
+  body framing gets a JSON-RPC ParseError instead of being forwarded. The `415`
+  envelope matches the one the SDK would have produced.
+- **A stdio server no longer outlives its connection.** When the SDK closed the
+  transport on a fatal read error — a `ReadBuffer` overflow, for one — nothing
+  released the watchers the connection had acquired, and the process stayed
+  alive after the client was gone. Teardown now also runs on the transport's
+  own close, not only on an explicit `close()`, and it unrefs stdin: the SDK
+  pauses stdin only when no other `'data'` listener remains, which otherwise
+  holds the event loop open with nothing left to serve. A server instance whose
+  construction finishes after teardown is disposed rather than published.
+
 ## [2.1.1] - 2026-09-05
 
 A cleanup release. No tool, no CLI flag, and no environment variable changes
@@ -234,6 +259,7 @@ was empty, so importing the package root never gave callers an API. The
 - Removed dead `startPerfMeasure`/`withOpsTrace` and `withToolDiagnostics` subsystems.
 - Removed dead `RESOURCE_STORE_DIAGNOSTICS_CHANNEL` and `LIFECYCLE_CHANNEL` publishers.
 
+[2.1.2]: https://github.com/j0hanz/filesystem-mcp/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/j0hanz/filesystem-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/j0hanz/filesystem-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j0hanz/filesystem-mcp/compare/v1.19.1...v2.0.0
