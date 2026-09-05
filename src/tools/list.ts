@@ -5,7 +5,7 @@ import { basename } from 'node:path';
 import * as z from 'zod/v4';
 
 import { timedSignal } from '../core/concurrency.js';
-import { createFirstPage, readNextPage } from '../core/cursor.js';
+import { paginate } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
 import type { EntryType } from '../core/glob.js';
 import {
@@ -27,6 +27,7 @@ import {
   OptionalPath,
   PositiveInt,
 } from '../core/schema.js';
+import type { JsonResourceResult } from '../core/store.js';
 import { putJsonResource } from '../core/store.js';
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
@@ -157,7 +158,7 @@ const ELBOW = '└── ';
 const PIPE = '│   ';
 const INDENT = '    ';
 
-function renderMarkdown(rootName: string, entries: CollectedEntry[]): string {
+function renderMarkdown(rootName: string, entries: readonly CollectedEntry[]): string {
   if (entries.length === 0) return rootName;
 
   // Group entries by parent path
@@ -206,7 +207,7 @@ const ListInputSchema = z.strictObject({
   maxEntries: PositiveInt.max(MAX_LIST_ENTRIES)
     .default(DEFAULT_LIST_ENTRIES)
     .describe(
-      `Page size (default: ${String(DEFAULT_LIST_ENTRIES)}). Continue with nextCursor; resourceUri is only for hard-cap overflow.`,
+      `Page size (default: ${String(DEFAULT_LIST_ENTRIES)}). Continue with nextCursor; an incomplete first page also carries resourceUri for the whole list.`,
     ),
   includeHidden: includeHiddenField(),
   includeIgnored: includeIgnoredField(),
@@ -236,9 +237,9 @@ const ListOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full entry list in the resource store; first page only, when total entries exceed the ' +
-        'hard cap (the same cap that bounds pagination; page via nextCursor below it). The stored list is ' +
-        'itself capped at that limit and marked truncated if exceeded.',
+      'URI to the full entry list in the resource store; first page only, whenever the response is ' +
+        'incomplete — more pages follow, or the hard cap cut the listing. The stored list is itself ' +
+        'bounded by that cap and marked truncated if exceeded.',
     ),
   nextCursor: NextCursorSchema,
 });
@@ -248,7 +249,6 @@ interface ListPageMetadata {
   readonly totalEntries: number;
   readonly totalFiles: number;
   readonly totalDirectories: number;
-  readonly resourceUri?: string;
 }
 
 function listQueryKey(args: z.infer<typeof ListInputSchema>, path: string): string {
@@ -265,6 +265,7 @@ function listOutput(
   entries: readonly CollectedEntry[],
   metadata: ListPageMetadata,
   nextCursor: string | undefined,
+  resourceUri: string | undefined,
 ): z.infer<typeof ListOutputSchema> {
   return {
     path: metadata.path,
@@ -273,7 +274,7 @@ function listOutput(
     totalEntries: metadata.totalEntries,
     totalFiles: metadata.totalFiles,
     totalDirectories: metadata.totalDirectories,
-    ...(metadata.resourceUri ? { resourceUri: metadata.resourceUri } : {}),
+    ...(resourceUri !== undefined ? { resourceUri } : {}),
     ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
 }
@@ -289,71 +290,57 @@ async function handleList(
   const path = args.path;
   const resolvedPath = ctx.fs.pathGuard.resolvePathOrRoot(path);
   const queryKey = listQueryKey(args, resolvedPath);
+  const { resourceStore } = ctx;
 
-  if (args.cursor !== undefined) {
-    const paged = readNextPage<CollectedEntry, ListPageMetadata>({
-      store: ctx.pageStore,
-      queryKey,
-      cursor: args.cursor,
-      pageSize: args.maxEntries,
-    });
-    // First page only: the overflow entry runs on ResourceStore's own TTL and
-    // LRU, not this snapshot's, so replaying it hands back a dead pointer.
-    const { resourceUri: _firstPageOnly, ...pageMetadata } = paged.metadata;
-    return {
-      structured: listOutput(paged.page, pageMetadata, paged.nextCursor),
-      markdown: renderMarkdown(basename(paged.metadata.path), [...paged.page]),
-    };
-  }
-
-  const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
-  const result = await collect(validDir, {
-    maxDepth: args.maxDepth,
-    includeHidden: args.includeHidden,
-    includeIgnored: args.includeIgnored,
-    signal: timedSignal(ctx.signal, DEFAULT_SEARCH_TIMEOUT_MS),
-    pathGuard: ctx.fs.pathGuard,
-    entryCap: MAX_LIST_ENTRIES,
-    ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
-  });
-  let resourceUri: string | undefined;
-  let link: ContentBlock | undefined;
-  if (result.totalEntries > result.entries.length && ctx.resourceStore) {
-    const fullMarkdown = renderMarkdown(basename(validDir), result.entries);
-    const fullTruncated = result.totalEntries > result.entries.length;
-    const fullOutput = {
-      entries: result.entries,
-      markdown: fullMarkdown,
-      totalEntries: result.totalEntries,
-      totalFiles: result.totalFiles,
-      totalDirectories: result.totalDirectories,
-      ...(fullTruncated ? { truncated: true } : {}),
-    };
-    const res = putJsonResource(ctx.resourceStore, `${basename(validDir)} tree`, fullOutput);
-    resourceUri = res.entry.uri;
-    link = res.link;
-  }
-
-  const metadata: ListPageMetadata = {
-    path: validDir,
-    totalEntries: result.totalEntries,
-    totalFiles: result.totalFiles,
-    totalDirectories: result.totalDirectories,
-    ...(resourceUri ? { resourceUri } : {}),
-  };
-  const paged = createFirstPage<CollectedEntry, ListPageMetadata>({
+  const paged = await paginate<CollectedEntry, ListPageMetadata, JsonResourceResult>({
     store: ctx.pageStore,
     queryKey,
-    items: result.entries,
-    metadata,
+    cursor: args.cursor,
     pageSize: args.maxEntries,
+    produce: async () => {
+      const validDir = await ctx.fs.pathGuard.validateExistingDirectory(resolvedPath);
+      const result = await collect(validDir, {
+        maxDepth: args.maxDepth,
+        includeHidden: args.includeHidden,
+        includeIgnored: args.includeIgnored,
+        signal: timedSignal(ctx.signal, DEFAULT_SEARCH_TIMEOUT_MS),
+        pathGuard: ctx.fs.pathGuard,
+        entryCap: MAX_LIST_ENTRIES,
+        ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      });
+      return {
+        items: result.entries,
+        metadata: {
+          path: validDir,
+          totalEntries: result.totalEntries,
+          totalFiles: result.totalFiles,
+          totalDirectories: result.totalDirectories,
+        },
+        truncated: result.totalEntries > result.entries.length,
+      };
+    },
+    externalize: resourceStore
+      ? (entries, metadata) => {
+          const name = basename(metadata.path);
+          // The stored tree is the whole collected set — itself bounded by the
+          // hard cap, and marked when the cap cut it.
+          const fullOutput = {
+            entries,
+            markdown: renderMarkdown(name, entries),
+            totalEntries: metadata.totalEntries,
+            totalFiles: metadata.totalFiles,
+            totalDirectories: metadata.totalDirectories,
+            ...(metadata.totalEntries > entries.length ? { truncated: true } : {}),
+          };
+          return putJsonResource(resourceStore, `${name} tree`, fullOutput);
+        }
+      : undefined,
   });
-  const output = listOutput(paged.page, metadata, paged.nextCursor);
 
   return {
-    structured: output,
-    markdown: renderMarkdown(basename(validDir), [...paged.page]),
-    ...(link ? { link } : {}),
+    structured: listOutput(paged.page, paged.metadata, paged.nextCursor, paged.resource?.entry.uri),
+    markdown: renderMarkdown(basename(paged.metadata.path), [...paged.page]),
+    ...(paged.resource ? { link: paged.resource.link } : {}),
   };
 }
 
@@ -362,7 +349,7 @@ export const LIST = defineTool({
   title: 'List',
   description:
     'List sorted directory entries and an ASCII tree. maxDepth=1 is top-level. ' +
-    'maxEntries sets page size; continue with nextCursor. resourceUri is only for hard-cap overflow.',
+    'maxEntries sets page size; continue with nextCursor. An incomplete first page also carries resourceUri for the whole list.',
   input: ListInputSchema,
   output: ListOutputSchema,
   // Not published: every field is a plainly-named scalar (`entryCount`,
@@ -384,7 +371,7 @@ export const LIST = defineTool({
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
     const { structured, markdown, link } = await handleList(args, ctx);
-    // The tree is what the model reads; nextCursor and the overflow notice used
+    // The tree is what the model reads; nextCursor and the full-list URI used
     // to reach it only through the structured half, which now ships as _meta.
     // Both ride the text so paging needs no second lookup.
     const trailer: string[] = [];
@@ -393,7 +380,7 @@ export const LIST = defineTool({
     }
     if (structured.resourceUri !== undefined) {
       trailer.push(
-        `truncated: ${String(structured.entryCount)} of ${String(structured.totalEntries)} entries shown; full tree at ${structured.resourceUri}`,
+        `${String(structured.entryCount)} of ${String(structured.totalEntries)} entries shown; full tree at ${structured.resourceUri}`,
       );
     }
     return {

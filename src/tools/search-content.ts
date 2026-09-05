@@ -4,10 +4,11 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
-import { createFirstPage, readNextPage } from '../core/cursor.js';
+import { paginate } from '../core/cursor.js';
 import { ErrorCode, FsError } from '../core/errors.js';
 import { formatCount, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
+import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
 import {
@@ -25,33 +26,33 @@ import {
 } from '../core/schema.js';
 import type { Regex, SearchContentOptions } from '../core/search.js';
 import { compileRegex, freeRegex, searchContent } from '../core/search.js';
-import type { ResourceStore } from '../core/store.js';
+import type { JsonResourceResult } from '../core/store.js';
 import { putJsonResource } from '../core/store.js';
 import {
   DEFAULT_SEARCH_CONTENT_RESULTS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   MAX_SEARCH_RESULTS,
-  parseEnvInt,
 } from '../core/util.js';
 import { defineTool, type ToolCtx } from './define.js';
 
 /**
- * Configuration constants for the Search Content tool.
+ * `FS_MAX_INLINE_MATCHES` used to cap how many matches a page showed inline
+ * and, past it, push the rest into the resource store. `maxResults` is the one
+ * page size now, and the full list is externalized whenever a response is
+ * incomplete, so the variable does nothing. It is still read so an operator who
+ * set it hears why it stopped mattering; the read goes at the next major.
  */
-const CONFIG = {
-  MAX_INLINE_MATCHES: parseEnvInt('FS_MAX_INLINE_MATCHES', 50, 1, 10_000),
-} as const;
+if (process.env['FS_MAX_INLINE_MATCHES'] !== undefined) {
+  Logger.warn(
+    'FS_MAX_INLINE_MATCHES is deprecated and ignored: maxResults sets the search_text page size. It will be removed in the next major release.',
+  );
+}
 
 // Type Definitions
 type SearchInput = z.infer<typeof GrepInputSchema>;
 type SearchOutput = z.infer<typeof GrepOutputSchema>;
 type SearchMatchPayload = NonNullable<SearchOutput['matches']>[number];
 type SearchResultValue = Awaited<ReturnType<typeof searchContent>>;
-
-interface SearchPreviewState {
-  needsExternalize: boolean;
-  visiblePayloads: SearchMatchPayload[];
-}
 
 interface SearchContext {
   pattern: string;
@@ -67,16 +68,6 @@ interface SearchContentPageMetadata {
   readonly stoppedReason?: SearchOutput['stoppedReason'];
   readonly skippedInaccessible?: number;
   readonly skippedTooLarge?: number;
-}
-
-function buildSearchPreviewState(payloads: SearchMatchPayload[]): SearchPreviewState {
-  const needsExternalize = payloads.length > CONFIG.MAX_INLINE_MATCHES;
-  const visibleCount = needsExternalize ? CONFIG.MAX_INLINE_MATCHES : payloads.length;
-
-  return {
-    needsExternalize,
-    visiblePayloads: payloads.slice(0, visibleCount),
-  };
 }
 
 const GrepInputSchema = z.strictObject({
@@ -138,7 +129,9 @@ const GrepOutputSchema = z.strictObject({
   truncated: z
     .boolean()
     .optional()
-    .describe('True when the match list was cut due to maxResults or timeout'),
+    .describe(
+      'True when the search engine cut the match list — the hard result cap or the time limit. Paging is not truncation: a set that spans pages has nextCursor instead.',
+    ),
   stoppedReason: SearchStoppedReasonSchema.describe(
     'Why the search ended early: maxResults = result cap reached, timeout = time limit hit or the request was cancelled. Absent when the scan ran to completion.',
   ),
@@ -146,7 +139,7 @@ const GrepOutputSchema = z.strictObject({
     .string()
     .optional()
     .describe(
-      'URI to the full match list in the resource store (present when matches exceed the inline limit)',
+      'URI to the full match list in the resource store; first page only, whenever the response is incomplete — more pages follow, or the engine cut the search',
     ),
   nextCursor: NextCursorSchema,
 });
@@ -158,11 +151,13 @@ function buildSearchMatchDetail(totalMatches: number, filesMatched: number): str
 }
 
 function searchContentOutput(
-  matches: SearchMatchPayload[],
+  matches: readonly SearchMatchPayload[],
   metadata: SearchContentPageMetadata,
+  nextCursor: string | undefined,
+  resourceUri: string | undefined,
 ): SearchOutput {
   return {
-    matches,
+    matches: [...matches],
     totalMatches: metadata.totalMatches,
     filesScanned: metadata.filesScanned,
     ...(metadata.filesMatched ? { filesMatched: metadata.filesMatched } : {}),
@@ -170,6 +165,8 @@ function searchContentOutput(
     ...(metadata.stoppedReason !== undefined ? { stoppedReason: metadata.stoppedReason } : {}),
     ...(metadata.skippedInaccessible ? { skippedInaccessible: metadata.skippedInaccessible } : {}),
     ...(metadata.skippedTooLarge ? { skippedTooLarge: metadata.skippedTooLarge } : {}),
+    ...(resourceUri !== undefined ? { resourceUri } : {}),
+    ...(nextCursor !== undefined ? { nextCursor } : {}),
   };
 }
 
@@ -258,31 +255,6 @@ function createSearchContext(args: SearchInput, matcher: Regex | undefined): Sea
   };
 }
 
-function buildExternalizedResponse(
-  fullStructured: SearchOutput,
-  preview: SearchPreviewState,
-  resourceStore: ResourceStore,
-  searchPattern: string,
-): { structured: SearchOutput; link: ReturnType<typeof putJsonResource>['link'] } {
-  const { entry, link } = putJsonResource(
-    resourceStore,
-    `'${searchPattern}' matches`,
-    fullStructured,
-  );
-
-  const structuredForResponse: SearchOutput = {
-    ...fullStructured,
-    resourceUri: entry.uri,
-  };
-
-  if (preview.needsExternalize) {
-    structuredForResponse.matches = preview.visiblePayloads;
-    structuredForResponse.truncated = true;
-  }
-
-  return { structured: structuredForResponse, link };
-}
-
 function sortedPayloads(
   result: SearchResultValue,
   args: SearchInput,
@@ -290,24 +262,6 @@ function sortedPayloads(
 ): SearchMatchPayload[] {
   const searchContext = createSearchContext(args, regexMatcher);
   return buildSortedPayloads(result, searchContext);
-}
-
-function finalizeSearchOutput(
-  fullStructured: SearchOutput,
-  preview: SearchPreviewState,
-  resourceStore?: ResourceStore,
-  searchPattern?: string,
-): { structured: SearchOutput; link?: ReturnType<typeof putJsonResource>['link'] } {
-  if (resourceStore && preview.needsExternalize) {
-    return buildExternalizedResponse(fullStructured, preview, resourceStore, searchPattern ?? '');
-  }
-
-  if (preview.needsExternalize) {
-    fullStructured.matches = preview.visiblePayloads;
-    fullStructured.truncated = true;
-  }
-
-  return { structured: fullStructured };
 }
 
 /**
@@ -364,70 +318,70 @@ async function handleSearchContent(
 }> {
   const requestedPath = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
   const queryKey = searchContentQueryKey(args, requestedPath);
+  const { resourceStore } = ctx;
 
-  if (args.cursor !== undefined) {
-    const paged = readNextPage<SearchMatchPayload, SearchContentPageMetadata>({
-      store: ctx.pageStore,
-      queryKey,
-      cursor: args.cursor,
-      pageSize: args.maxResults,
-    });
-    const fullStructured = searchContentOutput([...paged.page], paged.metadata);
-    if (paged.nextCursor !== undefined) fullStructured.nextCursor = paged.nextCursor;
-    const preview = buildSearchPreviewState([...paged.page]);
-    return finalizeSearchOutput(fullStructured, preview, ctx.resourceStore, args.searchPattern);
-  }
-
-  const { basePath, args: scoped } = await resolveSearchScope(args, ctx);
-  const regexMatcher = createSearchMatcher(scoped);
-
-  const result = await searchContent(
-    basePath,
-    scoped.searchPattern,
-    buildSearchContentOptions({ ...scoped, maxResults: MAX_SEARCH_RESULTS }, ctx.signal),
-    ctx.fs.pathGuard,
-  );
-
-  // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
-  let allMatchPayloads: SearchMatchPayload[];
-  try {
-    allMatchPayloads = sortedPayloads(result, scoped, regexMatcher);
-  } finally {
-    freeRegex(regexMatcher);
-  }
-  const metadata: SearchContentPageMetadata = {
-    totalMatches: result.summary.matchingLines,
-    filesScanned: result.summary.filesScanned,
-    ...(result.summary.filesMatched ? { filesMatched: result.summary.filesMatched } : {}),
-    truncated: result.summary.truncated,
-    ...(result.summary.stoppedReason !== undefined && result.summary.stoppedReason !== 'maxFiles'
-      ? { stoppedReason: result.summary.stoppedReason }
-      : {}),
-    ...(result.summary.skippedInaccessible
-      ? { skippedInaccessible: result.summary.skippedInaccessible }
-      : {}),
-    ...(result.summary.skippedTooLarge ? { skippedTooLarge: result.summary.skippedTooLarge } : {}),
-  };
-  const paged = createFirstPage<SearchMatchPayload, SearchContentPageMetadata>({
+  const paged = await paginate<SearchMatchPayload, SearchContentPageMetadata, JsonResourceResult>({
     store: ctx.pageStore,
     queryKey,
-    items: allMatchPayloads,
-    metadata,
-    pageSize: scoped.maxResults,
+    cursor: args.cursor,
+    pageSize: args.maxResults,
+    produce: async () => {
+      const { basePath, args: scoped } = await resolveSearchScope(args, ctx);
+      const regexMatcher = createSearchMatcher(scoped);
+
+      const result = await searchContent(
+        basePath,
+        scoped.searchPattern,
+        buildSearchContentOptions({ ...scoped, maxResults: MAX_SEARCH_RESULTS }, ctx.signal),
+        ctx.fs.pathGuard,
+      );
+
+      // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
+      let items: SearchMatchPayload[];
+      try {
+        items = sortedPayloads(result, scoped, regexMatcher);
+      } finally {
+        freeRegex(regexMatcher);
+      }
+      return {
+        items,
+        metadata: {
+          totalMatches: result.summary.matchingLines,
+          filesScanned: result.summary.filesScanned,
+          ...(result.summary.filesMatched ? { filesMatched: result.summary.filesMatched } : {}),
+          truncated: result.summary.truncated,
+          ...(result.summary.stoppedReason !== undefined &&
+          result.summary.stoppedReason !== 'maxFiles'
+            ? { stoppedReason: result.summary.stoppedReason }
+            : {}),
+          ...(result.summary.skippedInaccessible
+            ? { skippedInaccessible: result.summary.skippedInaccessible }
+            : {}),
+          ...(result.summary.skippedTooLarge
+            ? { skippedTooLarge: result.summary.skippedTooLarge }
+            : {}),
+        },
+        truncated: result.summary.truncated,
+      };
+    },
+    externalize: resourceStore
+      ? (matches, metadata) =>
+          putJsonResource(
+            resourceStore,
+            `'${args.searchPattern}' matches`,
+            searchContentOutput(matches, metadata, undefined, undefined),
+          )
+      : undefined,
   });
-  const fullStructured = searchContentOutput([...paged.page], metadata);
-  if (paged.nextCursor !== undefined) fullStructured.nextCursor = paged.nextCursor;
-  const preview = buildSearchPreviewState([...paged.page]);
-  const { structured, link } = finalizeSearchOutput(
-    fullStructured,
-    preview,
-    ctx.resourceStore,
-    args.searchPattern,
-  );
 
   return {
-    structured,
-    ...(link !== undefined ? { link } : {}),
+    structured: searchContentOutput(
+      paged.page,
+      paged.metadata,
+      paged.nextCursor,
+      paged.resource?.entry.uri,
+    ),
+    ...(paged.resource ? { link: paged.resource.link } : {}),
   };
 }
 

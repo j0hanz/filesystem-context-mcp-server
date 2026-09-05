@@ -119,7 +119,7 @@ const ENV_HELP: HelpRow[] = [
   },
   {
     flags: 'FS_MAX_INLINE_MATCHES',
-    desc: 'Max inline content matches per search (default 50, 1–10000)',
+    desc: 'Deprecated and ignored; maxResults sets the search_text page size. Removed in the next major',
   },
   {
     flags: 'FS_MAX_READ_MANY_BYTES',

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`list`, `find_files`, and `search_text` externalize on one rule.** An
+  incomplete first page — more pages follow, or the engine's hard cap cut the
+  set — now carries `resourceUri` to the full result in the resource store, for
+  all three tools. Before, `list` stored one only on hard-cap overflow,
+  `find_files` on any incompleteness, and `search_text` whenever a page held
+  more than `FS_MAX_INLINE_MATCHES` matches. Continuation pages never carry it
+  and never mint a new one; `search_text` used to store a fresh copy on every
+  continuation page that crossed the inline cap.
+- **`search_text` shows a whole page inline.** `maxResults` is the page size and
+  the inline count; the separate 50-match inline slice is gone. `truncated` now
+  means only that the engine cut the match list (hard result cap or timeout) —
+  a set that spans several pages has `nextCursor` and is not "truncated".
+
+### Deprecated
+
+- **`FS_MAX_INLINE_MATCHES`** is read only to log a startup warning; it has no
+  effect. Use `maxResults` to set the `search_text` page size. The variable is
+  removed in the next major release.
+
 ## [2.1.2] - 2026-09-05
 
 A fix release for two transport-boundary defects. No tool, no CLI flag, and no

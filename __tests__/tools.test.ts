@@ -787,18 +787,15 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     };
     assert.strictEqual(s1.entryCount, 2);
     assert.ok(s1.nextCursor, 'first page should yield a nextCursor');
-    assert.strictEqual(
-      s1.resourceUri,
-      undefined,
-      'ordinary pagination must not externalize a hard-cap resource',
-    );
+    assert.ok(s1.resourceUri, 'an incomplete first page carries the URI of the full entry list');
     const r2 = await harness.client.callTool({
       name: 'list',
       arguments: { path: sub, maxEntries: 2, cursor: s1.nextCursor },
     });
-    const s2 = r2._meta as { nextCursor?: string; entryCount?: number };
+    const s2 = r2._meta as { nextCursor?: string; entryCount?: number; resourceUri?: string };
     assert.strictEqual(s2.entryCount, 2);
     assert.ok(!s2.nextCursor, 'second page is the last');
+    assert.strictEqual(s2.resourceUri, undefined, 'later pages never carry the URI');
   });
 
   it('TC-FUNC-075: list text carries nextCursor', async () => {
@@ -1398,6 +1395,47 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     });
     assert.strictEqual(replay.isError, true);
     assert.match(firstTextBlock(replay).text ?? '', /INVALID_INPUT/);
+  });
+
+  it('search_text externalizes the full match list on the first page only', async () => {
+    const lines = Array.from({ length: 120 }, (_, i) => `NEEDLE line ${String(i)}`);
+    const file = await writeTestFile(tmpDir, 'search_first_page.txt', `${lines.join('\n')}\n`);
+    const first = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 60 },
+    });
+    const firstStructured = first._meta as {
+      matches?: unknown[];
+      nextCursor?: string;
+      resourceUri?: string;
+      truncated?: boolean;
+    };
+    assert.strictEqual(firstStructured.matches?.length, 60, 'maxResults is the page size');
+    assert.ok(firstStructured.nextCursor, 'more matches remain');
+    assert.ok(firstStructured.resourceUri, 'an incomplete first page carries the full-list URI');
+    assert.strictEqual(
+      firstStructured.truncated,
+      undefined,
+      'paging is not truncation: the engine hit no cap',
+    );
+
+    const second = await harness.client.callTool({
+      name: 'search_text',
+      arguments: {
+        path: file,
+        searchPattern: 'NEEDLE',
+        maxResults: 60,
+        cursor: firstStructured.nextCursor,
+      },
+    });
+    assert.notStrictEqual(second.isError, true);
+    const secondStructured = second._meta as { matches?: unknown[]; resourceUri?: string };
+    assert.strictEqual(secondStructured.matches?.length, 60);
+    assert.strictEqual(
+      secondStructured.resourceUri,
+      undefined,
+      'a continuation page must not mint a new resource',
+    );
   });
 
   it('HTTP pagination survives the per-request server factory', async () => {
