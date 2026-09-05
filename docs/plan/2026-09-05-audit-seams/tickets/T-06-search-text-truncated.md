@@ -3,7 +3,7 @@ kind: frontier-ticket
 id: T-06
 title: What does search_text.truncated mean once the inline cap is gone?
 map: M-01
-status: open
+status: closed
 type: grilling
 priority: 30
 blocked_by: []
@@ -46,3 +46,21 @@ T-05; C is cleaner but widens the wire change T-05 already carries — and
 var, which argues against removing an output field in the same release.
 
 Priority 30: gates only T-05.
+
+## Resolution
+
+Classification: Decided. Confirmed with the user 2026-09-05: option **A**.
+
+- `search_text.truncated` reports the engine's stop state only —
+  `result.summary.truncated` from `core/search.ts`'s stop tracker (hard result
+  cap or timeout). It is never set by page size: a set that spans several pages
+  has `nextCursor`, and one that was externalized has `resourceUri`; neither
+  makes it "truncated".
+- The inline-slice assignments at `search-content.ts:276-280` and `:305-308`
+  go with the slice itself (T-05). The one remaining source is `:402-404`.
+- Schema description at `search-content.ts:141` rewritten from "True when the
+  match list was cut due to maxResults or timeout" to say the hard result cap
+  or timeout cut the set, and that paging is not truncation.
+- The field stays; no wire removal.
+
+Material uncertainty: none.

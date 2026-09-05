@@ -31,9 +31,11 @@ Deliver audit finding #1 as decided at charting, as one commit on `main`.
   (`search-content.ts:42,72-79`) go; the variable is read once at module load
   only to `Logger.warn` that it is ignored and `maxResults` sets the page
   size. `maxResults` is the only inline/page size.
-- `search_text`'s `truncated` field takes the meaning
-  [What does search_text.truncated mean once the inline cap is gone?](T-06-search-text-truncated.md)
-  decides.
+- `search_text`'s `truncated` field means engine hard-cap or timeout only
+  (`result.summary.truncated`, `search-content.ts:402-404`), per
+  [What does search_text.truncated mean once the inline cap is gone?](T-06-search-text-truncated.md);
+  the inline-slice assignments at `:276-280` and `:305-308` go with the slice,
+  and the description at `:141` is rewritten to say paging is not truncation.
 - Rewrite the text that encodes the old per-tool rules, per
   [Which tests, docs, and schema texts encode the three externalization rules?](T-07-externalization-blast-radius.md):
   `list.ts:209`, `:239-242`, `:365-366`, and the trailer wording at
