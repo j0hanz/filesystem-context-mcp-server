@@ -5,17 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-09-05
+
+A minor release, not a major one: the package's own API is untouched. Its
+`./transport` exports and every CLI flag and environment variable are byte-for-
+byte what 2.0.0 shipped. What changed is how tool results look on the wire, and
+an MCP client reading them is not an npm dependent of this package.
+
+**If you maintain a custom MCP client, read the first entry before upgrading.**
+Nothing else here needs action.
 
 ### Changed
 
-- **Breaking for programmatic consumers.** Tools that return a text result
-  (`read`, `list`, `diff`, `patch`, `edit`, `delete`, `move`, `replace_text`,
+- **Where tool metadata lives.** Tools that return a text result (`read`,
+  `list`, `diff`, `patch`, `edit`, `delete`, `move`, `replace_text`,
   `search_text`, `find_files`) now ship their metadata under `_meta` instead of
   `structuredContent`. Clients that treat `structuredContent` as the canonical
   model view — Claude Code among them — discard the text blocks whenever it is
   present, so the model never saw the file `read` returned or the tree from
-  `list`. The metadata is the same object under a different field.
+  `list`. It is the same object under a different field: a client doing
+  `result.structuredContent.results` reads `result._meta.results` instead.
+  Only `stat`, `create` and `list_roots` keep `structuredContent`.
 - `read` appends a `// truncated:` line carrying the continuation args, and a
   `// sha256:` line when `includeHash` is set, after a blank line so neither can
   be read as file bytes. `list` appends a `nextCursor:` line, and a `truncated:`
@@ -25,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `stat`, `create` and `list_roots` no longer return a one-line text summary.
   Their value is the metadata, so they return JSON text and keep
   `structuredContent`.
+
+### Fixed
+
+- `list_roots` returns a `hint` naming the three ways to configure a root when
+  it has none to list. An unconfigured server used to answer `{"roots":[]}` and
+  leave the caller to guess; the elicitation route out — call a tool with a
+  concrete path and approve the grant — appeared in no tool description.
+  Present only when `roots` is empty.
 
 ## [2.0.0] - 2026-08-27
 
@@ -172,4 +190,5 @@ was empty, so importing the package root never gave callers an API. The
 - Removed dead `startPerfMeasure`/`withOpsTrace` and `withToolDiagnostics` subsystems.
 - Removed dead `RESOURCE_STORE_DIAGNOSTICS_CHANNEL` and `LIFECYCLE_CHANNEL` publishers.
 
+[2.1.0]: https://github.com/j0hanz/filesystem-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j0hanz/filesystem-mcp/compare/v1.19.1...v2.0.0
