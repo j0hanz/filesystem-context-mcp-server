@@ -29,7 +29,7 @@ function collector(): { sent: Frame[]; notify: (n: Notification) => Promise<void
  * sink's monotonic guard has to handle without swallowing the outcome.
  */
 function session(sink: McpProgressSink): ProgressSession {
-  return new ProgressSession({ label: 'label', sinks: [sink], rateLimitMs: 0 });
+  return new ProgressSession({ label: 'label', sink, rateLimitMs: 0 });
 }
 
 describe('McpProgressSink wire monotonicity', () => {

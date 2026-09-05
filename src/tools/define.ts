@@ -40,7 +40,6 @@ import type { PageSnapshotStore } from '../core/page-store.js';
 import { isSamePath } from '../core/path-utils.js';
 import type { PathGuard } from '../core/path.js';
 import type { ResourceStore } from '../core/store.js';
-import type { ProgressSink } from './progress.js';
 import { McpProgressSink, ProgressSession } from './progress.js';
 
 export interface ToolCtx {
@@ -282,15 +281,14 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
     this.parsedArgs = parsedArgs;
     this.signal = composeSignal(ctx.signal, def.timeoutMs);
     this.#progressCtx = resolveProgressCtx(def, parsedArgs);
-    const sinks: ProgressSink[] = [];
-    if (ctx._meta?.progressToken !== undefined && ctx.sendNotification !== undefined) {
-      this.#mcpSink = new McpProgressSink(toolName, ctx._meta.progressToken, ctx.sendNotification);
-      sinks.push(this.#mcpSink);
+    const token = ctx._meta?.progressToken;
+    if (token !== undefined && ctx.sendNotification !== undefined) {
+      this.#mcpSink = new McpProgressSink(toolName, token, ctx.sendNotification);
     }
     const isTest = process.env['NODE_ENV'] === 'test' || process.execArgv.includes('--test');
     this.#progressSession = new ProgressSession({
       label: this.#progressCtx.label,
-      sinks,
+      ...(this.#mcpSink ? { sink: this.#mcpSink } : {}),
       ...(isTest ? { rateLimitMs: 0 } : {}),
     });
     this.toolCtx = {

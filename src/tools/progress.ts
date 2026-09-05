@@ -19,15 +19,10 @@ export type ProgressEvent =
       error: unknown;
     };
 
-export interface ProgressSink {
-  readonly name: string;
-  readonly emit: (event: ProgressEvent) => Promise<void> | void;
-}
-
 interface ProgressSessionOptions {
   label: string;
   total?: number;
-  sinks: ProgressSink[];
+  sink?: McpProgressSink;
   /** Override the rate limit window. Default: 50ms. */
   rateLimitMs?: number;
 }
@@ -37,7 +32,7 @@ const DEFAULT_RATE_LIMIT_MS = 50;
 export class ProgressSession {
   readonly #label: string;
   readonly #total: number | undefined;
-  readonly #sinks: ProgressSink[];
+  readonly #sink: McpProgressSink | undefined;
   readonly #rateLimitMs: number;
   readonly #startTime: number;
 
@@ -48,7 +43,7 @@ export class ProgressSession {
   constructor(opts: ProgressSessionOptions) {
     this.#label = opts.label;
     this.#total = opts.total;
-    this.#sinks = opts.sinks;
+    this.#sink = opts.sink;
     this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
 
     const now = Date.now();
@@ -110,8 +105,12 @@ export class ProgressSession {
 
     this.#lastSentMs = Date.now();
 
-    for (const sink of this.#sinks) {
-      this.#emitGuarded(sink, event);
+    if (!this.#sink) return;
+    try {
+      this.#sink.emit(event);
+    } catch (err) {
+      // A sink failure must never fail the tool call it is reporting on.
+      Logger.warn('progress sink emit failed', { eventKind: event.kind, err });
     }
   }
 
@@ -129,31 +128,9 @@ export class ProgressSession {
     const elapsed = now - this.#lastSentMs;
     return elapsed < effectiveRateLimit;
   }
-
-  #emitGuarded(sink: ProgressSink, event: ProgressEvent): void {
-    try {
-      const result = sink.emit(event);
-      if (result instanceof Promise) {
-        result.catch((err: unknown) => {
-          Logger.warn('ProgressSink emit failed', {
-            sink: sink.name,
-            eventKind: event.kind,
-            err,
-          });
-        });
-      }
-    } catch (err) {
-      Logger.warn('ProgressSink emit failed', {
-        sink: sink.name,
-        eventKind: event.kind,
-        err,
-      });
-    }
-  }
 }
 
-export class McpProgressSink implements ProgressSink {
-  readonly name = 'mcp';
+export class McpProgressSink {
   private readonly toolName: string;
   private readonly token: string | number;
   private readonly notify: (n: Notification) => Promise<void>;
