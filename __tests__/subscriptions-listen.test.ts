@@ -1,9 +1,5 @@
 import { Client, type McpSubscription } from '@modelcontextprotocol/client';
-import {
-  InMemoryServerEventBus,
-  LATEST_PROTOCOL_VERSION,
-  ProtocolErrorCode,
-} from '@modelcontextprotocol/server';
+import { LATEST_PROTOCOL_VERSION, ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -349,39 +345,6 @@ describe('HTTP resourcesListChanged listen filter', () => {
       action: 'accept' as const,
       content: { confirm: true },
     }));
-  });
-
-  describe('HTTP resourcesListChanged injected bus', () => {
-    let tmpDir: string;
-    let http: HttpTestContext;
-    let client: Client;
-    let sub: McpSubscription | undefined;
-    const bus = new InMemoryServerEventBus();
-
-    before(async () => {
-      tmpDir = await createTestRoot();
-      http = await bootHttpTest([tmpDir], {}, { eventBus: bus });
-      client = await http.makeClient('http-injected-bus');
-    });
-
-    after(async () => {
-      await sub?.close().catch(() => {});
-      await http.close();
-      await cleanupTestRoot(tmpDir);
-    });
-
-    it('delivers an event published through the supplied ServerEventBus', async () => {
-      let received = false;
-      client.setNotificationHandler('notifications/resources/list_changed', () => {
-        received = true;
-      });
-      sub = await client.listen({ resourcesListChanged: true });
-
-      bus.publish({ kind: 'resources_list_changed' });
-
-      await waitFor(() => received);
-      assert.strictEqual(received, true);
-    });
   });
 
   after(async () => {

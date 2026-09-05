@@ -22,7 +22,6 @@ import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
 import { startHttpServer } from '../src/transport.js';
-import type { RuntimeConfig } from '../src/transport.js';
 
 /** Create an isolated temp directory for a test. */
 export async function createTestRoot(): Promise<string> {
@@ -293,7 +292,6 @@ export interface HttpTestContext {
 export async function bootHttpTest(
   allowedDirs: string[],
   extraEnv: Record<string, string> = {},
-  runtimeConfig: Omit<RuntimeConfig, 'apiKey'> = {},
 ): Promise<HttpTestContext> {
   const env = { ...extraEnv };
   const saved = new Map<string, string | undefined>();
@@ -305,7 +303,7 @@ export async function bootHttpTest(
   const httpServer = await startHttpServer(
     0,
     { cliAllowedDirs: allowedDirs },
-    { ...runtimeConfig, apiKey: TEST_API_KEY },
+    { apiKey: TEST_API_KEY },
   );
   const port = (httpServer.address() as AddressInfo).port;
   const base = new URL(`http://127.0.0.1:${port}/mcp`);
