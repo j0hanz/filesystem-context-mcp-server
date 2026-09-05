@@ -70,14 +70,8 @@ export interface PendingInput {
  * `FS_REQUEST_STATE_KEY` (UTF-8, must be >=32 bytes); a random
  * 32-byte key is generated at boot when the env var is unset or too short. A
  * per-process key is correct for stdio and the single-node HTTP leg (decision
- * record 11). For a multi-instance HTTP fleet behind a load balancer, a random
- * per-process key silently breaks any `input_required` round that lands on a
- * different instance — `assertFleetRequestStateKey()` is the boot-time HTTP
- * guard that refuses to start the HTTP leg in that state. It is NOT called at
- * module load (the codec is constructed at module scope, before the stdio/HTTP
- * decision in `main()`), so a stdio launch with `FS_API_KEY` exported still boots.
- * A server restart invalidates in-flight tokens; the client re-requests, which
- * is fail-closed and safe.
+ * record 11). A server restart invalidates in-flight tokens; the client
+ * re-requests, which is fail-closed and safe.
  */
 function configuredRequestStateKey(): Uint8Array | undefined {
   const env = process.env['FS_REQUEST_STATE_KEY'];
@@ -91,8 +85,8 @@ function configuredRequestStateKey(): Uint8Array | undefined {
   return undefined;
 }
 
-// Built on first use, not at module load: `startHttpServer` gets to enforce the
-// fleet key requirement before anything mints with a random per-boot fallback.
+// Built on first use, not at module load, so an unset env var costs nothing at
+// import and the random per-boot fallback is minted only once something needs it.
 let codec: RequestStateCodec<PendingState> | undefined;
 
 function getRequestStateCodec(): RequestStateCodec<PendingState> {
@@ -100,22 +94,6 @@ function getRequestStateCodec(): RequestStateCodec<PendingState> {
     key: configuredRequestStateKey() ?? randomBytes(32),
   });
   return codec;
-}
-
-/**
- * Boot-time HTTP guard: when the HTTP leg is active (`FS_API_KEY` set) and
- * `FS_REQUEST_STATE_KEY` is missing or <32 bytes, refuse to start —
- * a multi-instance fleet behind a load balancer would otherwise silently break
- * every `input_required` round that lands on a different instance (each node
- * mints tokens with its own random per-boot key). No-op outside explicit fleet
- * mode. Called from `startHttpServer`, never at module load.
- */
-export function assertFleetRequestStateKey(fleet: boolean): void {
-  if (!fleet) return;
-  if (!configuredRequestStateKey()) {
-    throw new Error('FS_REQUEST_STATE_KEY must be >=32 bytes in fleet deployment mode.');
-  }
-  getRequestStateCodec();
 }
 
 /**

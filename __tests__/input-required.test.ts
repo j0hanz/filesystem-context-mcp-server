@@ -1,11 +1,10 @@
 import { createRequestStateCodec, isInputRequiredResult } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import {
-  assertFleetRequestStateKey,
   buildInputRequired,
   choiceInput,
   confirmInput,
@@ -21,13 +20,13 @@ import {
 // is configured; its implementation does not read the context in that mode.
 const NO_BIND_CONTEXT = undefined as never;
 
-describe('fleet request-state key initialization', () => {
-  it('binds the codec to a shared key configured after import but before fleet startup', async () => {
+describe('request-state key initialization', () => {
+  it('binds the codec to a key configured after import, on first use', async () => {
     const stateKey = 'a'.repeat(32);
     const saved = process.env['FS_REQUEST_STATE_KEY'];
     process.env['FS_REQUEST_STATE_KEY'] = stateKey;
     try {
-      assertFleetRequestStateKey(true);
+      // The codec is built lazily, so the first mint is what reads the env var.
       const wire = await requestStateCodec.mint({ op: 'delete', paths: ['/fleet'] });
       const reference = createRequestStateCodec<{ op: string; paths: string[] }>({
         key: stateKey,
@@ -289,41 +288,5 @@ describe('input_required multi-round-trip infrastructure', () => {
       ),
       undefined,
     );
-  });
-});
-
-describe('assertFleetRequestStateKey (boot-time HTTP guard)', () => {
-  // Deployment topology is an explicit argument. Only the request-state key
-  // comes from the process, so only it is saved and restored here.
-  const STATE_KEY = 'FS_REQUEST_STATE_KEY';
-  let saved: string | undefined;
-
-  beforeEach(() => {
-    saved = process.env[STATE_KEY];
-  });
-
-  afterEach(() => {
-    if (saved === undefined) Reflect.deleteProperty(process.env, STATE_KEY);
-    else process.env[STATE_KEY] = saved;
-  });
-
-  it('throws when fleet mode is set and the request state key is missing', () => {
-    Reflect.deleteProperty(process.env, STATE_KEY);
-    assert.throws(() => assertFleetRequestStateKey(true), /FS_REQUEST_STATE_KEY/);
-  });
-
-  it('throws when fleet mode is set and the request state key is <32 bytes', () => {
-    process.env[STATE_KEY] = 'short';
-    assert.throws(() => assertFleetRequestStateKey(true), />=32 bytes/);
-  });
-
-  it('is a no-op outside fleet mode', () => {
-    Reflect.deleteProperty(process.env, STATE_KEY);
-    assert.doesNotThrow(() => assertFleetRequestStateKey(false));
-  });
-
-  it('is a no-op in fleet mode when the request state key is >=32 bytes', () => {
-    process.env[STATE_KEY] = 'a'.repeat(32);
-    assert.doesNotThrow(() => assertFleetRequestStateKey(true));
   });
 });

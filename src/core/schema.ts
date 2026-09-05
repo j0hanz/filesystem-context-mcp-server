@@ -43,7 +43,7 @@ export const FileKind = z.enum(FILE_KINDS);
 
 const MAX_PATH_LENGTH = 4096;
 
-export const SHELL_METACHAR_RE = /[\n\r;|`]/;
+const SHELL_METACHAR_RE = /[\n\r;|`]/;
 
 export const isBlank = (val: string): boolean => val.trim().length === 0;
 

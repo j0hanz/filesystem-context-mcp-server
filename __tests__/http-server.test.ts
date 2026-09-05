@@ -1,4 +1,4 @@
-import { InMemoryServerEventBus, ProtocolErrorCode } from '@modelcontextprotocol/server';
+import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
@@ -245,96 +245,6 @@ describe('the api key travels as config, not env', () => {
       body: '{}',
     });
     assert.notStrictEqual(anon.status, 401, 'env is read at the CLI boundary, not here');
-  });
-});
-
-describe('explicit HTTP deployment mode', () => {
-  const STATE_KEY = 'FS_REQUEST_STATE_KEY';
-  let tmpDir: string;
-  let savedStateKey: string | undefined;
-  const servers: Server[] = [];
-
-  beforeEach(async () => {
-    tmpDir = await createTestRoot();
-    savedStateKey = process.env[STATE_KEY];
-    Reflect.deleteProperty(process.env, STATE_KEY);
-  });
-
-  afterEach(async () => {
-    for (const server of servers.splice(0)) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-    }
-    if (savedStateKey === undefined) Reflect.deleteProperty(process.env, STATE_KEY);
-    else process.env[STATE_KEY] = savedStateKey;
-    await cleanupTestRoot(tmpDir);
-  });
-
-  it('single mode with an API key boots without a shared request-state key', async () => {
-    const server = await startHttpServer(
-      0,
-      { cliAllowedDirs: [tmpDir] },
-      { apiKey: TEST_API_KEY, deploymentMode: 'single' },
-    );
-    servers.push(server);
-    assert.ok(server.listening);
-  });
-
-  it('fleet mode rejects a missing API key', async () => {
-    await assert.rejects(
-      startHttpServer(
-        0,
-        { cliAllowedDirs: [tmpDir] },
-        { deploymentMode: 'fleet', eventBus: new InMemoryServerEventBus() },
-      ),
-      /API key/i,
-    );
-  });
-
-  it('fleet mode rejects a missing shared event bus', async () => {
-    process.env[STATE_KEY] = 'a'.repeat(32);
-    await assert.rejects(
-      startHttpServer(
-        0,
-        { cliAllowedDirs: [tmpDir] },
-        { apiKey: TEST_API_KEY, deploymentMode: 'fleet' },
-      ),
-      /event bus/i,
-    );
-  });
-
-  it('fleet mode rejects a missing shared request-state key', async () => {
-    await assert.rejects(
-      startHttpServer(
-        0,
-        { cliAllowedDirs: [tmpDir] },
-        {
-          apiKey: TEST_API_KEY,
-          deploymentMode: 'fleet',
-          eventBus: new InMemoryServerEventBus(),
-        },
-      ),
-      /FS_REQUEST_STATE_KEY/,
-    );
-  });
-
-  it('fleet mode boots with auth, shared events, and shared request state', async () => {
-    process.env[STATE_KEY] = 'a'.repeat(32);
-    const server = await startHttpServer(
-      0,
-      { cliAllowedDirs: [tmpDir] },
-      {
-        apiKey: TEST_API_KEY,
-        deploymentMode: 'fleet',
-        eventBus: new InMemoryServerEventBus(),
-      },
-    );
-    servers.push(server);
-    assert.ok(server.listening);
   });
 });
 

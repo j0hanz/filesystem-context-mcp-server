@@ -5,10 +5,6 @@ import { delimiter } from 'node:path';
  * Kept separate to avoid import cycles between observability.ts and util.ts.
  */
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 /** The four filesystem entry types. Produced by `resolveEntryType` (glob.ts)
  *  and `getFileType` (fs.ts); published as the `FileType` schema. */
 export const ENTRY_TYPES = ['file', 'directory', 'symlink', 'other'] as const;

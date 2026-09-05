@@ -2,7 +2,6 @@
 // `subscriptions/listen` watcher-preparation ladder. stdio and HTTP gate the
 // same message shape; only where the lease is released differs (connection
 // close vs response close).
-import type { ServerEventBus } from '@modelcontextprotocol/server';
 import { specTypeSchemas } from '@modelcontextprotocol/server';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
@@ -24,10 +23,6 @@ export interface RuntimeConfig {
   httpHost?: string;
   /** `--api-key` or `API_KEY`. Unset means open access (loopback dev mode). */
   apiKey?: string;
-  /** Shared change-event bus for multi-instance HTTP deployments. Caller-owned. */
-  eventBus?: ServerEventBus;
-  /** Explicit topology; fleet mode requires shared state and event delivery. */
-  deploymentMode?: 'single' | 'fleet';
 }
 
 /**

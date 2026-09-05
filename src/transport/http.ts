@@ -19,7 +19,6 @@ import { createServer as createHttpServer } from 'node:http';
 import type { Express, NextFunction, Request, Response } from 'express';
 
 import { formatUnknownErrorMessage } from '../core/errors.js';
-import { assertFleetRequestStateKey } from '../core/input-required.js';
 import { Logger } from '../core/observability.js';
 import { PageSnapshotStore } from '../core/page-store.js';
 import { PathGuard } from '../core/path.js';
@@ -285,16 +284,8 @@ export async function startHttpServer(
   config: RuntimeConfig = {},
 ): Promise<Server> {
   const httpHost = config.httpHost ?? '127.0.0.1';
-  const { apiKey, eventBus } = config;
-  const fleet = config.deploymentMode === 'fleet';
+  const { apiKey } = config;
   assertHttpBindingPolicy(httpHost, apiKey);
-  if (fleet && !apiKey) {
-    throw new Error('Fleet deployment mode requires an API key.');
-  }
-  if (fleet && !eventBus) {
-    throw new Error('Fleet deployment mode requires a shared event bus.');
-  }
-  assertFleetRequestStateKey(fleet);
   const allowedHosts = resolveAllowedHosts(httpHost, process.env['FS_ALLOWED_HOSTS']);
   assertHttpHostPolicy(
     httpHost,
@@ -337,7 +328,6 @@ export async function startHttpServer(
     ),
     {
       legacy: 'reject',
-      ...(eventBus ? { bus: eventBus } : {}),
       onerror: (error: Error) => {
         Logger.error('[HTTP] modern leg error:', formatUnknownErrorMessage(error));
       },
