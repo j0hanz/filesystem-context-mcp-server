@@ -274,7 +274,7 @@ describe('Inspector CLI: Stdio Integration & Conformance', { skip: inspectorSkip
   it('INSP-STDIO-009: tools/call out-of-boundary path traversal returns ACCESS_DENIED', async () => {
     const badPath = join(tmpDir, '../../../../etc/shadow');
     const res = await executeInspectorCli<{
-      structuredContent?: {
+      _meta?: {
         results?: { error?: { code?: string; message?: string } }[];
       };
     }>({
@@ -295,7 +295,7 @@ describe('Inspector CLI: Stdio Integration & Conformance', { skip: inspectorSkip
       5,
       `Out-of-root access should surface as a tool error (exit 5). Actual: ${res.exitCode}, stdout: ${res.stdout}`,
     );
-    const firstResult = res.json?.structuredContent?.results?.[0];
+    const firstResult = res.json?._meta?.results?.[0];
     assert.strictEqual(firstResult?.error?.code, 'ACCESS_DENIED');
   });
 

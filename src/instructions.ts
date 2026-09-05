@@ -69,8 +69,8 @@ export function buildSectionsRecord(readOnly: boolean): Record<string, string> {
       'legacy_roots: Legacy clients may additionally seed roots through the deprecated roots/list flow.',
       'sensitive_paths: Sensitive file paths (.env, *.pem, *id_rsa*) are denied by default.',
       `enforced_limits: max file size ${maxFileMb} MB, file search cap ${MAX_SEARCH_RESULTS} results, content search cap ${DEFAULT_SEARCH_CONTENT_RESULTS} matches.`,
-      'ephemeral_results: When a tool returns resourceUri, call resources/read immediately — cached results are ephemeral and expire after ~60 seconds, eviction, or restart.',
-      'pagination: nextCursor is backed by a snapshot on the same ~60s clock. Page through promptly; if a cursor is rejected, start again without one. resourceUri appears on the first page only.',
+      'ephemeral_results: When a result carries a resource_link or a resourceUri (in structuredContent or _meta), call resources/read immediately — cached results are ephemeral and expire after ~60 seconds, eviction, or restart.',
+      'pagination: nextCursor appears in the text (list) or _meta (find_files, search_text) and is backed by a snapshot on the same ~60s clock. Page through promptly; if a cursor is rejected, start again without one. resourceUri appears on the first page only.',
       '```',
     ].join('\n'),
     error_recovery: [

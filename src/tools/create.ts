@@ -6,7 +6,6 @@ import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
 import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { formatBytes, joinRoster } from '../core/fmt.js';
 import { detectMimeFromContent } from '../core/mime.js';
 import { countLines } from '../core/read.js';
 import {
@@ -62,26 +61,6 @@ const CreateOutputSchema = z.strictObject({
 });
 
 type CreateFileResult = z.infer<typeof CreateFileResultSchema>;
-
-function buildSummary(results: readonly CreateFileResult[], failCount: number): string {
-  if (results.length === 1 && failCount === 0) {
-    const result = results[0];
-    if (result) {
-      return [
-        `create: ${basename(result.path)}`,
-        formatBytes(result.size),
-        `${String(result.lineCount)} lines`,
-      ].join(' \u00b7 ');
-    }
-  }
-  // Name what was written. "create: 3 files" made the caller open
-  // structuredContent to learn which three \u2014 every other write tool answers
-  // with its roster.
-  const names = joinRoster(results.map((r) => basename(r.path)));
-  const parts = [`create: ${names || 'nothing'}`];
-  if (failCount > 0) parts.push(`${String(failCount)} failed`);
-  return parts.join(' \u00b7 ');
-}
 
 export const CREATE = defineTool({
   name: 'create',
@@ -159,13 +138,15 @@ export const CREATE = defineTool({
       files: results,
       ...(failures.length > 0 ? { failures } : {}),
     };
-    const summary = buildSummary(results, failures.length);
-
+    // No `text` on purpose. The one-line roster this used to build named the
+    // paths and dropped every per-file size, line count and error the caller
+    // asked `create` for. Supplying no text makes this a data tool, so
+    // `define.ts` renders the JSON and keeps it in `structuredContent`.
     if (links.length > 0) {
-      return { structured, text: summary, resources: links };
+      return { structured, resources: links };
     }
 
-    return { structured, text: summary };
+    return { structured };
   },
   progress: (args) => ({
     label: 'Create',

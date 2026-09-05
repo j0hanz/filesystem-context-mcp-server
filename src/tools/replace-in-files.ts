@@ -659,9 +659,6 @@ export const SEARCH_AND_REPLACE = defineTool({
     'Literal matching by default; set isRegex=true to enable RE2 regex with capture groups ($1, $2).',
   input: SearchAndReplaceInputSchema,
   output: SearchAndReplaceOutputSchema,
-  // results[].value XOR results[].error, and `summary` counts files while
-  // `totalMatches` counts replacements — not inferable from the description.
-  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,

@@ -1,8 +1,6 @@
 import { basename } from 'node:path';
 import { stripVTControlCharacters, styleText } from 'node:util';
 
-import { GIB, KIB, MIB } from './util.js';
-
 export interface ProgressCtx {
   label: string;
   subject?: string;
@@ -55,22 +53,6 @@ function buildBody(ctx: ProgressCtx, phase: Phase): string {
 export function plainMessage(phase: Phase, ctx: ProgressCtx): string {
   const body = buildBody(ctx, phase);
   return body ? `${ctx.label}: ${body}` : `${ctx.label}:`;
-}
-
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) {
-    return '0 B';
-  }
-  if (bytes < KIB) {
-    return `${bytes} B`;
-  }
-  if (bytes < MIB) {
-    return `${(bytes / KIB).toFixed(1)} KB`;
-  }
-  if (bytes < GIB) {
-    return `${(bytes / MIB).toFixed(1)} MB`;
-  }
-  return `${(bytes / GIB).toFixed(1)} GB`;
 }
 
 export function formatCount(count: number, singular: string, plural = `${singular}s`): string {

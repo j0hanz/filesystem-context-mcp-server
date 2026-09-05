@@ -525,8 +525,6 @@ export const EDIT = defineTool({
     'For glob-based bulk regex replacement across many files, use replace_text instead.',
   input: EditFileInputSchema,
   output: EditFileOutputSchema,
-  // Same per-path union as read, plus diff, which is present only under dryRun.
-  publishOutputSchema: true,
   annotations: {
     readOnlyHint: false,
     idempotentHint: false,

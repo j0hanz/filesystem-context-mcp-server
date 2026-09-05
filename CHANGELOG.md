@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking for programmatic consumers.** Tools that return a text result
+  (`read`, `list`, `diff`, `patch`, `edit`, `delete`, `move`, `replace_text`,
+  `search_text`, `find_files`) now ship their metadata under `_meta` instead of
+  `structuredContent`. Clients that treat `structuredContent` as the canonical
+  model view — Claude Code among them — discard the text blocks whenever it is
+  present, so the model never saw the file `read` returned or the tree from
+  `list`. The metadata is the same object under a different field.
+- `read` appends a `// truncated:` line carrying the continuation args, and a
+  `// sha256:` line when `includeHash` is set, after a blank line so neither can
+  be read as file bytes. `list` appends a `nextCursor:` line, and a `truncated:`
+  notice on hard-cap overflow.
+- No tool publishes an `outputSchema` any more. Publishing one obliges the
+  result to carry `structuredContent`, which every publisher has stopped doing.
+- `stat`, `create` and `list_roots` no longer return a one-line text summary.
+  Their value is the metadata, so they return JSON text and keep
+  `structuredContent`.
+
 ## [2.0.0] - 2026-08-27
 
 This is a breaking release. Every tool name and every environment variable

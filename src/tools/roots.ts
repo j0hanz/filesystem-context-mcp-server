@@ -24,12 +24,11 @@ export const LIST_ALLOWED_DIRECTORIES = defineTool({
   },
   run: (_args, ctx) => {
     const dirs = ctx.fs.pathGuard.getAllowedDirectories();
-    const structured = { roots: [...dirs] };
-    const text =
-      dirs.length > 0
-        ? dirs.join('\n')
-        : 'No allowed directories. Please configure allowed directories using CLI arguments, the FS_ALLOWED_DIRS environment variable, or --allow-cwd.';
-    return Promise.resolve({ structured, text });
+    // No `text` on purpose. A newline-joined path list and the JSON say the
+    // same thing, and the JSON is the shape every caller of this tool parses.
+    // Supplying no text makes this a data tool, so `define.ts` renders the JSON
+    // and keeps it in `structuredContent`.
+    return Promise.resolve({ structured: { roots: [...dirs] } });
   },
 
   defaultErrorCode: ErrorCode.UNKNOWN,

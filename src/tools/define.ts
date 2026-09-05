@@ -248,17 +248,28 @@ function isTotalBatchFailure(structured: unknown): boolean {
 }
 
 /**
- * The spec asks a structured result to *also* carry the JSON as a text block,
- * for clients that read only `content`. Where a tool supplies its own `text`
- * (list's ASCII tree, read's file) that serves such a client better, so it
- * wins; tools with no `text` still fall back to the JSON.
+ * Claude Code — and any client that treats `structuredContent` as the canonical
+ * model view — discards the `text` blocks when `structuredContent` is present,
+ * showing the model `JSON.stringify(structuredContent)` instead. A tool that
+ * authored a text result (list's ASCII tree, read's file) meant that text for
+ * the model, so it ships its metadata under `_meta`, which no client renders in
+ * place of the content. Tools with no `text` keep `structuredContent`: the JSON
+ * *is* their model-facing view.
  */
 function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
+  const hasText = result.text !== undefined;
   const text = result.text ?? JSON.stringify(result.structured);
   const content: ContentBlock[] = [{ type: 'text' as const, text }, ...(result.resources ?? [])];
   return {
     content,
-    structuredContent: result.structured,
+    ...(hasText
+      ? // Safe because every `ToolDef.output` is a Zod object schema, so
+        // `structured` is always a plain object. Constraining `O` to prove it
+        // is not worth the cost: the bound has to thread through five generic
+        // sites and still loses to `exactOptionalPropertyTypes` variance on
+        // `RunResult`'s optional fields.
+        { _meta: result.structured as Record<string, unknown> }
+      : { structuredContent: result.structured }),
     ...(isTotalBatchFailure(result.structured) ? { isError: true } : {}),
   };
 }

@@ -97,8 +97,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     assert.ok(typeof data === 'string');
     assert.strictEqual(Buffer.from(data, 'base64').equals(pngBytes), true);
 
-    const structured = result.structuredContent as
-      { results?: { value?: { kind?: string } }[] } | undefined;
+    const structured = result._meta as { results?: { value?: { kind?: string } }[] } | undefined;
     assert.strictEqual(structured?.results?.[0]?.value?.kind, 'image');
   });
 
@@ -403,7 +402,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { paths: [file] },
     });
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as
+    const structured = result._meta as
       | {
           results?: { path?: string; value?: { deleted?: boolean } }[];
           summary?: { failed?: number };
@@ -461,7 +460,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     });
     assert.notStrictEqual(result.isError, true);
 
-    const structured = result.structuredContent as {
+    const structured = result._meta as {
       results?: { value?: { resourceUri?: string } }[];
     };
     const resourceUri = structured.results?.[0]?.value?.resourceUri;
@@ -658,6 +657,59 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
   });
 
+  it('TC-FUNC-073: text tools ship metadata under _meta, data tools under structuredContent', async () => {
+    const file = join(tmpDir, 'meta_split.txt');
+    await writeFile(file, 'one\ntwo\n');
+
+    // read authors its own text (the file), so its metadata moves to _meta —
+    // a client that keys on structuredContent would otherwise hide the bytes.
+    const readRes = await harness.client.callTool({ name: 'read', arguments: { path: file } });
+    assert.notStrictEqual(readRes.isError, true);
+    assert.strictEqual(readRes.structuredContent, undefined);
+    const readMeta = readRes._meta as { summary?: { succeeded?: number } };
+    assert.strictEqual(readMeta.summary?.succeeded, 1);
+
+    // stat authors no text, so the JSON *is* its model-facing view and stays
+    // where a programmatic client already looks for it.
+    const statRes = await harness.client.callTool({ name: 'stat', arguments: { path: file } });
+    assert.notStrictEqual(statRes.isError, true);
+    assert.strictEqual(statRes._meta, undefined);
+    const statStructured = statRes.structuredContent as { summary?: { succeeded?: number } };
+    assert.strictEqual(statStructured.summary?.succeeded, 1);
+  });
+
+  it('TC-FUNC-074: read trailer carries continuation and hash', async () => {
+    const file = join(tmpDir, 'trailer.txt');
+    const body = Array.from({ length: 30 }, (_v, i) => `line${String(i + 1)}`).join('\n');
+    await writeFile(file, `${body}\n`);
+
+    const head = await harness.client.callTool({
+      name: 'read',
+      arguments: { path: file, head: 10, includeHash: true },
+    });
+    const headText = firstTextBlock(head).text ?? '';
+    assert.match(headText, /^\/\/ truncated: .*"startLine":11,"endLine":20\}$/m);
+    assert.match(headText, /^\/\/ sha256: [0-9a-f]{64}$/m);
+    // The file's own lines survive ahead of the trailer, unaltered.
+    assert.ok(headText.startsWith('line1\nline2\n'), headText.slice(0, 40));
+    assert.ok(headText.indexOf('line10') < headText.indexOf('// truncated'));
+
+    // A whole-file read is not truncated and was not asked for a hash.
+    const full = await harness.client.callTool({ name: 'read', arguments: { path: file } });
+    const fullText = firstTextBlock(full).text ?? '';
+    assert.ok(!fullText.includes('// truncated'), 'a full read is not truncated');
+    assert.ok(!fullText.includes('// sha256'), 'no hash unless includeHash');
+
+    // tail has no args that read backwards, so it reports what it showed.
+    const tail = await harness.client.callTool({
+      name: 'read',
+      arguments: { path: file, tail: 10 },
+    });
+    const tailText = firstTextBlock(tail).text ?? '';
+    assert.match(tailText, /^\/\/ truncated: showing last 10 lines$/m);
+    assert.ok(!tailText.includes('Continue:'), 'tail offers no continuation args');
+  });
+
   it('TC-FUNC-060: diff two files returns a unified diff', async () => {
     const a = join(tmpDir, 'diff_a.txt');
     const b = join(tmpDir, 'diff_b.txt');
@@ -668,13 +720,13 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { a, b },
     });
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as {
+    const structured = result._meta as {
       linesAdded?: number;
       linesRemoved?: number;
     };
     assert.strictEqual(structured.linesAdded, 1);
     assert.strictEqual(structured.linesRemoved, 1);
-    // The diff itself rides the text content block, not structuredContent.
+    // The diff itself rides the text content block, not _meta.
     const diffText = (result.content as { type: string; text?: string }[])
       .filter((c) => c.type === 'text')
       .map((c) => c.text ?? '')
@@ -710,7 +762,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'list',
       arguments: { path: sub, maxEntries: 2 },
     });
-    const s1 = r1.structuredContent as {
+    const s1 = r1._meta as {
       nextCursor?: string;
       entryCount?: number;
       resourceUri?: string;
@@ -726,9 +778,33 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'list',
       arguments: { path: sub, maxEntries: 2, cursor: s1.nextCursor },
     });
-    const s2 = r2.structuredContent as { nextCursor?: string; entryCount?: number };
+    const s2 = r2._meta as { nextCursor?: string; entryCount?: number };
     assert.strictEqual(s2.entryCount, 2);
     assert.ok(!s2.nextCursor, 'second page is the last');
+  });
+
+  it('TC-FUNC-075: list text carries nextCursor', async () => {
+    const sub = join(tmpDir, 'cursor_text_dir');
+    await mkdir(sub, { recursive: true });
+    for (let i = 0; i < 4; i++) await writeFile(join(sub, `g${String(i)}.txt`), 'x');
+
+    const first = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 2 },
+    });
+    const firstText = firstTextBlock(first).text ?? '';
+    const match = /^nextCursor: (\S+)$/m.exec(firstText);
+    assert.ok(match, `first page text should carry a nextCursor line: ${firstText}`);
+    const cursor = match[1];
+    // The model passes back verbatim what it read, so the two must agree.
+    assert.strictEqual(cursor, (first._meta as { nextCursor?: string }).nextCursor);
+
+    const second = await harness.client.callTool({
+      name: 'list',
+      arguments: { path: sub, maxEntries: 2, cursor },
+    });
+    const secondText = firstTextBlock(second).text ?? '';
+    assert.ok(!/^nextCursor: /m.test(secondText), 'last page advertises no next page');
   });
 
   it('TC-FUNC-063b: list pages are stable and query-bound', async () => {
@@ -741,7 +817,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'list',
       arguments: { path: sub, maxEntries: 1 },
     });
-    const firstStructured = first.structuredContent as {
+    const firstStructured = first._meta as {
       entries?: { name: string }[];
       nextCursor?: string;
     };
@@ -754,7 +830,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: sub, maxEntries: 10, cursor },
     });
     assert.notStrictEqual(second.isError, true);
-    const secondStructured = second.structuredContent as { entries?: { name: string }[] };
+    const secondStructured = second._meta as { entries?: { name: string }[] };
     assert.deepStrictEqual(
       [...(firstStructured.entries ?? []), ...(secondStructured.entries ?? [])].map(
         (entry) => entry.name,
@@ -829,7 +905,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { moves: [{ source: src, destination: dst }], copy: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      const s = result._meta as { moves?: unknown[]; skipped?: string[] };
       assert.strictEqual(s.moves?.length, 0);
       assert.ok(s.skipped?.includes(dst));
       assert.strictEqual(await readFile(dst, 'utf-8'), 'existing dst');
@@ -853,7 +929,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { moves: [{ source: src, destination: dst }], copy: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      const s = result._meta as { moves?: unknown[]; skipped?: string[] };
       assert.strictEqual(s.moves?.length, 1);
       assert.strictEqual(s.skipped, undefined);
       assert.strictEqual(await readFile(dst, 'utf-8'), 'new source');
@@ -877,7 +953,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { moves: [{ source: src, destination: dst }] },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      const s = result._meta as { moves?: unknown[]; skipped?: string[] };
       assert.strictEqual(s.moves?.length, 0);
       assert.ok(s.skipped?.includes(dst));
       assert.strictEqual(await readFile(src, 'utf-8'), 'move me');
@@ -902,7 +978,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { moves: [{ source: src, destination: dst }] },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as { moves?: unknown[]; skipped?: string[] };
+      const s = result._meta as { moves?: unknown[]; skipped?: string[] };
       assert.strictEqual(s.moves?.length, 1);
       assert.strictEqual(s.skipped, undefined);
       assert.strictEqual(await readFile(dst, 'utf-8'), 'move me');
@@ -925,7 +1001,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { paths: [dir], recursive: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as {
+      const s = result._meta as {
         results?: { path?: string; value?: { deleted?: boolean }; error?: unknown }[];
         summary?: { failed?: number };
       };
@@ -956,7 +1032,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { paths: [dir], recursive: true },
       });
       assert.notStrictEqual(result.isError, true);
-      const s = result.structuredContent as {
+      const s = result._meta as {
         results?: { path?: string; value?: { deleted?: boolean } }[];
         summary?: { failed?: number };
       };
@@ -1046,7 +1122,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
             },
           });
           assert.notStrictEqual(result.isError, true);
-          const s = result.structuredContent as {
+          const s = result._meta as {
             moves?: { from?: string; to?: string }[];
             failures?: { source?: string; error?: { code?: string } }[];
           };
@@ -1101,7 +1177,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
             },
           });
           assert.notStrictEqual(result.isError, true);
-          const s = result.structuredContent as { moves?: unknown[] };
+          const s = result._meta as { moves?: unknown[] };
           assert.strictEqual(s.moves?.length, 1, 'offered accepted dir is granted');
 
           // secretDir was never offered -> not granted -> read fails ACCESS_DENIED.
@@ -1109,7 +1185,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
             name: 'read',
             arguments: { path: join(secretDir, 'secret.txt') },
           });
-          const rs = readRes.structuredContent as {
+          const rs = readRes._meta as {
             results?: { error?: { code?: string } }[];
             summary?: { failed?: number };
           };
@@ -1142,7 +1218,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { pattern: '**/*.txt' },
     });
     assert.notStrictEqual(result.isError, true);
-    const sc = result.structuredContent as { results?: { path: string }[] };
+    const sc = result._meta as { results?: { path: string }[] };
     assert.ok(sc.results?.some((r) => r.path.endsWith('findme.txt')));
   });
 
@@ -1155,7 +1231,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'find_files',
       arguments: { path: dir, pattern: '*.txt', maxResults: 1 },
     });
-    const firstStructured = first.structuredContent as {
+    const firstStructured = first._meta as {
       results?: { path: string }[];
       nextCursor?: string;
       resourceUri?: string;
@@ -1172,7 +1248,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: dir, pattern: '*.txt', maxResults: 10, cursor },
     });
     assert.notStrictEqual(second.isError, true);
-    const secondStructured = second.structuredContent as {
+    const secondStructured = second._meta as {
       results?: { path: string }[];
       resourceUri?: string;
     };
@@ -1262,7 +1338,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: dir, searchPattern: 'NEEDLE_MARK' },
     });
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as {
+    const structured = result._meta as {
       matches?: { line?: number; content?: string }[];
       totalMatches?: number;
     };
@@ -1277,7 +1353,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       name: 'search_text',
       arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 1 },
     });
-    const firstStructured = first.structuredContent as {
+    const firstStructured = first._meta as {
       matches?: { content: string }[];
       nextCursor?: string;
     };
@@ -1290,7 +1366,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 10, cursor },
     });
     assert.notStrictEqual(second.isError, true);
-    const secondStructured = second.structuredContent as { matches?: { content: string }[] };
+    const secondStructured = second._meta as { matches?: { content: string }[] };
     assert.deepStrictEqual(
       [...(firstStructured.matches ?? []), ...(secondStructured.matches ?? [])].map(
         (match) => match.content,
@@ -1317,7 +1393,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         name: 'list',
         arguments: { path: join(root, 'http-pages'), maxEntries: 1 },
       });
-      const firstStructured = first.structuredContent as { nextCursor?: string };
+      const firstStructured = first._meta as { nextCursor?: string };
       const cursor = firstStructured.nextCursor;
       assert.ok(cursor);
 
@@ -1326,7 +1402,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         arguments: { path: join(root, 'http-pages'), maxEntries: 10, cursor },
       });
       assert.notStrictEqual(second.isError, true);
-      const secondStructured = second.structuredContent as { entries?: { name: string }[] };
+      const secondStructured = second._meta as { entries?: { name: string }[] };
       assert.deepStrictEqual(
         secondStructured.entries?.map((entry) => entry.name),
         ['charlie.txt'],
@@ -1356,34 +1432,15 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       );
     }
 
-    // Only the three tools whose result shape is a union still publish an
-    // outputSchema; the rest return a flat object their description names.
-    for (const name of ['create', 'patch', 'stat']) {
-      const tool = tools.find((t) => t.name === name);
-      assert.ok(tool, `${name} must be registered`);
-      assert.strictEqual(tool.outputSchema, undefined, `${name} must not publish an outputSchema`);
-    }
-
-    for (const name of ['edit']) {
-      const tool = tools.find((t) => t.name === name);
-      assert.ok(tool, `${name} must be registered`);
-      const serialized = JSON.stringify(tool.outputSchema);
+    // No tool publishes an outputSchema any more. Publishing one obliges the
+    // result to carry structuredContent, and every tool that used to publish
+    // (read, edit, delete, replace_text) authors its own text and now ships its
+    // metadata under _meta instead — the two are mutually exclusive.
+    for (const tool of tools) {
       assert.strictEqual(
-        (tool.outputSchema as { $defs?: unknown }).$defs,
+        tool.outputSchema,
         undefined,
-        `${name} outputSchema must be dereferenced (no $defs)`,
-      );
-      assert.ok(
-        serialized.includes('"format":"date-time"'),
-        `${name} must keep the date-time format keyword inline`,
-      );
-      // Use-site guard: `02-29` is the leap-day branch unique to zod's calendar
-      // regex. Asserting over the whole serialized schema is what catches a
-      // mechanism that relocates the regex to each use site instead of
-      // removing it.
-      assert.ok(
-        !serialized.includes('02-29'),
-        `${name} must not carry the calendar regex at any use site`,
+        `${tool.name} must not publish an outputSchema`,
       );
     }
 
