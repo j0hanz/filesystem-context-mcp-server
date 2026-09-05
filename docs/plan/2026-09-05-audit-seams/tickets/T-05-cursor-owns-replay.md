@@ -3,7 +3,7 @@ kind: frontier-ticket
 id: T-05
 title: Own page replay and the externalization trigger in core/cursor.ts; retire FS_MAX_INLINE_MATCHES
 map: M-01
-status: open
+status: closed
 type: task
 priority: 30
 blocked_by: [T-02, T-04, T-06, T-07]
@@ -60,3 +60,51 @@ Priority 30: last in the landing order; the only behavior-changing task.
 
 Completion per the map's execution contract: `node scripts/tasks.mjs` exits 0
 on the landing commit; record in [`audit-seams.run.md`](../audit-seams.run.md).
+
+## Resolution
+
+Classification: **Delivered** under the map's execution contract.
+
+- `src/core/cursor.ts` gains `paginate<T, M, R>({ store, queryKey, cursor,
+  pageSize, produce, externalize? })` plus `ProducedPage`/`PaginatedPage`. A
+  cursor replays via `readNextPage`; otherwise `produce()` runs the query,
+  `createFirstPage` snapshots it, and when `items.length > pageSize ||
+  truncated` the optional `externalize(items, metadata)` runs — first page
+  only. Replayed pages carry no `resource` and mint nothing. `resourceUri` is
+  no longer stored in any snapshot's metadata, so the first-page-only rule is
+  structural rather than a strip on replay.
+- `list.ts`, `search-files.ts`, `search-content.ts`: the three hand-rolled
+  branches are gone; each hands `paginate` a `produce` (validate, scan, build
+  metadata, report the engine's `truncated`) and an `externalize` (its
+  `putJsonResource` call) and places `paged.resource?.entry.uri` on the
+  output. `ListPageMetadata` and `SearchFilesPageMetadata` lose `resourceUri`;
+  the three `*Output()` builders take `nextCursor` and `resourceUri` as
+  arguments.
+- `search-content.ts`: `CONFIG.MAX_INLINE_MATCHES`, `SearchPreviewState`,
+  `buildSearchPreviewState`, `buildExternalizedResponse`, `finalizeSearchOutput`
+  deleted. `FS_MAX_INLINE_MATCHES` is read once at module load only to
+  `Logger.warn` (T-04). `truncated` comes solely from `result.summary.truncated`
+  (T-06); schema text at the former `:141` and `:149-151` rewritten.
+- Text rewritten: `list.ts` `maxEntries` description, `resourceUri`
+  description, tool description, and the trailer (no longer says "truncated"
+  for a paged list); `search-files.ts` `resourceUri` description (the
+  split-rule comment went with the branch). `instructions.ts:70-71` untouched.
+- Tests: `TC-FUNC-063` inverted (first page carries `resourceUri`, second does
+  not); new `search_text externalizes the full match list on the first page
+  only` (120 matches, `maxResults: 60`) — red under the old code on the
+  continuation page, green now; also pins `truncated` absent when paging.
+- CHANGELOG `## [Unreleased]`: `### Changed` (one trigger for three tools;
+  `search_text` whole-page inline and `truncated` meaning), `### Deprecated`
+  (`FS_MAX_INLINE_MATCHES`, naming `maxResults`). `README.md` and
+  `cli-help.ts` entries marked deprecated. `CHANGELOG.md:168` untouched.
+- Net: 9 files, +322 / −275 overall; source alone is a deletion
+  (`search-content.ts` −75, `cursor.ts` +60, the other two neutral).
+
+Completion check: red-first run → 2 fail; `node scripts/tasks.mjs` → exit 0,
+274 pass / 0 fail, static gate clean. Evidence:
+[`audit-seams.run.md`](../audit-seams.run.md), entry T-05. Commit `4c8dd15c`
+on `main`.
+
+Material uncertainty: none. One deviation: the landing commit's subject was
+first written with a `!` breaking-change marker and amended to drop it, since
+T-04 ruled this release non-major.

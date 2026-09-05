@@ -2,7 +2,7 @@
 kind: frontier-map
 id: M-01
 title: Land the three architecture-audit seams
-status: open
+status: closed
 created: 2026-09-05T21:34:00Z
 ---
 
@@ -61,15 +61,13 @@ serving both legs. `node scripts/tasks.mjs` exits 0 after each commit.
 - [Hand total-batch-failure to batch.ts and drop the shape sniff in define.ts](tickets/T-02-iserror-handoff.md) — Delivered: `5cf5e0b1`; `RunResult.isError?`, `isTotalFailure()` in `batch.ts` over either count shape, seven tools set it, `isTotalBatchFailure` deleted; check exit 0, 273/0, pinned batch tests unmodified.
 - [Does retiring FS_MAX_INLINE_MATCHES ship as a MAJOR removal or a MINOR accept-and-ignore?](tickets/T-04-inline-matches-semver.md) — MINOR accept-and-ignore: still read only to log one startup warning naming `maxResults`; no effect on output; CHANGELOG `### Deprecated`; help and README mark it deprecated; real removal at the next major.
 - [What does search_text.truncated mean once the inline cap is gone?](tickets/T-06-search-text-truncated.md) — A: engine hard-cap or timeout only (`result.summary.truncated`); paging and externalization are not truncation; field stays, description at `search-content.ts:141` rewritten.
+- [Own page replay and the externalization trigger in core/cursor.ts; retire FS_MAX_INLINE_MATCHES](tickets/T-05-cursor-owns-replay.md) — Delivered: `4c8dd15c`; `paginate()` in `core/cursor.ts` owns the branch, the any-incompleteness trigger, and first-page-only externalization for all three tools; `search_text` preview machinery deleted, env var warns only; red-first regression then 274/0.
 - [Which tests and call sites does the isError hand-off touch?](tickets/T-03-iserror-blast-radius.md) — seven tools (`create`, `move`, `read`, `edit`, `stat`, `delete`, `replace_text`); three build `summary` by hand, so the predicate takes a bare `{ total, failed }`; four total-failure and three partial-failure tests pin the rule and stay unmodified.
 - [Which tests, docs, and schema texts encode the three externalization rules?](tickets/T-07-externalization-blast-radius.md) — one test flips (`tools.test.ts:790-794`, `TC-FUNC-063`); eight text strings rewrite, `instructions.ts:70-71` already matches; `FS_MAX_INLINE_MATCHES` has one read and two doc mentions; `find_files` has no `truncated` output field at all.
 
 ## Not yet specified
 
-- `replace_files` (`src/tools/replace-in-files.ts`) has `maxResults` and its
-  own `truncated` but no cursor. Whether the trigger helper T-05 lands is
-  callable from a tool that does not paginate — and whether `replace_files`
-  should call it — waits on the shape T-05 gives that helper.
+_Empty — every patch graduated or was ruled out of scope._
 
 ## Out of scope
 
@@ -79,7 +77,35 @@ serving both legs. `node scripts/tasks.mjs` exits 0 after each commit.
 - Deleting the `FS_MAX_INLINE_MATCHES` read and its deprecation warning — a
   next-major follow-up, ruled past the destination when T-04 chose
   accept-and-ignore.
+- `replace_files` joining the externalization rule — ruled out at T-05's
+  redraw: `paginate()` takes a cursor and a page store, so `replace_files`
+  (`src/tools/replace-in-files.ts`, `maxResults` but no cursor) cannot call it
+  without first gaining pagination, which is new tool behavior beyond this
+  map's destination. Its own `resultsTruncated`/`diffTruncated` stay as they
+  are.
 
 ## Superseded
 
-<!-- closed tickets a later decision invalidated; link each ticket and its replacement -->
+_None._
+
+## Closure record
+
+Closed 2026-09-05. All three audit findings are on `main`, each as its own
+revertable commit, each checked by `node scripts/tasks.mjs` → exit 0:
+
+| Finding | Ticket | Commit | Check |
+| :-- | :-- | :-- | :-- |
+| #3 http-policy into transport/, one envelope | T-01 | `fee482cb` | 273 / 0 |
+| #2 tools declare `isError`, batch.ts owns the rule | T-02 | `5cf5e0b1` | 273 / 0 |
+| #1 cursor.ts owns replay + trigger; env var deprecated | T-05 | `4c8dd15c` | 274 / 0 |
+
+Execution-contract evidence: [`audit-seams.run.md`](audit-seams.run.md).
+
+**Next handoff.** No executable handoff remains: the map carried execution and
+every task delivered. Two records outlive it and are worth a
+`write-adr` each if
+the repo starts keeping ADRs: the cross-tool externalization rule (first page
+only, on any incompleteness) now living in `core/cursor.ts`'s `paginate`
+comment and the CHANGELOG, and the `isError` contract (tools declare it; the
+executor never inspects output shape) in `batch.ts`'s `isTotalFailure`
+comment. The three **Out of scope** items return only as fresh efforts.
