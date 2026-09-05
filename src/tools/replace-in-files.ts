@@ -44,6 +44,7 @@ import {
   MAX_SEARCH_RESULTS,
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
+import { isTotalFailure } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
 const SearchAndReplaceInputSchema = z.strictObject({
@@ -684,9 +685,10 @@ export const SEARCH_AND_REPLACE = defineTool({
       ` \u00b7 ${String(structured.totalMatches)} match(es)` +
       ` in ${String(structured.summary.succeeded)} file(s)` +
       (structured.summary.failed > 0 ? ` \u00b7 ${String(structured.summary.failed)} failed` : '');
+    const isError = isTotalFailure(structured.summary);
     if (link) {
-      return { structured, text: summaryText, resources: [link] };
+      return { structured, text: summaryText, resources: [link], isError };
     }
-    return { structured, text: summaryText };
+    return { structured, text: summaryText, isError };
   },
 });

@@ -25,7 +25,7 @@ import {
 import type { Regex } from '../core/search.js';
 import { compileRegex, freeRegex } from '../core/search.js';
 import type { ResourceStore } from '../core/store.js';
-import { runOverPaths } from './batch.js';
+import { isTotalFailure, runOverPaths } from './batch.js';
 import { defineTool, type ToolCtx } from './define.js';
 
 const EditSpecSchema = z
@@ -582,6 +582,7 @@ export const EDIT = defineTool({
         summary: batch.summary,
       },
       text: summaryText,
+      isError: isTotalFailure(batch.summary),
       ...(resourceLinks.length > 0 ? { resources: resourceLinks } : {}),
     };
   },

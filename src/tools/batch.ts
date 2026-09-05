@@ -124,6 +124,31 @@ export interface PairBatchOutcome<TResult> {
   failures: PairFailureItem[];
 }
 
+/**
+ * A batch where every requested item failed produced no work at all, so it is a
+ * failed call — `isError` must say so. Partial failure is deliberately NOT an
+ * error: the per-item entries carry which failed, and the succeeded ones really
+ * were done. A skipped item is work the caller asked to skip, not work that
+ * failed — a self-move that was silently dropped means the call did something.
+ * Zero items is not a failure either.
+ *
+ * Takes either count shape a batch tool holds at its return site: a `summary`
+ * (`runOverPaths`, or the hand-built ones in `read`, `delete`, `replace_text`)
+ * or a pair outcome (`runOverPairs`).
+ */
+export function isTotalFailure(
+  shape:
+    | { readonly total: number; readonly failed: number }
+    | {
+        readonly results: readonly unknown[];
+        readonly skipped: readonly unknown[];
+        readonly failures: readonly unknown[];
+      },
+): boolean {
+  if ('total' in shape) return shape.total > 0 && shape.failed === shape.total;
+  return shape.failures.length > 0 && shape.results.length + shape.skipped.length === 0;
+}
+
 export function pairFailure(
   pair: { source: string; destination: string },
   error: unknown,

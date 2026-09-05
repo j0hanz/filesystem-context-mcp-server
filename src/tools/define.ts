@@ -95,6 +95,12 @@ interface RunResult<T> {
   readonly structured: T;
   readonly text?: string;
   readonly resources?: ContentBlock[];
+  /**
+   * The call as a whole failed. Batch tools set it from `isTotalFailure` in
+   * `batch.ts` — every requested item failed — so the executor never has to
+   * know a tool's output shape. Absent or `false` means the call did work.
+   */
+  readonly isError?: boolean;
 }
 
 /**
@@ -204,41 +210,6 @@ function composeSignal(base: AbortSignal, timeoutMs?: number): AbortSignal {
 }
 
 /**
- * A batch result where every path failed. The call produced no work at all, so
- * it is a failed call — `isError` must say so. Partial failure is deliberately
- * NOT an error: the per-path entries carry which paths failed and the succeeded
- * ones really were done.
- *
- * Two result shapes reach here. Most batch tools carry a `summary`. `create` and
- * `move` do not: they publish `{files|moves, failures, skipped}` (see
- * create.ts's CreateOutputSchema and move.ts's MoveOutputSchema), so a
- * summary-only check reported a fully-denied write as a successful call. Both
- * shapes are handled here rather than by growing the two output schemas, which
- * are the client-facing contract.
- */
-function isTotalBatchFailure(structured: unknown): boolean {
-  if (typeof structured !== 'object' || structured === null) return false;
-  const result = structured as {
-    summary?: { total?: number; failed?: number };
-    failures?: unknown;
-    files?: unknown;
-    moves?: unknown;
-    skipped?: unknown;
-  };
-
-  const { summary } = result;
-  if (typeof summary?.total === 'number') {
-    return summary.total > 0 && summary.failed === summary.total;
-  }
-
-  const len = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
-  if (len(result.failures) === 0) return false;
-  // A skipped entry is work the caller asked to skip, not work that failed —
-  // a self-move that was silently dropped means the call did something.
-  return len(result.files) + len(result.moves) + len(result.skipped) === 0;
-}
-
-/**
  * Claude Code — and any client that treats `structuredContent` as the canonical
  * model view — discards the `text` blocks when `structuredContent` is present,
  * showing the model `JSON.stringify(structuredContent)` instead. A tool that
@@ -261,7 +232,7 @@ function buildSuccessResponse<O>(result: RunResult<O>): CallToolResult {
         // `RunResult`'s optional fields.
         { _meta: result.structured as Record<string, unknown> }
       : { structuredContent: result.structured }),
-    ...(isTotalBatchFailure(result.structured) ? { isError: true } : {}),
+    ...(result.isError ? { isError: true } : {}),
   };
 }
 

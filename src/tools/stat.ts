@@ -19,7 +19,7 @@ import {
 import { putJsonResource } from '../core/store.js';
 import { DEFAULT_SEARCH_TIMEOUT_MS } from '../core/util.js';
 import type { PerPathResult } from './batch.js';
-import { runOverPaths } from './batch.js';
+import { isTotalFailure, runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -256,6 +256,7 @@ export const GET_FILE_INFO = defineTool({
         dirCount,
         ...(resourceUri ? { resourceUri } : {}),
       },
+      isError: isTotalFailure(batch.summary),
       ...(resources.length > 0 ? { resources } : {}),
     };
   },

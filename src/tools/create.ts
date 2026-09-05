@@ -16,7 +16,7 @@ import {
   RequiredPath,
 } from '../core/schema.js';
 import { getMaxTextFileSize } from '../core/util.js';
-import { runOverPaths } from './batch.js';
+import { isTotalFailure, runOverPaths } from './batch.js';
 import { defineTool } from './define.js';
 
 const CreateFileItemSchema = z.strictObject({
@@ -143,10 +143,10 @@ export const CREATE = defineTool({
     // asked `create` for. Supplying no text makes this a data tool, so
     // `define.ts` renders the JSON and keeps it in `structuredContent`.
     if (links.length > 0) {
-      return { structured, resources: links };
+      return { structured, resources: links, isError: isTotalFailure(batch.summary) };
     }
 
-    return { structured };
+    return { structured, isError: isTotalFailure(batch.summary) };
   },
   progress: (args) => ({
     label: 'Create',

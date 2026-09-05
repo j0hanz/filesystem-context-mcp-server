@@ -34,7 +34,7 @@ import {
   PARALLEL_CONCURRENCY,
 } from '../core/util.js';
 import type { PerPathResult } from './batch.js';
-import { runOverPaths } from './batch.js';
+import { isTotalFailure, runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -568,6 +568,7 @@ export const READ_FILE = defineTool({
     return {
       structured: { results: structuredResults, summary },
       text,
+      isError: isTotalFailure(summary),
       ...(resources.length > 0 ? { resources } : {}),
     };
   },

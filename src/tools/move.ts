@@ -20,7 +20,7 @@ import { readAcceptedChoice } from '../core/input-required.js';
 import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path-utils.js';
 import { defaultFalseBoolean, pairFailureSchema, RequiredPath } from '../core/schema.js';
 import type { PairExecResult, PairPlanResult } from './batch.js';
-import { pairFailure, runOverPairs } from './batch.js';
+import { isTotalFailure, pairFailure, runOverPairs } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -456,14 +456,12 @@ export const MOVE = defineTool({
     // input_required is a return value, not a completed call: surface it
     // verbatim so the executor short-circuits before building a CallToolResult.
     if (isInputRequiredResult(output)) return output;
+    const failures = output.failures ?? [];
+    const skipped = output.skipped ?? [];
     return {
       structured: output,
-      text: buildSummary(
-        args.copy ? 'copy' : 'move',
-        output.moves,
-        output.failures ?? [],
-        output.skipped ?? [],
-      ),
+      text: buildSummary(args.copy ? 'copy' : 'move', output.moves, failures, skipped),
+      isError: isTotalFailure({ results: output.moves, skipped, failures }),
     };
   },
 });

@@ -25,6 +25,7 @@ import {
   RequiredPath,
 } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
+import { isTotalFailure } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -442,6 +443,7 @@ export const DELETE_FILE = defineTool({
     // without saying which two, so a partial failure was unreadable without
     // parsing the structured half.
     const { failed, total } = structured.summary;
+    const isError = isTotalFailure(structured.summary);
     // A lone failure carries its reason in the text. "delete: . FAILED (0/1 ok)"
     // made the model re-read structuredContent to learn it was ACCESS_DENIED;
     // with one path there is no ambiguity about which message applies.
@@ -450,6 +452,7 @@ export const DELETE_FILE = defineTool({
       return {
         structured,
         text: `delete: ${only?.path ?? ''} FAILED — ${only?.error?.message ?? 'unknown error'}`,
+        isError,
       };
     }
     const tokens = structured.results.map((r) => {
@@ -458,6 +461,6 @@ export const DELETE_FILE = defineTool({
       return r.value?.deleted ? label : `${label} SKIPPED`;
     });
     const ratio = failed > 0 ? ` (${String(total - failed)}/${String(total)} ok)` : '';
-    return { structured, text: `delete: ${joinRoster(tokens)}${ratio}` };
+    return { structured, text: `delete: ${joinRoster(tokens)}${ratio}`, isError };
   },
 });
