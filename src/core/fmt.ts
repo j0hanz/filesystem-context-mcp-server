@@ -11,7 +11,7 @@ export interface ProgressCtx {
   error?: string;
 }
 
-export type Phase = 'start' | 'tick' | 'done' | 'fail';
+export type Phase = 'tick' | 'done' | 'fail';
 
 function buildBody(ctx: ProgressCtx, phase: Phase): string {
   const items: string[] = [];
@@ -20,11 +20,6 @@ function buildBody(ctx: ProgressCtx, phase: Phase): string {
   }
 
   switch (phase) {
-    case 'start':
-      if (ctx.scope) {
-        items.push(ctx.scope);
-      }
-      break;
     case 'tick':
       if (ctx.current !== undefined && ctx.total !== undefined) {
         items.push(`${ctx.current}/${ctx.total}`);
