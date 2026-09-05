@@ -57,6 +57,7 @@ serving both legs. `node scripts/tasks.mjs` exits 0 after each commit.
 ## Decisions so far
 
 - [Move http-policy.ts into transport/ and give both legs one JSON-RPC envelope builder](tickets/T-01-move-http-policy.md) — Delivered: `fee482cb`; `jsonRpcError<Id>()` in `transport/shared.ts`, HTTP wraps it, stdio's two envelopes call it; check exit 0, 273/0 ([run log](audit-seams.run.md)).
+- [Hand total-batch-failure to batch.ts and drop the shape sniff in define.ts](tickets/T-02-iserror-handoff.md) — Delivered: `5cf5e0b1`; `RunResult.isError?`, `isTotalFailure()` in `batch.ts` over either count shape, seven tools set it, `isTotalBatchFailure` deleted; check exit 0, 273/0, pinned batch tests unmodified.
 - [Which tests and call sites does the isError hand-off touch?](tickets/T-03-iserror-blast-radius.md) — seven tools (`create`, `move`, `read`, `edit`, `stat`, `delete`, `replace_text`); three build `summary` by hand, so the predicate takes a bare `{ total, failed }`; four total-failure and three partial-failure tests pin the rule and stay unmodified.
 - [Which tests, docs, and schema texts encode the three externalization rules?](tickets/T-07-externalization-blast-radius.md) — one test flips (`tools.test.ts:790-794`, `TC-FUNC-063`); eight text strings rewrite, `instructions.ts:70-71` already matches; `FS_MAX_INLINE_MATCHES` has one read and two doc mentions; `find_files` has no `truncated` output field at all.
 

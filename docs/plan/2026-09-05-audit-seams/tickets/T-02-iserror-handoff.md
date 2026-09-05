@@ -3,7 +3,7 @@ kind: frontier-ticket
 id: T-02
 title: Hand total-batch-failure to batch.ts and drop the shape sniff in define.ts
 map: M-01
-status: open
+status: closed
 type: task
 priority: 20
 blocked_by: [T-01, T-03]
@@ -42,3 +42,34 @@ Completion per the map's execution contract: `node scripts/tasks.mjs` exits 0
 on the landing commit; record in [`audit-seams.run.md`](../audit-seams.run.md).
 Unblocks
 [Own page replay and the externalization trigger in core/cursor.ts; retire FS_MAX_INLINE_MATCHES](T-05-cursor-owns-replay.md).
+
+## Resolution
+
+Classification: **Delivered** under the map's execution contract.
+
+- `RunResult.isError?: boolean` added (`define.ts:98-104`, documented as set by
+  batch tools from `isTotalFailure`).
+- `batch.ts` exports `isTotalFailure(shape)` — one predicate over either count
+  shape a tool holds at its return site: `{ total, failed }` (a `summary`, from
+  `runOverPaths` or hand-built) or `{ results, skipped, failures }` (a pair
+  outcome). Rule unchanged: `total > 0 && failed === total`; for pairs,
+  `failures > 0 && results + skipped === 0`.
+- Seven tools set it: `create` and `edit`/`stat` from `batch.summary`; `read`
+  from its hand-built `summary`; `delete` and `replace_text` from
+  `structured.summary`; `move` from `{ results: output.moves, skipped,
+  failures }` with the two optional arrays defaulted once and reused by
+  `buildSummary`.
+- `buildSuccessResponse` forwards `result.isError`; `isTotalBatchFailure` and
+  its 27-line shape sniff are deleted. `define.ts` no longer names `files` or
+  `moves`.
+- Net: 9 files, +54 / −52. `define.ts` −37; the predicate's doc comment in
+  `batch.ts` carries the deletion's rationale forward.
+
+Completion check: `node scripts/tasks.mjs` → exit 0, 273 pass / 0 fail, static
+gate clean; the seven pinned batch tests (T-03 §b) passed unmodified.
+Evidence: [`audit-seams.run.md`](../audit-seams.run.md), entry T-02. Commit
+`5cf5e0b1` on `main`.
+
+Material uncertainty: none. Deviation from the estimate in the Question: net
+line count is ~0 rather than ~−13, because each of the seven tools pays one
+import and one field; the deletion is of knowledge, not lines.
