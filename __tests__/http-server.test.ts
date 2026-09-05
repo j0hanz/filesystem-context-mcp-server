@@ -1,8 +1,10 @@
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import type { Server } from 'node:http';
+import type { ClientRequest, OutgoingHttpHeaders, Server } from 'node:http';
+import { request } from 'node:http';
 import { type AddressInfo } from 'node:net';
+import { json } from 'node:stream/consumers';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
@@ -17,6 +19,33 @@ import {
   TEST_API_KEY,
   writeTestFile,
 } from './helpers.js';
+
+async function postWithoutEndingUpload(
+  url: URL,
+  headers: OutgoingHttpHeaders,
+  send: (req: ClientRequest) => void,
+): Promise<{ status: number | undefined; body: unknown }> {
+  const response = Promise.withResolvers<{ status: number | undefined; body: unknown }>();
+  const req = request(url, { method: 'POST', headers }, (res) => {
+    void json(res).then(
+      (body: unknown) => response.resolve({ status: res.statusCode, body }),
+      response.reject,
+    );
+  });
+  req.on('error', response.reject);
+  const deadline = setTimeout(() => {
+    response.reject(new Error('No response before the unfinished upload deadline'));
+  }, 3000);
+  try {
+    send(req);
+    const result = await response.promise;
+    assert.strictEqual(req.writableEnded, false);
+    return result;
+  } finally {
+    clearTimeout(deadline);
+    req.destroy();
+  }
+}
 
 describe('Real HTTP Server integration', () => {
   let tmpDir: string;
@@ -49,6 +78,118 @@ describe('Real HTTP Server integration', () => {
       body: '{}',
     });
     assert.strictEqual(r.status, 401);
+  });
+
+  for (const contentType of ['text/plain', undefined]) {
+    it(`rejects an unfinished ${contentType ?? 'missing Content-Type'} upload before reading its body`, async () => {
+      const result = await postWithoutEndingUpload(
+        base,
+        {
+          authorization: ['Bearer', TEST_API_KEY].join(' '),
+          ...(contentType ? { 'content-type': contentType } : {}),
+          'content-length': 5 * 1024 * 1024,
+        },
+        (req) => {
+          req.flushHeaders();
+          req.write('x');
+        },
+      );
+      assert.strictEqual(result.status, 415);
+      assert.deepStrictEqual(result.body, {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32000,
+          message: 'Unsupported Media Type: Content-Type must be application/json',
+        },
+      });
+    });
+  }
+
+  it('rejects an unframed empty JSON request before raw conversion', async () => {
+    const result = await postWithoutEndingUpload(
+      base,
+      {
+        authorization: ['Bearer', TEST_API_KEY].join(' '),
+        'content-type': 'application/json',
+      },
+      (req) => {
+        req.useChunkedEncodingByDefault = false;
+        req.flushHeaders();
+        assert.strictEqual(req.hasHeader('content-length'), false);
+        assert.strictEqual(req.hasHeader('transfer-encoding'), false);
+      },
+    );
+    assert.strictEqual(result.status, 400);
+    assert.deepStrictEqual(result.body, {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32700, message: 'Invalid JSON in request body' },
+    });
+  });
+
+  it('preserves InvalidRequest for JSON with an explicit zero content length', async () => {
+    const result = await postWithoutEndingUpload(
+      base,
+      {
+        authorization: ['Bearer', TEST_API_KEY].join(' '),
+        'content-type': 'application/json',
+        'content-length': 0,
+      },
+      (req) => req.flushHeaders(),
+    );
+    assert.strictEqual(result.status, 400);
+    const body = result.body as { id: unknown; error: { code: unknown } };
+    assert.strictEqual(body.id, null);
+    assert.strictEqual(body.error.code, -32600);
+  });
+
+  for (const contentType of ['application/json; charset=utf-8', 'application/json; charset=']) {
+    it(`accepts a completed modern request with ${contentType}`, async () => {
+      const response = await fetch(base, {
+        method: 'POST',
+        headers: {
+          authorization: ['Bearer', TEST_API_KEY].join(' '),
+          'content-type': contentType,
+          'mcp-method': 'server/discover',
+          'mcp-protocol-version': '2026-07-28',
+          accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'admission',
+          method: 'server/discover',
+          params: {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientCapabilities': {},
+              'io.modelcontextprotocol/clientInfo': { name: 'admission-test', version: '1.0.0' },
+            },
+          },
+        }),
+      });
+      assert.strictEqual(response.status, 200);
+      const body = (await response.json()) as { id: unknown; error?: unknown };
+      assert.strictEqual(body.id, 'admission');
+      assert.strictEqual(body.error, undefined);
+    });
+  }
+
+  it('authenticates an unsupported upload before rejecting its content type', async () => {
+    const result = await postWithoutEndingUpload(
+      base,
+      { 'content-type': 'text/plain', 'content-length': 5 * 1024 * 1024 },
+      (req) => {
+        req.flushHeaders();
+        req.write('x');
+      },
+    );
+    assert.strictEqual(result.status, 401);
+    assert.deepStrictEqual(result.body, {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32000, message: 'Unauthorized' },
+    });
   });
 
   it('3. Full MCP handshake + tool call over real HTTP with bearer', async () => {

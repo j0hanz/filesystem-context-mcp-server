@@ -115,6 +115,7 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
  * rejection, graceful completion, or connection close.
  */
 export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
+  let closed = false;
   let activeCtx: FilesystemServerContext | undefined;
   const pathGuard = new PathGuard(options, true);
   let pathGuardReady: Promise<void> | undefined;
@@ -178,6 +179,32 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
     for (const uri of state.acquiredUris) registry.release(uri);
   };
 
+  const cleanupConnection = (): void => {
+    if (closed) return;
+    closed = true;
+    for (const state of listens.values()) state.cancelled = true;
+    listens.clear();
+    registry.destroy();
+    const ctx = activeCtx;
+    activeCtx = undefined;
+    try {
+      ctx?.disposeRuntimeState();
+      // The SDK's transport close pauses stdin only when no other 'data'
+      // listener is left, so a fatal read error (a ReadBuffer overflow) tears
+      // the connection down but leaves the handle referenced and this process
+      // alive with nothing left to serve. Unref rather than pause: a listener
+      // the SDK still owns keeps receiving data, the loop just stops being held
+      // open for it. Not a file-backed stdin's `fs.ReadStream`, which has no
+      // `unref` — the catch below covers that.
+      process.stdin.unref();
+    } catch {
+      /* Both steps are idempotent — `disposeRuntimeState` guards cleanedUp and
+         `unref` is refcount-free. Swallowed because this also runs from
+         `wire.onclose`, where a throw is an uncaught exception on the stdin
+         close event rather than a rejected close(). */
+    }
+  };
+
   const send = wire.send.bind(wire);
   wire.send = async (message) => {
     if ('id' in message && ('result' in message || 'error' in message)) {
@@ -194,6 +221,14 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
       Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
     },
   });
+  const onclose = wire.onclose;
+  wire.onclose = () => {
+    try {
+      cleanupConnection();
+    } finally {
+      onclose?.();
+    }
+  };
 
   // Wrap the callback `serveStdio` just installed. Listen requests are admitted
   // in order so two requests naming the same URI cannot race the registry's
@@ -294,15 +329,11 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
 
   return {
     close: async () => {
-      for (const id of [...listens.keys()]) releaseListen(id);
-      registry.destroy();
       try {
-        activeCtx?.disposeRuntimeState();
-      } catch {
-        /* idempotent — disposeRuntimeState guards cleanedUp */
+        cleanupConnection();
+      } finally {
+        await handle.close();
       }
-      activeCtx = undefined;
-      await handle.close();
     },
   };
 }
