@@ -7,6 +7,15 @@
 // back to the operator's environment. This module deliberately has zero imports
 // so any core module can read it without a cycle.
 
+/**
+ * How an operator gives this server a root. Lives here rather than beside its
+ * readers because both ends of the repo need it — `index.ts` prints it at
+ * startup, `list_roots` returns it when it has nothing to list — and this
+ * module is the one place either can import without a cycle.
+ */
+export const NO_POSITIONAL_ROOTS_GUIDANCE =
+  'No positional directories specified. Configure roots with directory arguments, FS_ALLOWED_DIRS, or --allow-cwd. Modern clients with elicitation can also call a tool with a concrete path and approve the requested grant.';
+
 export interface CliOverrides {
   /** `--log-level` */
   logLevel?: string;

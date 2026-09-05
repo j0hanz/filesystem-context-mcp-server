@@ -32,8 +32,6 @@ function buildToolsOverview(readOnly: boolean): string {
 }
 
 export const INSTRUCTIONS_URI = 'internal://instructions';
-export const NO_POSITIONAL_ROOTS_GUIDANCE =
-  'No positional directories specified. Configure roots with directory arguments, FS_ALLOWED_DIRS, or --allow-cwd. Modern clients with elicitation can also call a tool with a concrete path and approve the requested grant.';
 
 /**
  * The one statement of what this server is and how to approach it. The server's
