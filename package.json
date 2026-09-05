@@ -40,8 +40,7 @@
     "test": "node --test --import tsx \"__tests__/**/*.test.ts\"",
     "test:inspector": "node --test --import tsx \"__tests__/inspector-*.test.ts\"",
     "inspector": "npm run build && npx -y @modelcontextprotocol/inspector node dist/index.js",
-    "tasks": "node scripts/tasks.mjs",
-    "qa": "npm run build && node scripts/qa.mjs"
+    "tasks": "node scripts/tasks.mjs"
   },
   "keywords": [
     "mcp",
