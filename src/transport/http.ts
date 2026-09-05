@@ -10,6 +10,7 @@ import type {
 import {
   createMcpHandler,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
+  isJsonContentType,
   ProtocolErrorCode,
 } from '@modelcontextprotocol/server';
 
@@ -61,6 +62,7 @@ const MAX_REQUEST_BODY_BYTES = parseEnvInt('FS_MAX_REQUEST_BYTES', 4 * MIB, 1024
  * 405 envelope identical to the one the handler would have produced.
  */
 const SDK_METHOD_NOT_ALLOWED_CODE = -32000;
+const SDK_UNSUPPORTED_MEDIA_TYPE_CODE = -32000;
 
 /** Body-parser rejections and anything else that reaches the end of the chain. */
 function errorHandlerMiddleware(
@@ -192,7 +194,21 @@ function setupExpressApp(
 
   app.post('/mcp', (req: Request, res: Response, next: NextFunction) => {
     void (async () => {
+      if (!isJsonContentType(req.headers['content-type'])) {
+        sendJsonRpcError(
+          res,
+          415,
+          SDK_UNSUPPORTED_MEDIA_TYPE_CODE,
+          'Unsupported Media Type: Content-Type must be application/json',
+        );
+        return;
+      }
       const parsedBody = req.body as unknown;
+      if (parsedBody === undefined) {
+        // Undefined tells the Node adapter to read the raw stream without our parser's limit.
+        sendJsonRpcError(res, 400, ProtocolErrorCode.ParseError, 'Invalid JSON in request body');
+        return;
+      }
       // Only a structurally valid listen gets watchers, mirroring the stdio
       // gate. A malformed one cannot succeed downstream, so attaching handles
       // for it only gives the response-close release something to undo — and

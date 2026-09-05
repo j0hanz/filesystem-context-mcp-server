@@ -1,12 +1,14 @@
 import type { McpSubscription } from '@modelcontextprotocol/client';
-import { ProtocolErrorCode } from '@modelcontextprotocol/server';
+import { ProtocolErrorCode, STDIO_DEFAULT_MAX_BUFFER_SIZE } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 
+import { isNodeError } from '../src/core/errors.js';
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
@@ -18,6 +20,23 @@ import {
   waitFor,
   writeTestFile,
 } from './helpers.js';
+
+async function within<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = globalThis.setTimeout(
+          () => reject(new Error(`operation did not settle within ${milliseconds}ms`)),
+          milliseconds,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 describe('Stdio Transport (real subprocess)', () => {
   let tmpDir: string;
@@ -141,6 +160,68 @@ describe('Stdio Transport (real subprocess)', () => {
 });
 
 describe('Stdio subscription lease lifecycle', () => {
+  it('STDIO-014: buffer overflow releases watchers and exits with stdin still open', async () => {
+    const root = await createTestRoot();
+    const harness = await createRawStdioServer(root);
+    const pipeErrors: Error[] = [];
+    let stderr = '';
+    harness.child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    harness.child.stdin.on('error', (error: Error) => pipeErrors.push(error));
+    try {
+      const file = await writeTestFile(root, 'overflow.txt', 'watched');
+      await harness.send({
+        jsonrpc: '2.0',
+        id: 'overflow-listen',
+        method: 'subscriptions/listen',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientCapabilities': {},
+            'io.modelcontextprotocol/clientInfo': { name: 'raw-stdio-test', version: '1.0.0' },
+          },
+          notifications: { resourceSubscriptions: [buildFileResourceUri(file)] },
+        },
+      });
+      const acknowledged = await within(harness.nextMessage(), 5000);
+      assert.ok('method' in acknowledged, JSON.stringify(acknowledged));
+      assert.equal(acknowledged.method, 'notifications/subscriptions/acknowledged');
+      assert.equal(
+        acknowledged.params?._meta?.['io.modelcontextprotocol/subscriptionId'],
+        'overflow-listen',
+      );
+
+      const exited = once(harness.child, 'exit');
+      // No newline, stdin end, or drain wait: overflow itself must close the connection.
+      harness.child.stdin.write(Buffer.alloc(STDIO_DEFAULT_MAX_BUFFER_SIZE + 1, 'x'));
+      await waitFor(() => stderr.includes('ReadBuffer exceeded maximum size'), 3000);
+      assert.match(stderr, /ReadBuffer exceeded maximum size/);
+      assert.deepEqual(
+        await within(exited, 5000),
+        [0, null],
+        'the subscribed child must exit naturally after overflow',
+      );
+      assert.equal(harness.child.stdin.writableEnded, false);
+      await within(harness.close(), 1000);
+      await within(harness.close(), 1000);
+      for (const error of pipeErrors) {
+        assert.ok(isNodeError(error));
+        assert.ok(error.code !== undefined);
+        assert.ok(
+          ['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(error.code),
+          error.message,
+        );
+      }
+    } finally {
+      if (harness.child.exitCode === null && harness.child.signalCode === null) {
+        harness.child.kill();
+      }
+      await within(harness.close(), 3000);
+      await cleanupTestRoot(root);
+    }
+  });
+
   it('STDIO-006: closing a listen frees a one-slot watcher budget', async () => {
     const tmpDir = await createTestRoot();
     const harness = await createStdioClient(tmpDir, {

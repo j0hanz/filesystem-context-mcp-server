@@ -115,6 +115,7 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
  * rejection, graceful completion, or connection close.
  */
 export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
+  let closed = false;
   let activeCtx: FilesystemServerContext | undefined;
   const pathGuard = new PathGuard(options, true);
   let pathGuardReady: Promise<void> | undefined;
@@ -133,6 +134,14 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
       era,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
     });
+    if (closed) {
+      // The connection went away while this instance was being built.
+      // `cleanupConnection` already ran and its `closed` guard makes every later
+      // call a no-op, so publishing `c` would strand it: nothing would dispose
+      // it. Return it unactivated — the wire is gone, so nothing serves it.
+      c.disposeRuntimeState();
+      return c.mcp;
+    }
     activeCtx = c;
     if (era === 'legacy') {
       // Fires when the client's `notifications/initialized` lands. Safe to own:
@@ -178,6 +187,36 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
     for (const uri of state.acquiredUris) registry.release(uri);
   };
 
+  const cleanupConnection = (): void => {
+    if (closed) return;
+    closed = true;
+    for (const state of listens.values()) state.cancelled = true;
+    listens.clear();
+    registry.destroy();
+    const ctx = activeCtx;
+    activeCtx = undefined;
+    // Both steps below are guarded separately, and for the same reason: this
+    // also runs from `wire.onclose`, where a throw is an uncaught exception on
+    // the stdin close event rather than a rejected close(). One shared catch
+    // would let a failed disposal skip the unref and strand the process.
+    try {
+      ctx?.disposeRuntimeState();
+    } catch {
+      /* idempotent — disposeRuntimeState guards cleanedUp */
+    }
+    try {
+      // The SDK's transport close pauses stdin only when no other 'data'
+      // listener is left, so a fatal read error (a ReadBuffer overflow) tears
+      // the connection down but leaves the handle referenced and this process
+      // alive with nothing left to serve. Unref rather than pause: a listener
+      // the SDK still owns keeps receiving data, the loop just stops being held
+      // open for it.
+      process.stdin.unref();
+    } catch {
+      /* a file-backed stdin is an `fs.ReadStream`, which has no `unref` */
+    }
+  };
+
   const send = wire.send.bind(wire);
   wire.send = async (message) => {
     if ('id' in message && ('result' in message || 'error' in message)) {
@@ -194,6 +233,14 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
       Logger.error('[Stdio] serve error:', formatUnknownErrorMessage(error));
     },
   });
+  const onclose = wire.onclose;
+  wire.onclose = () => {
+    try {
+      cleanupConnection();
+    } finally {
+      onclose?.();
+    }
+  };
 
   // Wrap the callback `serveStdio` just installed. Listen requests are admitted
   // in order so two requests naming the same URI cannot race the registry's
@@ -294,15 +341,11 @@ export function startServer(options: ServerOptions, config: RuntimeConfig = {}):
 
   return {
     close: async () => {
-      for (const id of [...listens.keys()]) releaseListen(id);
-      registry.destroy();
       try {
-        activeCtx?.disposeRuntimeState();
-      } catch {
-        /* idempotent — disposeRuntimeState guards cleanedUp */
+        cleanupConnection();
+      } finally {
+        await handle.close();
       }
-      activeCtx = undefined;
-      await handle.close();
     },
   };
 }

@@ -7,7 +7,7 @@ import { createMcpHandler, InMemoryServerEventBus } from '@modelcontextprotocol/
 import type { JSONRPCMessage } from '@modelcontextprotocol/server';
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -397,6 +397,7 @@ export async function createStdioClient(
 }
 
 export interface RawStdioTestContext {
+  readonly child: ChildProcessWithoutNullStreams;
   send: (message: JSONRPCMessage) => Promise<void>;
   sendMany: (messages: readonly JSONRPCMessage[]) => Promise<void>;
   nextMessage: () => Promise<JSONRPCMessage>;
@@ -415,6 +416,7 @@ export async function createRawStdioServer(
     env: { ...getDefaultEnvironment(), ...extraEnv },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
   const lines = createInterface({ input: child.stdout });
   const queued: JSONRPCMessage[] = [];
   const waiters: ((message: JSONRPCMessage) => void)[] = [];
@@ -427,6 +429,7 @@ export async function createRawStdioServer(
   });
 
   return {
+    child,
     send: async (message) => {
       await new Promise<void>((resolve, reject) => {
         child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
@@ -454,7 +457,7 @@ export async function createRawStdioServer(
     close: async () => {
       lines.close();
       child.stdin.end();
-      await new Promise<void>((resolve) => child.once('close', () => resolve()));
+      await closed;
     },
   };
 }
