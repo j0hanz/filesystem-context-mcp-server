@@ -8,8 +8,8 @@ import process from 'node:process';
 import * as z from 'zod/v4';
 
 import { CliExitError, parseArgs, runPrintConfig } from './cli.js';
+import { NO_POSITIONAL_ROOTS_GUIDANCE } from './core/config.js';
 import { logRuntimeFailure } from './core/observability.js';
-import { NO_POSITIONAL_ROOTS_GUIDANCE } from './instructions.js';
 import { startHttpServer, startServer } from './transport.js';
 
 z.config(z.locales.en());

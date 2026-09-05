@@ -495,8 +495,26 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
   it('TC-FUNC-052: List roots via MCP tool call', async () => {
     const result = await harness.client.callTool({ name: 'list_roots' });
     assert.notStrictEqual(result.isError, true);
-    const structured = result.structuredContent as { roots?: string[] } | undefined;
+    const structured = result.structuredContent as { roots?: string[]; hint?: string } | undefined;
     assert.ok((structured?.roots?.length ?? 0) > 0, 'Should have at least one allowed directory');
+    assert.strictEqual(structured?.hint, undefined, 'a configured server pays for no hint');
+  });
+
+  it('TC-FUNC-052b: list_roots with no roots says how to configure them', async () => {
+    // An empty `roots` reports the problem; without this the caller learns
+    // nothing about the fix, and the elicitation route out is in no description.
+    const bare = await createTestClientPair([]);
+    try {
+      const result = await bare.client.callTool({ name: 'list_roots' });
+      assert.notStrictEqual(result.isError, true);
+      const structured = result.structuredContent as { roots?: string[]; hint?: string };
+      assert.deepStrictEqual(structured.roots, []);
+      assert.match(structured.hint ?? '', /FS_ALLOWED_DIRS/);
+      assert.match(structured.hint ?? '', /--allow-cwd/);
+      assert.match(structured.hint ?? '', /approve the requested grant/);
+    } finally {
+      await bare.close();
+    }
   });
 
   it('TC-FUNC-053: Copy with overwrite: true succeeds when destination exists', async () => {

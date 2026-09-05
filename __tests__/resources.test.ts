@@ -6,18 +6,14 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
+import { NO_POSITIONAL_ROOTS_GUIDANCE } from '../src/core/config.js';
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { buildFileResourceUri, encodeFileUriPath, extractPath } from '../src/core/file-uri.js';
 import { isSamePath } from '../src/core/path-utils.js';
 import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
-import {
-  buildSectionsRecord,
-  INSTRUCTIONS_URI,
-  NO_POSITIONAL_ROOTS_GUIDANCE,
-  renderSections,
-} from '../src/instructions.js';
+import { buildSectionsRecord, INSTRUCTIONS_URI, renderSections } from '../src/instructions.js';
 import { getResourceContracts, registerResources } from '../src/resources.js';
 import { createServer } from '../src/server.js';
 import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
