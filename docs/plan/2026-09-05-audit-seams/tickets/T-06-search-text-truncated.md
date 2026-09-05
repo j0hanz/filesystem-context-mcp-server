@@ -41,6 +41,8 @@ the field's meaning going forward:
 
 A is the recommendation: it keeps `truncated` a statement about the result
 set, not about the page, and costs one schema line and one assignment in
-T-05; C is cleaner but widens the wire change T-05 already carries.
+T-05; C is cleaner but widens the wire change T-05 already carries — and
+[T-04](T-04-inline-matches-semver.md) chose the non-breaking path for the env
+var, which argues against removing an output field in the same release.
 
 Priority 30: gates only T-05.

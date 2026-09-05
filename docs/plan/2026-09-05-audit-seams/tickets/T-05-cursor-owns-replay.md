@@ -25,9 +25,12 @@ Deliver audit finding #1 as decided at charting, as one commit on `main`.
 - `search_text` stops minting a resource per continuation page
   (`search-content.ts:375-378`, `finalizeSearchOutput`) — behavior change; a
   regression test proves the old behavior red first (`tdd`).
-- Retire `FS_MAX_INLINE_MATCHES` (`search-content.ts:42,73-74`) in the manner
+- Retire `FS_MAX_INLINE_MATCHES` as
   [Does retiring FS_MAX_INLINE_MATCHES ship as a MAJOR removal or a MINOR accept-and-ignore?](T-04-inline-matches-semver.md)
-  decides; `maxResults` is the only inline/page size.
+  decided: `CONFIG.MAX_INLINE_MATCHES` and `buildSearchPreviewState`'s slice
+  (`search-content.ts:42,72-79`) go; the variable is read once at module load
+  only to `Logger.warn` that it is ignored and `maxResults` sets the page
+  size. `maxResults` is the only inline/page size.
 - `search_text`'s `truncated` field takes the meaning
   [What does search_text.truncated mean once the inline cap is gone?](T-06-search-text-truncated.md)
   decides.
@@ -43,10 +46,11 @@ Deliver audit finding #1 as decided at charting, as one commit on `main`.
   assertion (and its message) to the new rule; `tools.test.ts:1249-1285`,
   `:836-864`, `:1369-1406` already match and stay untouched.
 - CHANGELOG: add `## [Unreleased]` with the `search_text` continuation change
-  and the `list` first-page `resourceUri` change under `### Changed`, and the
-  env var under the section T-04 fixes; update `README.md:405` and
-  `cli-help.ts:121-122`. `CHANGELOG.md:168` is a historical rename table —
-  leave it.
+  and the `list` first-page `resourceUri` change under `### Changed`, and
+  `FS_MAX_INLINE_MATCHES` under `### Deprecated` naming `maxResults` as the
+  replacement; mark the entries at `README.md:405` and `cli-help.ts:121-122`
+  deprecated, pointing at `maxResults`. `CHANGELOG.md:168` is a historical
+  rename table — leave it.
 - Same cursors, same output field names; only the trigger and first-page rule
   change.
 

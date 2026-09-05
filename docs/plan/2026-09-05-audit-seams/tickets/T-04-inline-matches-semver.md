@@ -3,7 +3,7 @@ kind: frontier-ticket
 id: T-04
 title: Does retiring FS_MAX_INLINE_MATCHES ship as a MAJOR removal or a MINOR accept-and-ignore?
 map: M-01
-status: open
+status: closed
 type: grilling
 priority: 30
 blocked_by: []
@@ -28,3 +28,23 @@ replacement? This fixes the CHANGELOG section, the `cli-help.ts` entry (delete
 vs mark deprecated), and one branch of T-05's implementation.
 
 Priority 30: gates only T-05, the last task in the landing order.
+
+## Resolution
+
+Classification: Decided. Confirmed with the user 2026-09-05, in their terms:
+remove `FS_MAX_INLINE_MATCHES`, but do not handle it as a major — option
+**B, accept-and-ignore**.
+
+- The variable is still read, but only to log one startup `warning` via
+  `Logger` when it is set: it is ignored, `maxResults` sets the page size
+  (the warning names `maxResults` as the replacement), and the variable is
+  removed for real at the next major.
+- It no longer has any effect on `search_text` output: no inline slice, no
+  externalization trigger.
+- CHANGELOG: `### Deprecated` under `## [Unreleased]`, naming `maxResults`.
+- `src/cli-help.ts:121-122` and `README.md:405` mark the entry deprecated and
+  point at `maxResults` rather than deleting it.
+- No version-class change; the next release stays a minor.
+
+Material uncertainty: none. The real removal is a follow-up past this map's
+destination — see **Out of scope** on the map.
