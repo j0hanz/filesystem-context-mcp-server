@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-09-05
+
+A cleanup release. No tool, no CLI flag, and no environment variable changes
+behaviour, and the wire format is untouched — an MCP client needs to do nothing.
+
+**One `./transport` export narrows.** `RuntimeConfig` no longer accepts
+`eventBus` or `deploymentMode`. This is shipped as a patch rather than a major
+because neither field was reachable: `index.ts` builds its `RuntimeConfig` from
+`httpHost` and `apiKey` alone, so no CLI invocation could ever set them, and
+only a caller importing `startHttpServer` from `@j0hanz/filesystem-mcp/transport`
+and passing one explicitly is affected. If that is you, drop both fields —
+single-instance behaviour is identical.
+
+### Removed
+
+- **Fleet deployment mode.** `RuntimeConfig.eventBus` and
+  `RuntimeConfig.deploymentMode`, the two boot guards that enforced them, and
+  `assertFleetRequestStateKey`. The feature fanned change events across
+  load-balanced instances, but two instances of a filesystem server either serve
+  the same disk, where the fan-out buys nothing, or different disks, where the
+  shared state is wrong. `FS_REQUEST_STATE_KEY` stays: it keeps in-flight
+  `input_required` rounds alive across a restart, which has nothing to do with
+  deployment topology.
+- **The `qa` npm script** and the `scripts/qa*` harness behind it. It drove the
+  MCP Inspector against `dist/` and rendered an HTML report, duplicating
+  `__tests__/inspector-*.test.ts`, and no CI job ever ran it.
+- **The `ProgressSink` interface.** `McpProgressSink` was its only
+  implementation, so `ProgressSession` now holds that type directly instead of an
+  array behind an abstraction. Progress notifications on the wire are unchanged.
+
+### Changed
+
+- The `get-help` prompt no longer rejects a `topic` for blankness or shell
+  metacharacters. The handler resolves a topic by `Object.hasOwn` against a
+  frozen record, so an unrecognized one already falls through to the not-found
+  reply and nothing downstream interprets the string. A non-empty check remains.
+- A CLI startup error for an unreadable allowed directory now carries Node's own
+  message instead of a string rebuilt from `errno`, and attaches the original
+  error as `cause`:
+
+  ```text
+  Cannot access directory /no/such/dir: ENOENT: no such file or directory, stat '/no/such/dir'
+  ```
+
 ## [2.1.0] - 2026-09-05
 
 A minor release, not a major one: the package's own API is untouched. Its
@@ -190,5 +234,6 @@ was empty, so importing the package root never gave callers an API. The
 - Removed dead `startPerfMeasure`/`withOpsTrace` and `withToolDiagnostics` subsystems.
 - Removed dead `RESOURCE_STORE_DIAGNOSTICS_CHANNEL` and `LIFECYCLE_CHANNEL` publishers.
 
+[2.1.1]: https://github.com/j0hanz/filesystem-mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/j0hanz/filesystem-mcp/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/j0hanz/filesystem-mcp/compare/v1.19.1...v2.0.0
