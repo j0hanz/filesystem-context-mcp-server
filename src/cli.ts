@@ -1,6 +1,6 @@
 import type { Stats } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { getSystemErrorMessage, getSystemErrorName, parseArgs as utilParseArgs } from 'node:util';
+import { parseArgs as utilParseArgs } from 'node:util';
 
 import { printHelpAndExit, printVersionAndExit } from './cli-help.js';
 import { processInParallel } from './core/concurrency.js';
@@ -13,7 +13,7 @@ import {
   normalizePath,
 } from './core/path-utils.js';
 import { PathGuard } from './core/path.js';
-import { IS_WINDOWS, isRecord, parseTrueEnvFlag } from './core/primitives.js';
+import { IS_WINDOWS, parseTrueEnvFlag } from './core/primitives.js';
 import { getMaxTextFileSize } from './core/util.js';
 import { registeredTools } from './tools/index.js';
 
@@ -51,40 +51,6 @@ function validateCliPath(inputPath: string): void {
   }
 }
 
-function getSystemErrorDetails(error: unknown): {
-  code: string | undefined;
-  errno: number | undefined;
-} {
-  if (!isRecord(error)) return { code: undefined, errno: undefined };
-  const code = typeof error['code'] === 'string' ? error['code'] : undefined;
-  const errno = typeof error['errno'] === 'number' ? error['errno'] : undefined;
-  return { code, errno };
-}
-
-function normalizeDirectoryError(error: unknown, inputPath: string): Error {
-  const { code, errno } = getSystemErrorDetails(error);
-  if (error instanceof Error && code === undefined && errno === undefined) {
-    return error;
-  }
-
-  if (typeof errno === 'number') {
-    try {
-      const name = getSystemErrorName(errno);
-      const message = getSystemErrorMessage(errno);
-      return new Error(`Cannot access directory ${inputPath} (${name}: ${message})`);
-    } catch {
-      // Fall through, but preserve raw errno value
-    }
-    return new Error(`Cannot access directory ${inputPath} (errno ${errno})`);
-  }
-
-  if (code) {
-    return new Error(`Cannot access directory ${inputPath} (${code})`);
-  }
-
-  return new Error(`Cannot access directory ${inputPath}`);
-}
-
 function assertDirectory(stats: Stats, inputPath: string): void {
   if (stats.isDirectory()) return;
   throw new Error(`${inputPath} is not a directory`);
@@ -104,7 +70,10 @@ async function validateDirectoryPath(inputPath: string, allowMissing = false): P
       }
       return normalized;
     }
-    throw normalizeDirectoryError(error, inputPath);
+    // Node's own message already names the syscall and the errno.
+    throw new Error(`Cannot access directory ${inputPath}: ${formatUnknownErrorMessage(error)}`, {
+      cause: error,
+    });
   }
 }
 
