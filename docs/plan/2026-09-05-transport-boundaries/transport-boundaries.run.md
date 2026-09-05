@@ -45,7 +45,9 @@ Executing [transport-boundaries.plan.md](transport-boundaries.plan.md), started
     with `process.stdin.unref()` exits naturally with code 0. This reproduction
     has no watchers or application code. Thus the current natural-exit test
     cannot isolate remaining watchers as its sole cause. No stdin-unref change
-    was made to production or the regression to hide this new ownership issue.
+    was made to production or the regression at this point in the run, to avoid
+    hiding the new ownership issue behind it. Resolved later — see
+    [Resolution](#resolution-2026-09-05).
   - Exact step-2 Verify command was run after that fix attempt:
     `node scripts\tasks.mjs test '--test-name-pattern=Real HTTP Server integration|Stdio Transport|Stdio subscription lease lifecycle|HTTP watcher|HTTP per-connection|HTTP duplicate listen|HTTP re-listen|subscriptions/listen graceful close|Client roots seeding'`
     exited 1: **60 passed, 1 failed, 0 cancelled**. Only `STDIO-014` failed,
@@ -61,9 +63,10 @@ Executing [transport-boundaries.plan.md](transport-boundaries.plan.md), started
 
 ## Done
 
-Incomplete. The HTTP step is implemented; stdio changes are partial and remain
-in the worktree. The subscribed subprocess natural-exit requirement is blocked
-by Windows stdin pipe lifetime independently of watcher cleanup. The plan must
+Incomplete as of this entry — superseded by [Resolution](#resolution-2026-09-05).
+The HTTP step is implemented; stdio changes are partial and remain in the
+worktree. The subscribed subprocess natural-exit requirement is blocked by
+Windows stdin pipe lifetime independently of watcher cleanup. The plan must
 resolve that ownership assumption before execution resumes. Only the five
 implementation files allowed by the plan and this effort directory are changed.
 
@@ -80,3 +83,28 @@ and after: 36 passed, 0 failed. The static gate now exits 0. The Windows stdin
 lifetime blocker remains unresolved; no claim of a green overflow regression
 or completed step 2 is made. Structure handoff: the two cuts reuse existing
 ownership and a standard-library primitive, with no added abstraction.
+
+## Resolution 2026-09-05
+
+The stdin ownership question the STOP condition raised is settled: the unref
+belongs in `cleanupConnection`, and step 2 is now green.
+
+- The blocker was diagnosed exactly as the earlier entry described. The SDK's
+  `StdioServerTransport.close()` pauses stdin only `if (this._stdin
+  .listenerCount("data") === 0)`; a listener the SDK still owns leaves the
+  handle referenced, so the child stays alive after the connection is torn
+  down and there is nothing left to serve. `STDIO-014` never exited — a 60s
+  deadline failed the same way a 5s one did, on both a repo-relative and a
+  tmpdir root, single-file and whole-suite.
+- Fix: `cleanupConnection` calls `process.stdin.unref()` after disposal. Unref
+  rather than pause, so a listener the SDK still owns keeps receiving data
+  while the loop stops being held open for it. It is guarded separately from
+  the disposal, so a failed disposal cannot skip it; a file-backed stdin is an
+  `fs.ReadStream` with no `unref`, which that guard absorbs.
+- Late-factory disposal, listed as not-claimed in the STOP condition, is now
+  handled: a context whose `createServer` resolves after cleanup is disposed
+  and never published, since `closed` makes every later `close()` a no-op.
+- `node scripts\tasks.mjs` exits 0: **273 passed, 0 failed**, static gate
+  clean. `STDIO-014` passes in ~0.8s, down from a 5.8s deadline failure.
+- Post-close continuation guards and deterministic barrier tests remain
+  unclaimed; nothing here depends on them.
