@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.3] - 2026-09-06
+
+A release that lands the three seams from the 2026-09-05 architecture audit.
+One tool behaviour changes — how `list`, `find_files`, and `search_text`
+decide when to store their full result — and one environment variable is
+deprecated. The wire format, CLI flags, and every other tool are untouched.
 
 ### Changed
 
