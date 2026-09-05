@@ -125,14 +125,6 @@ export interface ToolDef<I extends z.ZodType, O extends z.ZodType> {
    * caller-supplied filesystem paths.
    */
   readonly accessPaths?: (args: z.infer<I>) => readonly string[];
-  /**
-   * Publish `output` as the tool's wire `outputSchema`. Off by default: the
-   * spec makes the field optional and it costs more than every other part of
-   * a tool entry combined. Turn it on only where the shape is not inferable —
-   * a discriminated per-path union, or a field that appears under one flag and
-   * not another. The Zod object still validates every result either way.
-   */
-  readonly publishOutputSchema?: boolean;
   readonly run: (
     args: z.infer<I>,
     ctx: ToolCtx,
@@ -539,7 +531,6 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
   def: ToolDef<I, O>,
 ): DefinedTool {
   const inputJsonSchema = toDraft202012(def.input, 'input');
-  const outputJsonSchema = toDraft202012(def.output, 'output');
 
   // Nothing here depends on `deps`, so it is built once per tool definition
   // rather than once per `register` — the HTTP leg registers every tool afresh
@@ -561,17 +552,14 @@ export function defineTool<I extends z.ZodType, O extends z.ZodType>(
     title: def.title,
     description: def.description,
     inputSchema: fromJsonSchema<z.infer<I>>(inputJsonSchema, zodJsonSchemaValidator(def.input)),
-    // The validator is built either way — results are still checked against the
-    // Zod object — but the schema reaches the wire only where the shape is not
-    // inferable from the description plus the text content.
-    ...(def.publishOutputSchema
-      ? {
-          outputSchema: fromJsonSchema<z.infer<O>>(
-            outputJsonSchema,
-            zodJsonSchemaValidator(def.output),
-          ),
-        }
-      : {}),
+    // No `outputSchema`, ever. Publishing one obliges the result to carry
+    // `structuredContent` (clients enforce it), and every tool that authors its
+    // own text ships its metadata under `_meta` instead — see
+    // `buildSuccessResponse`. The two cannot both hold, and the text is what
+    // the model reads. `TOOL-SURFACE-001` pins this for the whole surface.
+    //
+    // `def.output` stays: it types `RunResult<z.infer<O>>`, which is what makes
+    // a tool returning the wrong shape a compile error.
     annotations: publishedAnnotations,
   };
 
