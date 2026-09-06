@@ -596,6 +596,34 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
     }
   });
 
+  it('move and copy both refuse a destination inside the source directory', async () => {
+    // `planTransfer` runs ONE containment guard for both ops. Move used to
+    // build its own `source + sep` prefix test, which never matched a bare
+    // filesystem root; the shared `isPathInsideDirectory` does. Pin both ops so
+    // the stricter semantics stay deliberate — a directory moved or copied into
+    // its own subtree recurses into itself.
+    const srcDir = join(tmpDir, 'selfnest_src');
+    await mkdir(srcDir, { recursive: true });
+    await writeFile(join(srcDir, 'f.txt'), 'x');
+    const inside = join(srcDir, 'nested', 'target');
+
+    for (const copy of [false, true]) {
+      const label = `copy=${String(copy)}`;
+      const result = await harness.client.callTool({
+        name: 'move',
+        arguments: { moves: [{ source: srcDir, destination: inside }], copy },
+      });
+      assert.strictEqual(result.isError, true, `${label} must be refused`);
+      const { failures = [] } = result._meta as {
+        failures?: { error: { code: string; message: string } }[];
+      };
+      assert.strictEqual(failures.length, 1, `${label} reports one failure`);
+      assert.strictEqual(failures[0]?.error.code, 'INVALID_INPUT', label);
+      assert.match(failures[0]?.error.message ?? '', /own subdirectory/, label);
+      await assert.rejects(access(inside), `${label} created nothing`);
+    }
+  });
+
   it('TC-FUNC-058: list tool declares idempotentHint', () => {
     const listTool = ALL_TOOLS.find((t) => t.name === 'list');
     assert.ok(listTool, 'list tool should be defined');

@@ -220,12 +220,8 @@ export function validateReadRange(
     ctx.addIssue({
       code: 'custom',
       path: ['head'],
-      message: "Cannot use 'head' with 'startLine'/'endLine'",
-      params: {
-        rule: 'head_no_line_range',
-        conflictsWith: ['startLine', 'endLine'],
-        suggestion: "Use either 'head' alone or 'startLine'/'endLine' together.",
-      },
+      message:
+        "Cannot use 'head' with 'startLine'/'endLine'. Use either 'head' alone or 'startLine'/'endLine' together.",
       input: value,
     });
   }
@@ -233,12 +229,8 @@ export function validateReadRange(
     ctx.addIssue({
       code: 'custom',
       path: ['tail'],
-      message: "Cannot use 'tail' with 'head'/'startLine'/'endLine'",
-      params: {
-        rule: 'tail_exclusive',
-        conflictsWith: ['head', 'startLine', 'endLine'],
-        suggestion: "Use 'tail' alone or use 'startLine'/'endLine' without 'tail'.",
-      },
+      message:
+        "Cannot use 'tail' with 'head'/'startLine'/'endLine'. Use 'tail' alone, or 'startLine'/'endLine' without 'tail'.",
       input: value,
     });
   }
@@ -246,11 +238,7 @@ export function validateReadRange(
     ctx.addIssue({
       code: 'custom',
       path: ['endLine'],
-      message: "'endLine' requires 'startLine' to be set",
-      params: {
-        rule: 'endLine_requires_startLine',
-        suggestion: "Provide both 'startLine' and 'endLine' together.",
-      },
+      message: "'endLine' requires 'startLine' to be set. Provide both together.",
       input: value,
     });
   }
@@ -260,11 +248,6 @@ export function validateReadRange(
       code: 'custom',
       path: ['endLine'],
       message: "'endLine' must be >= 'startLine'",
-      params: {
-        rule: 'endLine_gte_startLine',
-        conflictsWith: ['startLine'],
-        suggestion: 'Set endLine to a value greater than or equal to startLine.',
-      },
       input: value,
     });
   }
