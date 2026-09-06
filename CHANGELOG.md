@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.5] - 2026-09-06
+
+An internal-only release: the over-engineering audit, 39 verified cuts across
+45 files, net 299 lines removed. No tool, CLI flag, environment variable, or
+wire payload changes behaviour.
+
+### Removed
+
+- **The error `details` channel.** `Problem.details` and the `FsError.details`
+  getter carried `errno` and `syscall` that nothing read and no response ever
+  rendered, and `FsError`'s constructor loses its `details` parameter. The
+  client-visible error shape — `code`, `message`, `path`, `suggestion`,
+  `issues` — is unchanged.
+- **Dead internal surface.** `PathGuard.isServerContext`, `getRootBoundaries`,
+  and the `fromAllowedDirectories` test factory; `fs.ts`'s `hash`,
+  `createReadStream`, and `StatPath`; `parseEnvDirList` and the
+  `pairFailureSchema` factory. Watcher-registry, resources, transport,
+  prompts, and CLI exports are trimmed to their real consumers.
+- **Unreachable configuration.** Progress total, batch concurrency, `stat` MIME
+  knobs, `hasErrorShape`'s `code` parameter, and `fmt`'s stream parameter. None
+  was reachable from a tool argument or an environment variable.
+
+### Changed
+
+- `edit` and `replace_in_files` call diff v9 synchronously — the library is
+  sync, so the `await` bought nothing.
+- Cursor first-page and replay handling folds into `paginate`; `search_text`
+  drops its sort indirection and compiles the pattern once per request.
+
 ## [2.1.4] - 2026-09-06
 
 A fix release for silent truncation in the text the two search tools return.
