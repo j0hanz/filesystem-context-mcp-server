@@ -16,13 +16,14 @@ function pageResult<T, M>(
   offset: number,
   pageSize: number,
   snapshot: PageSnapshot<T, M>,
-): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+): Page<T, M> {
   if (offset >= snapshot.items.length) throw invalidCursor();
   const page = snapshot.items.slice(offset, offset + pageSize);
   const nextOffset = offset + page.length;
   return {
     page,
     metadata: snapshot.metadata,
+    offset,
     nextCursor:
       nextOffset < snapshot.items.length
         ? encodePageCursor({ snapshotId, offset: nextOffset })
@@ -36,12 +37,13 @@ export function createFirstPage<T, M>(params: {
   items: readonly T[];
   metadata: M;
   pageSize: number;
-}): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+}): Page<T, M> {
   if (params.items.length <= params.pageSize) {
     return {
       page: params.items,
       metadata: params.metadata,
       nextCursor: undefined,
+      offset: 0,
     };
   }
   const snapshotId = params.store.create({
@@ -66,10 +68,19 @@ export interface ProducedPage<T, M> {
   readonly truncated: boolean;
 }
 
-export interface PaginatedPage<T, M, R> {
+export interface Page<T, M> {
   readonly page: readonly T[];
   readonly metadata: M;
   readonly nextCursor: string | undefined;
+  /**
+   * Index of this page's first item in the full set. A tool that reports
+   * progress in its text needs it: without it every page can only say how many
+   * rows it holds, which is the same number on page 1 and page 9.
+   */
+  readonly offset: number;
+}
+
+export interface PaginatedPage<T, M, R> extends Page<T, M> {
   /** The externalized full set. First page only, and only when incomplete. */
   readonly resource?: R;
 }
@@ -115,13 +126,12 @@ export async function paginate<T, M, R>(params: {
   return { ...first, resource: params.externalize(produced.items, produced.metadata) };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- the cursor carries no typed payload; the caller supplies the snapshot's original item and metadata types.
 export function readNextPage<T, M>(params: {
   store: PageSnapshotStore;
   queryKey: string;
   cursor: string;
   pageSize: number;
-}): { page: readonly T[]; metadata: M; nextCursor: string | undefined } {
+}): Page<T, M> {
   const decoded = decodePageCursor(params.cursor);
   const snapshot = params.store.read<T, M>(decoded.snapshotId, params.queryKey);
   return pageResult(decoded.snapshotId, decoded.offset, params.pageSize, snapshot);

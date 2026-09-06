@@ -16,6 +16,7 @@ import * as z from 'zod/v4';
 import { PageSnapshotStore } from '../src/core/page-store.js';
 import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
+import { MAX_SEARCH_RESULTS } from '../src/core/util.js';
 import { createServer } from '../src/server.js';
 import { defineTool } from '../src/tools/define.js';
 import {
@@ -1435,6 +1436,90 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
       secondStructured.resourceUri,
       undefined,
       'a continuation page must not mint a new resource',
+    );
+  });
+
+  it('the page trailer tracks position across pages and both search tools', async () => {
+    // `_meta` reaches no client, so a page that hides matches has to say so in
+    // the text or the caller reads a capped list as the whole answer.
+    const lines = Array.from({ length: 9 }, (_, i) => `NEEDLE line ${String(i)}`);
+    const file = await writeTestFile(tmpDir, 'trailer/hits.txt', `${lines.join('\n')}\n`);
+    const first = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 4 },
+    });
+    assert.match(
+      firstTextBlock(first).text ?? '',
+      /^\/\/ showing 1-4 of 9 matches\. Next page: search_text \{"cursor":"/m,
+    );
+
+    const cursor = (first._meta as { nextCursor?: string }).nextCursor;
+    assert.ok(cursor);
+    const second = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 4, cursor },
+    });
+    // The whole point: page 2 must not repeat page 1's counter.
+    assert.match(firstTextBlock(second).text ?? '', /^\/\/ showing 5-8 of 9 matches\./m);
+
+    // The last page carries no cursor and still owes its position, or a
+    // one-row tail reads as the whole answer.
+    const lastCursor = (second._meta as { nextCursor?: string }).nextCursor;
+    assert.ok(lastCursor);
+    const last = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 4, cursor: lastCursor },
+    });
+    const lastText = firstTextBlock(last).text ?? '';
+    assert.match(lastText, /^\/\/ showing 9-9 of 9 matches\.$/m);
+    assert.doesNotMatch(lastText, /Next page/);
+
+    const complete = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'NEEDLE', maxResults: 50 },
+    });
+    assert.doesNotMatch(
+      firstTextBlock(complete).text ?? '',
+      /Next page/,
+      'a complete set gets no trailer',
+    );
+
+    // Own subdirectory with two files of its own: pointing at the shared tmpDir
+    // would borrow whatever earlier tests left there and pass for the wrong
+    // reason when this test runs alone.
+    await writeTestFile(tmpDir, 'trailer_files/a.txt', 'a');
+    await writeTestFile(tmpDir, 'trailer_files/b.txt', 'b');
+    const files = await harness.client.callTool({
+      name: 'find_files',
+      arguments: { path: join(tmpDir, 'trailer_files'), pattern: '**/*', maxResults: 1 },
+    });
+    assert.match(
+      firstTextBlock(files).text ?? '',
+      /^\/\/ showing 1-1 of 2 files\. Next page: find_files \{"cursor":"/m,
+    );
+  });
+
+  it('search_text says so in the text when the engine cut the scan', async () => {
+    // One line over the hard result cap makes the engine stop, so totalMatches
+    // is a floor rather than the real count.
+    const lines = Array.from({ length: MAX_SEARCH_RESULTS + 1 }, (_, i) => `CAPPED ${String(i)}`);
+    const file = await writeTestFile(tmpDir, 'capped/hits.txt', `${lines.join('\n')}\n`);
+    const result = await harness.client.callTool({
+      name: 'search_text',
+      arguments: { path: file, searchPattern: 'CAPPED', maxResults: 5 },
+    });
+    const text = firstTextBlock(result).text ?? '';
+    assert.ok(text.includes(`// showing 1-5 of ${String(MAX_SEARCH_RESULTS)} matches.`), text);
+    assert.ok(
+      text.includes(
+        `// scan stopped early: hit the server's ${String(MAX_SEARCH_RESULTS)}-result scan cap, not your maxResults.`,
+      ),
+      text,
+    );
+    assert.strictEqual(
+      (result._meta as { truncated?: boolean }).truncated,
+      true,
+      'the engine reports its own stop state',
     );
   });
 

@@ -156,6 +156,8 @@ function buildReadSpec(args: ReadFileInput, signal?: AbortSignal): ReadSpec {
   return { kind: 'full', ...common };
 }
 
+// No `totalLines`: only `readFull` counts them and a full read never leaves
+// more behind, so a continuation cannot know the total without a second pass.
 function buildReadContinuation(result: {
   path: string;
   hasMoreLines?: boolean;
@@ -163,7 +165,6 @@ function buildReadContinuation(result: {
   startLine?: number;
   endLine?: number;
   head?: number;
-  totalLines?: number;
 }): z.infer<typeof ContinuationSchema> | undefined {
   if (!result.hasMoreLines) return undefined;
   const linesRead = result.linesRead ?? 0;
@@ -177,13 +178,10 @@ function buildReadContinuation(result: {
     chunkSize = DEFAULT_CONTINUATION_CHUNK_SIZE;
   }
   const nextEnd = nextStart + chunkSize - 1;
-  const hint = result.totalLines
-    ? `${result.totalLines - nextStart + 1} lines remain (${nextStart}-${result.totalLines}). Read next chunk with these args.`
-    : 'File was truncated. Read next chunk with these args.';
   return {
     tool: 'read',
     args: { path: result.path, startLine: nextStart, endLine: nextEnd },
-    hint,
+    hint: `More lines remain from ${String(nextStart)}. Read next chunk with these args.`,
   };
 }
 
@@ -302,19 +300,18 @@ function preFilterByBudget(
 
 function buildPerPathReadValue(
   result: ReadFileResult,
-  options: { includeHash?: boolean; hasResourceStore?: boolean },
+  options: { includeHash?: boolean; hasResourceStore?: boolean; requestedPath: string },
 ): PerPathReadValue {
   const mimeInfo = detectMimeFromContent(result.path, result.content);
   const continuation =
     result.hasMoreLines && result.readMode !== 'tail'
       ? buildReadContinuation({
-          path: result.path,
+          path: options.requestedPath,
           hasMoreLines: true,
           ...(result.linesRead !== undefined ? { linesRead: result.linesRead } : {}),
           ...(result.startLine !== undefined ? { startLine: result.startLine } : {}),
           ...(result.endLine !== undefined ? { endLine: result.endLine } : {}),
           ...(result.head !== undefined ? { head: result.head } : {}),
-          ...(result.totalLines !== undefined ? { totalLines: result.totalLines } : {}),
         })
       : undefined;
   const contentHash = options.includeHash
@@ -401,6 +398,10 @@ async function readOnePath(
   return buildPerPathReadValue(result, {
     includeHash: args.includeHash,
     hasResourceStore: ctx.resourceStore !== undefined,
+    // The continuation is args the caller pastes back, so it echoes the path
+    // they wrote. `result.path` is the resolved absolute one — on Windows that
+    // is a backslash-doubling JSON string that also spells out the server root.
+    requestedPath: filePath,
   });
 }
 

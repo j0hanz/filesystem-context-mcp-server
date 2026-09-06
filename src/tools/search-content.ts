@@ -6,7 +6,7 @@ import * as z from 'zod/v4';
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
 import { paginate } from '../core/cursor.js';
 import { ErrorCode, FsError } from '../core/errors.js';
-import { formatCount, truncateProgressPattern } from '../core/fmt.js';
+import { formatCount, pageTrailer, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { Logger } from '../core/observability.js';
 import { toPosixRelative } from '../core/path.js';
@@ -314,6 +314,8 @@ async function handleSearchContent(
   ctx: ToolCtx,
 ): Promise<{
   structured: SearchOutput;
+  offset: number;
+  total: number;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
   const requestedPath = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
@@ -381,6 +383,8 @@ async function handleSearchContent(
       paged.nextCursor,
       paged.resource?.entry.uri,
     ),
+    offset: paged.offset,
+    total: paged.metadata.totalMatches,
     ...(paged.resource ? { link: paged.resource.link } : {}),
   };
 }
@@ -412,11 +416,20 @@ export const SEARCH_CONTENT = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const { structured, link } = await handleSearchContent(args, ctx);
+    const { structured, offset, total, link } = await handleSearchContent(args, ctx);
+    const rows = structured.matches.map((m) => `${m.file}:${String(m.line)}: ${m.content}`);
+    const body = rows.length > 0 ? rows.join('\n') : `No matches for '${args.searchPattern}'`;
     const text =
-      structured.matches.length > 0
-        ? structured.matches.map((m) => `${m.file}:${String(m.line)}: ${m.content}`).join('\n')
-        : `No matches for '${args.searchPattern}'`;
+      body +
+      pageTrailer({
+        offset,
+        shown: rows.length,
+        total,
+        noun: 'matches',
+        tool: 'search_text',
+        nextCursor: structured.nextCursor,
+        stoppedReason: structured.stoppedReason,
+      });
     if (link) {
       return { structured, text, resources: [link] };
     }

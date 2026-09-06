@@ -1,6 +1,8 @@
 import { basename } from 'node:path';
 import { stripVTControlCharacters, styleText } from 'node:util';
 
+import { MAX_SEARCH_RESULTS } from './util.js';
+
 export interface ProgressCtx {
   label: string;
   subject?: string;
@@ -79,6 +81,55 @@ export function joinRoster(items: readonly string[], separator = ' · '): string
 
 export function truncateProgressPattern(pattern: string, maxLength = 40): string {
   return pattern.length <= maxLength ? pattern : `${pattern.slice(0, maxLength)}…`;
+}
+
+/**
+ * `stoppedReason` names the engine's own cap, and `maxResults` is also the name
+ * of the caller's page-size argument — spelling the cap out keeps a caller who
+ * passed `maxResults: 5` from reading their own argument back.
+ */
+const STOP_REASON_TEXT: Record<string, string> = {
+  maxResults: `hit the server's ${String(MAX_SEARCH_RESULTS)}-result scan cap, not your maxResults`,
+  timeout: 'hit the time limit, or the request was cancelled',
+};
+
+/**
+ * The `//` lines a paged search appends to its text block. Paging and the
+ * engine's stop state live in the structured half, which `defineTool` ships
+ * under `_meta` for a tool that authors its own text — and no client renders
+ * that. These lines are the only place a caller learns that more remains or
+ * that the scan was cut. They are independent: a scan can stop early with too
+ * few results to page, so a truncation with no cursor must still say so.
+ * Prefixed `//` so neither can be mistaken for a result row.
+ */
+export function pageTrailer(p: {
+  offset: number;
+  shown: number;
+  total: number;
+  noun: string;
+  tool: string;
+  nextCursor?: string | undefined;
+  stoppedReason?: string | undefined;
+}): string {
+  const lines: string[] = [];
+  // Position is owed on every page of a split set, including the last one —
+  // which has no cursor and would otherwise read as the whole answer.
+  if (p.offset > 0 || p.total > p.shown) {
+    const next =
+      p.nextCursor === undefined
+        ? ''
+        : ` Next page: ${p.tool} ${JSON.stringify({ cursor: p.nextCursor })}`;
+    lines.push(
+      `// showing ${String(p.offset + 1)}-${String(p.offset + p.shown)} of ${String(p.total)} ${p.noun}.${next}`,
+    );
+  }
+  if (p.stoppedReason !== undefined) {
+    const cause = STOP_REASON_TEXT[p.stoppedReason] ?? `stopped (${p.stoppedReason})`;
+    lines.push(
+      `// scan stopped early: ${cause}. That total is a floor, not the count. Narrow path or pattern for the rest.`,
+    );
+  }
+  return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import { SearchStoppedReasonSchema } from '../core/concurrency.js';
 import { paginate } from '../core/cursor.js';
 import { ErrorCode } from '../core/errors.js';
-import { formatCount, truncateProgressPattern } from '../core/fmt.js';
+import { formatCount, pageTrailer, truncateProgressPattern } from '../core/fmt.js';
 import { DEFAULT_EXCLUDE_PATTERNS } from '../core/glob.js';
 import { toPosixRelative } from '../core/path.js';
 import {
@@ -136,6 +136,8 @@ async function handleSearchFiles(
   ctx: ToolCtx,
 ): Promise<{
   structured: z.infer<typeof SearchFilesOutputSchema>;
+  offset: number;
+  total: number;
   link?: ReturnType<typeof putJsonResource>['link'];
 }> {
   const requestedBasePath = ctx.fs.pathGuard.resolvePathOrRoot(args.path);
@@ -194,6 +196,8 @@ async function handleSearchFiles(
       paged.nextCursor,
       paged.resource?.entry.uri,
     ),
+    offset: paged.offset,
+    total: paged.metadata.totalMatches,
     ...(paged.resource ? { link: paged.resource.link } : {}),
   };
 }
@@ -224,11 +228,22 @@ export const SEARCH_FILES = defineTool({
   }),
   accessPaths: (args) => (args.path ? [args.path] : []),
   run: async (args, ctx) => {
-    const { structured, link } = await handleSearchFiles(args, ctx);
-    const text =
+    const { structured, offset, total, link } = await handleSearchFiles(args, ctx);
+    const body =
       structured.results.length > 0
         ? structured.results.map((r) => r.path).join('\n')
         : `No files matching '${args.pattern}'`;
+    const text =
+      body +
+      pageTrailer({
+        offset,
+        shown: structured.results.length,
+        total,
+        noun: 'files',
+        tool: 'find_files',
+        nextCursor: structured.nextCursor,
+        stoppedReason: structured.stoppedReason,
+      });
     if (link) {
       return { structured, text, resources: [link] };
     }
