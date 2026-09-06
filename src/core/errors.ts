@@ -1,7 +1,5 @@
 import { ProtocolErrorCode } from '@modelcontextprotocol/server';
 
-import * as z from 'zod/v4';
-
 export const ErrorCode = {
   ACCESS_DENIED: 'ACCESS_DENIED',
   NOT_FOUND: 'NOT_FOUND',
@@ -14,7 +12,6 @@ export const ErrorCode = {
   INVALID_INPUT: 'INVALID_INPUT',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
   SYMLINK_NOT_ALLOWED: 'SYMLINK_NOT_ALLOWED',
-  VALIDATION_FAILED: 'VALIDATION_FAILED',
   IO_ERROR: 'IO_ERROR',
   UNKNOWN: 'UNKNOWN',
 } as const;
@@ -32,23 +29,12 @@ export interface Problem {
   readonly code: ErrorCode;
   readonly message: string;
   readonly path?: string;
-  readonly issues?: readonly ProblemIssue[];
   readonly suggestion?: string;
-}
-
-interface ProblemIssue {
-  readonly path: readonly (string | number)[];
-  readonly code: string;
-  readonly message: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly params?: Readonly<Record<string, unknown>>;
 }
 
 interface ProblemFactoryOptions {
   path?: string;
   suggestion?: string;
-  issues?: readonly ProblemIssue[];
 }
 
 function build(code: ErrorCode, message: string, opts: ProblemFactoryOptions = {}): Problem {
@@ -57,7 +43,6 @@ function build(code: ErrorCode, message: string, opts: ProblemFactoryOptions = {
     message,
     ...(opts.path !== undefined ? { path: opts.path } : {}),
     ...(opts.suggestion !== undefined ? { suggestion: opts.suggestion } : {}),
-    ...(opts.issues !== undefined ? { issues: opts.issues } : {}),
   };
 }
 
@@ -76,16 +61,14 @@ export const Problem = {
     const shouldOverride =
       problem.code === ErrorCode.UNKNOWN || problem.code === ErrorCode.IO_ERROR;
     const code = shouldOverride ? defaultCode : problem.code;
-    const baseSuggestion =
-      problem.suggestion ?? resolveSuggestion({ code: problem.code, issues: problem.issues ?? [] });
-    const suggestion = (shouldOverride ? DEFAULT_SUGGESTIONS[code] : undefined) ?? baseSuggestion;
+    const suggestion =
+      (shouldOverride ? DEFAULT_SUGGESTIONS[code] : undefined) ??
+      problem.suggestion ??
+      DEFAULT_SUGGESTIONS[problem.code];
     const resolvedPath = path ?? problem.path;
     return build(code, problem.message, {
       ...(resolvedPath !== undefined ? { path: resolvedPath } : {}),
       ...(suggestion !== undefined ? { suggestion } : {}),
-      ...(problem.issues !== undefined && problem.issues.length > 0
-        ? { issues: problem.issues }
-        : {}),
     });
   },
   toText(error: unknown, defaultCode: ErrorCode): { code: ErrorCode; text: string } {
@@ -118,14 +101,6 @@ const DEFAULT_SUGGESTIONS: Readonly<Partial<Record<ErrorCode, string>>> = {
   [ErrorCode.PERMISSION_DENIED]: 'Check OS file permissions.',
   [ErrorCode.SYMLINK_NOT_ALLOWED]: 'Symlink escapes allowed directories.',
 };
-
-function resolveSuggestion(p: Pick<Problem, 'code' | 'issues'>): string | undefined {
-  for (const issue of p.issues ?? []) {
-    const fromRule = issue.params?.['suggestion'];
-    if (typeof fromRule === 'string') return fromRule;
-  }
-  return DEFAULT_SUGGESTIONS[p.code];
-}
 
 export const ERRNO_MAP: Readonly<Record<string, ErrorCode>> = {
   ENOENT: ErrorCode.NOT_FOUND,
@@ -250,38 +225,6 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
   }
 }
 
-function toProblemIssue(issue: z.core.$ZodIssue): ProblemIssue {
-  const base: ProblemIssue = {
-    path: issue.path as readonly (string | number)[],
-    code: issue.code,
-    message: issue.message,
-  };
-  const expected = (issue as { expected?: string }).expected;
-  const received = (issue as { received?: string }).received;
-  const rawParams = (issue as { params?: unknown }).params;
-  const params =
-    rawParams === undefined || rawParams === null
-      ? undefined
-      : typeof rawParams === 'object'
-        ? (rawParams as Record<string, unknown>)
-        : { value: rawParams };
-  return {
-    ...base,
-    ...(expected !== undefined ? { expected } : {}),
-    ...(received !== undefined ? { received } : {}),
-    ...(params !== undefined ? { params } : {}),
-  };
-}
-
-function zodErrorToProblem(err: z.ZodError): Problem {
-  const issues = err.issues.map(toProblemIssue);
-  const suggestion = resolveSuggestion({ code: ErrorCode.VALIDATION_FAILED, issues });
-  return build(ErrorCode.VALIDATION_FAILED, z.prettifyError(err), {
-    issues,
-    ...(suggestion !== undefined ? { suggestion } : {}),
-  });
-}
-
 export function isFsError(error: unknown): error is FsError {
   if (!(error instanceof Error) || error.name !== 'FsError') return false;
   if (!('problem' in error)) return false;
@@ -316,7 +259,12 @@ function classify(error: unknown): Problem {
     return Problem.unknown('Unknown error');
   }
   if (isFsError(error)) return error.problem;
-  if (error instanceof z.ZodError) return zodErrorToProblem(error);
+  // No `ZodError` branch, deliberately. Tool arguments are validated by
+  // `safeParse` inside the SDK's validator seam (tools/define.ts), which never
+  // throws — it hands back `z.prettifyError`'s string — and nothing in `src/`
+  // calls `.parse()`. A ZodError reaching here would fall through to
+  // `Problem.unknown` with Zod's raw JSON-dump `.message`, so if a `.parse()`
+  // is ever added, add the branch back with it rather than discovering this.
   if (!(error instanceof Error)) {
     return Problem.unknown(typeof error === 'string' ? error : '[non-Error thrown]');
   }
