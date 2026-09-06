@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] - 2026-09-06
+
+A fix release for silent truncation in the text the two search tools return.
+No tool, CLI flag, or environment variable changes behaviour and the structured
+payload is untouched — only the text block gains trailing `//` lines.
+
+### Fixed
+
+- **`search_text` and `find_files` now say when a page hides results.** The
+  position in the set, the next-page cursor, and the engine's stop state lived
+  only in the structured half, which the SDK ships under `_meta` for a tool
+  that authors its own text — and no client renders that, so a capped page read
+  exactly like a complete answer. Both tools now append
+  `// showing 5-8 of 9 matches. Next page: search_text {"cursor":"..."}`, on
+  every page of a split set including the last one, which has no cursor. A scan
+  the engine cut gets a second line,
+  `// scan stopped early: hit the server's 10000-result scan cap`, which names
+  the cap rather than echoing `maxResults` — that is also the caller's
+  page-size argument. The stop line is independent of the cursor, so a
+  truncation with too few results to page still says so.
+- **`read`'s continuation echoes the path the caller wrote.** It carried the
+  resolved absolute path instead, which on Windows is a backslash-doubling JSON
+  string that also spells out the server root. Its hint now names the line to
+  resume from (`More lines remain from 501.`) rather than the generic
+  `File was truncated.`
+
 ## [2.1.3] - 2026-09-06
 
 A release that lands the three seams from the 2026-09-05 architecture audit.
