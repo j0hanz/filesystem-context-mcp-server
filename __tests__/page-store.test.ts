@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { createFirstPage, readNextPage } from '../src/core/cursor.js';
+import { paginate } from '../src/core/cursor.js';
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { PageSnapshotStore } from '../src/core/page-store.js';
 
@@ -13,83 +13,66 @@ function assertInvalidCursor(error: unknown): boolean {
 }
 
 describe('PageSnapshotStore', () => {
-  it('stores pages, rejects old and malformed cursors, and checks query keys', () => {
+  it('stores pages, rejects old and malformed cursors, and checks query keys', async () => {
     const store = new PageSnapshotStore();
-    const first = createFirstPage({
+    const queryKeyOne = '{"method":"list","path":"one"}';
+    const queryKeyTwo = '{"method":"list","path":"two"}';
+    const first = await paginate({
       store,
-      queryKey: '{"method":"list","path":"one"}',
-      items: ['a', 'b'],
-      metadata: { total: 2 },
+      queryKey: queryKeyOne,
+      cursor: undefined,
       pageSize: 1,
+      produce: async () => ({ items: ['a', 'b'], metadata: { total: 2 }, truncated: false }),
     });
 
     assert.deepStrictEqual(first.page, ['a']);
     const cursor = first.nextCursor;
     assert.ok(cursor);
-    assert.throws(
-      () =>
-        readNextPage({
-          store,
-          queryKey: '{"method":"list","path":"two"}',
-          cursor,
-          pageSize: 1,
-        }),
+    const replay = (queryKey: string, malformedCursor: string) =>
+      paginate({
+        store,
+        queryKey,
+        cursor: malformedCursor,
+        pageSize: 1,
+        produce: () => {
+          throw new Error('produce must not run on replay');
+        },
+      });
+    await assert.rejects(() => replay(queryKeyTwo, cursor), assertInvalidCursor);
+    await assert.rejects(
+      () => replay(queryKeyOne, Buffer.from(JSON.stringify({ offset: 1 })).toString('base64url')),
       assertInvalidCursor,
     );
-    assert.throws(
+    await assert.rejects(() => replay(queryKeyOne, 'not-a-cursor'), assertInvalidCursor);
+    await assert.rejects(
       () =>
-        readNextPage({
-          store,
-          queryKey: '{"method":"list","path":"one"}',
-          cursor: Buffer.from(JSON.stringify({ offset: 1 })).toString('base64url'),
-          pageSize: 1,
-        }),
-      assertInvalidCursor,
-    );
-    assert.throws(
-      () =>
-        readNextPage({
-          store,
-          queryKey: '{"method":"list","path":"one"}',
-          cursor: 'not-a-cursor',
-          pageSize: 1,
-        }),
-      assertInvalidCursor,
-    );
-    assert.throws(
-      () =>
-        readNextPage({
-          store,
-          queryKey: '{"method":"list","path":"one"}',
-          cursor: Buffer.from(JSON.stringify({ snapshotId: 'evicted', offset: 0 })).toString(
-            'base64url',
-          ),
-          pageSize: 1,
-        }),
+        replay(
+          queryKeyOne,
+          Buffer.from(JSON.stringify({ snapshotId: 'evicted', offset: 0 })).toString('base64url'),
+        ),
       assertInvalidCursor,
     );
     const decodedCursor = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as Record<
       string,
       unknown
     >;
-    assert.throws(
+    await assert.rejects(
       () =>
-        readNextPage({
-          store,
-          queryKey: '{"method":"list","path":"one"}',
-          cursor: Buffer.from(JSON.stringify({ ...decodedCursor, offset: 99 })).toString(
-            'base64url',
-          ),
-          pageSize: 1,
-        }),
+        replay(
+          queryKeyOne,
+          Buffer.from(JSON.stringify({ ...decodedCursor, offset: 99 })).toString('base64url'),
+        ),
       assertInvalidCursor,
     );
 
-    const second = readNextPage({
+    const second = await paginate({
       store,
-      queryKey: '{"method":"list","path":"one"}',
+      queryKey: queryKeyOne,
       cursor,
       pageSize: 1,
+      produce: () => {
+        throw new Error('produce must not run on replay');
+      },
     });
     assert.deepStrictEqual(second.page, ['b']);
     assert.deepStrictEqual(second.metadata, { total: 2 });
@@ -113,14 +96,14 @@ describe('PageSnapshotStore', () => {
     assert.throws(() => store.read(first, queryKey), assertInvalidCursor);
   });
 
-  it('does not create a snapshot when the complete result fits one page', () => {
+  it('does not create a snapshot when the complete result fits one page', async () => {
     const store = new PageSnapshotStore({ maxSnapshots: 0 });
-    const result = createFirstPage({
+    const result = await paginate({
       store,
       queryKey: '{"method":"list"}',
-      items: ['complete'],
-      metadata: undefined,
+      cursor: undefined,
       pageSize: 1,
+      produce: async () => ({ items: ['complete'], metadata: undefined, truncated: false }),
     });
 
     assert.deepStrictEqual(result.page, ['complete']);

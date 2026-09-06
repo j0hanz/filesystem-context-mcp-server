@@ -5,7 +5,8 @@ import { isNodeError, isNotFoundErrno, rethrowIfAborted } from './errors.js';
 import { Logger } from './observability.js';
 import { isPathWithinDirectories, isSamePath, normalizePath } from './path-utils.js';
 import type { PathGuard } from './path.js';
-import { isSlash, resolveRealPath, toPosixPath } from './path.js';
+import { resolveRealPath } from './path.js';
+import { isSlash, toPosixPath } from './primitives.js';
 
 const MAX_COMPLETION_ITEMS = 100;
 const COMPLETION_RATE_LIMIT_MS = 100;

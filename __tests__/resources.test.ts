@@ -3,6 +3,7 @@ import type { ReadResourceResult, ServerContext } from '@modelcontextprotocol/se
 
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
@@ -21,6 +22,7 @@ import {
   cleanupTestRoot,
   createTestClientPair,
   createTestRoot,
+  makeGuard,
   waitFor,
   writeTestFile,
 } from './helpers.js';
@@ -130,7 +132,11 @@ describe('MCP Resources', () => {
 
       // Test reading via resource contract
       const store = new ResourceStore();
-      const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
+      const contracts = getResourceContracts({
+        resourceStore: store,
+        pathGuard: await makeGuard([tmpdir()]),
+        readOnly: false,
+      });
       const instructionsContract = contracts.find((c) => c.name === 'filesystem-mcp-instructions');
 
       assert.ok(instructionsContract, 'filesystem-mcp-instructions contract should be present');
@@ -176,7 +182,11 @@ describe('MCP Resources', () => {
 
     it('TC-FUNC-059: Read cached result via resource contract', async () => {
       const store = new ResourceStore();
-      const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
+      const contracts = getResourceContracts({
+        resourceStore: store,
+        pathGuard: await makeGuard([tmpdir()]),
+        readOnly: false,
+      });
       const resultContract = contracts.find((c) => c.name === 'filesystem-mcp-result');
 
       assert.ok(resultContract, 'filesystem-mcp-result contract should be present');
@@ -215,7 +225,11 @@ describe('MCP Resources', () => {
       );
 
       // Contract read on missing result throws ResourceNotFoundError
-      const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
+      const contracts = getResourceContracts({
+        resourceStore: store,
+        pathGuard: await makeGuard([tmpdir()]),
+        readOnly: false,
+      });
       const resultContract = contracts.find((c) => c.name === 'filesystem-mcp-result');
       assert.ok(resultContract, 'filesystem-mcp-result contract should exist');
 
@@ -266,7 +280,7 @@ describe('MCP Resources', () => {
 
     before(async () => {
       tmpDir = await createTestRoot();
-      pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
+      pathGuard = await makeGuard([tmpDir]);
       store = new ResourceStore();
     });
 
@@ -328,20 +342,17 @@ describe('MCP Resources', () => {
       assert.ok(!('text' in binaryResource));
     });
 
-    it('TC-FUNC-063: WatcherRegistry - add callback, attach watcher, and debounce notifications', async () => {
+    it('TC-FUNC-063: WatcherRegistry - acquire attaches a watcher and debounces notifications', async () => {
       const registry = createWatcherRegistry();
       const testFile = await writeTestFile(tmpDir, 'watch_test.txt', 'initial');
       const testUri = buildFileResourceUri(testFile);
 
       const notifications: string[] = [];
-      registry.addCallback(testUri, (uri) => {
+      const result = await registry.acquire(pathGuard, testUri, (uri) => {
         notifications.push(uri);
       });
-
-      const attached = registry.attach(testUri, testFile);
-      assert.strictEqual(attached, true);
+      assert.strictEqual(result.ok, true);
       assert.strictEqual(registry.hasWatcher(testUri), true);
-      assert.strictEqual(registry.isStale(testUri), false);
 
       // Trigger file modification
       await writeFile(testFile, 'updated content');
@@ -355,19 +366,20 @@ describe('MCP Resources', () => {
       registry.destroy();
     });
 
-    it('TC-FUNC-064: WatcherRegistry - remove tears down watcher and leaves no stale state', async () => {
+    it('TC-FUNC-064: WatcherRegistry - release tears down the watcher and leaves no stale state', async () => {
       const registry = createWatcherRegistry();
       const testFile = await writeTestFile(tmpDir, 'remove_test.txt', 'content');
       const testUri = buildFileResourceUri(testFile);
 
-      registry.addCallback(testUri, () => {});
-      registry.retain(testUri);
-      registry.attach(testUri, testFile);
+      const result = await registry.acquire(pathGuard, testUri, () => {});
+      assert.strictEqual(result.ok, true);
       assert.strictEqual(registry.hasWatcher(testUri), true);
 
       registry.release(testUri);
       assert.strictEqual(registry.hasWatcher(testUri), false);
-      assert.strictEqual(registry.isStale(testUri), false);
+      // No stale state: a fresh acquire for the same uri succeeds.
+      const reacquired = await registry.acquire(pathGuard, testUri, () => {});
+      assert.strictEqual(reacquired.ok, true);
 
       registry.destroy();
     });
@@ -381,11 +393,13 @@ describe('MCP Resources', () => {
         notifications += 1;
       };
 
-      registry.addCallback(testUri, callback);
-      registry.addCallback(testUri, callback);
-      registry.retain(testUri);
-      registry.retain(testUri);
-      assert.strictEqual(registry.attach(testUri, testFile), true);
+      // Two leases on one callback identity: the registry de-duplicates the
+      // sink, so one filesystem event still fires it once.
+      const first = await registry.acquire(pathGuard, testUri, callback);
+      const second = await registry.acquire(pathGuard, testUri, callback);
+      assert.strictEqual(first.ok, true);
+      assert.strictEqual(second.ok, true);
+      assert.strictEqual(registry.size(), 1);
 
       await writeFile(testFile, 'changed');
       await waitFor(() => notifications > 0, 1000);
@@ -400,70 +414,77 @@ describe('MCP Resources', () => {
       registry.destroy();
     });
 
-    it('TC-FUNC-065: WatcherRegistry - isAtCap reports capacity state', () => {
+    it('TC-FUNC-065: WatcherRegistry - size reports the live watcher count', () => {
       const registry = createWatcherRegistry();
-      assert.strictEqual(registry.isAtCap(), false);
+      assert.strictEqual(registry.size(), 0);
       registry.destroy();
     });
 
-    it('TC-FUNC-066: WatcherRegistry - destroy closes all watchers and marks all stale', async () => {
+    it('TC-FUNC-066: WatcherRegistry - destroy closes all watchers and makes every uri stale', async () => {
       const registry = createWatcherRegistry();
       const fileA = await writeTestFile(tmpDir, 'destroy_a.txt', 'A');
       const fileB = await writeTestFile(tmpDir, 'destroy_b.txt', 'B');
+      const freshFile = await writeTestFile(tmpDir, 'never_watched.txt', 'C');
       const uriA = buildFileResourceUri(fileA);
       const uriB = buildFileResourceUri(fileB);
+      const freshUri = buildFileResourceUri(freshFile);
 
-      registry.addCallback(uriA, () => {});
-      registry.addCallback(uriB, () => {});
-      registry.attach(uriA, fileA);
-      registry.attach(uriB, fileB);
+      assert.strictEqual((await registry.acquire(pathGuard, uriA, () => {})).ok, true);
+      assert.strictEqual((await registry.acquire(pathGuard, uriB, () => {})).ok, true);
 
       assert.strictEqual(registry.hasWatcher(uriA), true);
       assert.strictEqual(registry.hasWatcher(uriB), true);
-      assert.strictEqual(registry.isStale(uriA), false);
-      assert.strictEqual(registry.isStale(uriB), false);
+      assert.strictEqual(registry.size(), 2);
 
       registry.destroy();
 
       assert.strictEqual(registry.hasWatcher(uriA), false);
       assert.strictEqual(registry.hasWatcher(uriB), false);
-      assert.strictEqual(registry.isStale(uriA), true);
-      assert.strictEqual(registry.isStale(uriB), true);
-      assert.strictEqual(registry.isStale('filesystem-mcp://file/nonexistent'), true);
+      assert.strictEqual(registry.size(), 0);
+      // Destroyed registry: even a uri never watched aborts as stale.
+      assert.deepStrictEqual(await registry.acquire(pathGuard, freshUri, () => {}), {
+        ok: false,
+        reason: 'stale',
+      });
     });
 
-    it('TC-FUNC-067: WatcherRegistry - remove during in-flight subscribe marks stale; settled remove does not', async () => {
+    it('TC-FUNC-067: WatcherRegistry - release during in-flight subscribe marks stale; settled release does not', async () => {
       const registry = createWatcherRegistry();
       const file = await writeTestFile(tmpDir, 'resub.txt', 'content');
       const uri = buildFileResourceUri(file);
 
-      registry.startSubscribe(uri);
-      assert.strictEqual(registry.isStale(uri), false);
-      registry.addCallback(uri, () => {});
-      registry.retain(uri);
-      registry.attach(uri, file);
-
+      // Settled subscribe then release: no stale marker, a fresh acquire works.
+      assert.strictEqual(
+        (await registry.acquire(pathGuard, uri, () => {}, { markSubscribe: true })).ok,
+        true,
+      );
       registry.release(uri);
-      assert.strictEqual(registry.isStale(uri), false);
+      assert.strictEqual(registry.hasWatcher(uri), false);
+      const reacquired = await registry.acquire(pathGuard, uri, () => {}, { markSubscribe: true });
+      assert.strictEqual(reacquired.ok, true);
+      registry.release(uri);
 
-      registry.startSubscribe(uri);
-      assert.strictEqual(registry.isStale(uri), false);
-      registry.addCallback(uri, () => {});
-      registry.retain(uri);
-      assert.strictEqual(registry.isStale(uri), false);
+      // In-flight abort: a release landing while path validation is still
+      // awaited must abort the acquire as stale.
+      let openGate: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        openGate = resolve;
+      });
+      const gatedGuard = {
+        validateExistingPath: async (filePath: string) => {
+          await gate;
+          return pathGuard.validateExistingPath(filePath);
+        },
+      } as unknown as PathGuard;
+      const inFlight = registry.acquire(gatedGuard, uri, () => {}, { markSubscribe: true });
+      registry.release(uri);
+      openGate();
+      assert.deepStrictEqual(await inFlight, { ok: false, reason: 'stale' });
 
-      // in-flight abort: a subscribe that never settles (no addCallback yet)
-      // must leave the stale marker a mid-await subscriber checks — using a
-      // fresh uri so this doesn't inherit ref-count/watcher state from above.
-      const abortFile = await writeTestFile(tmpDir, 'resub_abort.txt', 'content');
-      const abortUri = buildFileResourceUri(abortFile);
-      registry.startSubscribe(abortUri);
-      registry.release(abortUri);
-      assert.strictEqual(registry.isStale(abortUri), true);
-
-      // and a fresh startSubscribe clears it again
-      registry.startSubscribe(abortUri);
-      assert.strictEqual(registry.isStale(abortUri), false);
+      // And a fresh acquire clears the marker and succeeds again.
+      const resumed = await registry.acquire(pathGuard, uri, () => {}, { markSubscribe: true });
+      assert.strictEqual(resumed.ok, true);
+      registry.release(uri);
 
       registry.destroy();
     });
@@ -504,9 +525,13 @@ describe('MCP Resources', () => {
       );
     });
 
-    it('resource contracts specify cacheHint for client caching optimization', () => {
+    it('resource contracts specify cacheHint for client caching optimization', async () => {
       const store = new ResourceStore();
-      const contracts = getResourceContracts({ resourceStore: store, readOnly: false });
+      const contracts = getResourceContracts({
+        resourceStore: store,
+        pathGuard: await makeGuard([tmpdir()]),
+        readOnly: false,
+      });
       const instructions = contracts.find((c) => c.name === 'filesystem-mcp-instructions');
       assert.deepStrictEqual(instructions?.cacheHint, { cacheScope: 'public', ttlMs: 300_000 });
 
@@ -571,13 +596,14 @@ describe('MCP Resources', () => {
       const capabilities = serverContext.mcp.server.getCapabilities();
       assert.strictEqual(capabilities.resources?.subscribe, true);
       assert.strictEqual(capabilities.resources?.listChanged, true);
-      await serverContext.close();
+      serverContext.disposeRuntimeState();
+      await serverContext.mcp.close();
     });
   });
 
   it('legacy resource registration refuses to replace an existing request handler', async () => {
     const root = await createTestRoot();
-    const pathGuard = await PathGuard.fromAllowedDirectories([root]);
+    const pathGuard = await makeGuard([root]);
     const server = new McpServer({ name: 'resource-collision-test', version: '1.0.0' });
     server.server.setRequestHandler('resources/subscribe', async () => ({}));
 
@@ -617,7 +643,7 @@ describe('filesystem resource path completion', () => {
   // starts mid-filename, and extractPath then names a different file.
   it('returns {+path} values that round-trip back to the file they named', async () => {
     const hashFile = await writeTestFile(root, 'has#hash.txt', 'x');
-    const pathGuard = await PathGuard.fromAllowedDirectories([root]);
+    const pathGuard = await makeGuard([root]);
     const contracts = getResourceContracts({
       resourceStore: new ResourceStore(),
       pathGuard,

@@ -185,8 +185,15 @@ function findColumnOffset(content: string, context: SearchContext): number | und
 
 function buildSortedPayloads(
   result: SearchResultValue,
-  context: SearchContext,
+  args: SearchInput,
+  matcher: Regex | undefined,
 ): SearchMatchPayload[] {
+  const context: SearchContext = {
+    pattern: args.searchPattern,
+    caseSensitive: args.caseSensitive,
+    ...(matcher ? { matcher } : {}),
+  };
+
   const relativeByFile = new Map<string, string>();
 
   const getRelativeFile = (file: string): string => {
@@ -198,29 +205,20 @@ function buildSortedPayloads(
     return rel;
   };
 
-  const payloads = result.matches.map((match, originalIndex) => {
-    const relFile = getRelativeFile(match.file);
+  const payloads = result.matches.map((match): SearchMatchPayload => {
     const column = findColumnOffset(match.content, context);
 
-    const payload: SearchMatchPayload = {
-      file: relFile,
+    return {
+      file: getRelativeFile(match.file),
       line: match.line,
       ...(column !== undefined ? { column } : {}),
       content: match.content,
       matchCount: match.matchCount,
     };
-
-    return { payload, originalIndex };
   });
 
-  payloads.sort((left, right) => {
-    const fileCompare = left.payload.file.localeCompare(right.payload.file);
-    if (fileCompare !== 0) return fileCompare;
-    if (left.payload.line !== right.payload.line) return left.payload.line - right.payload.line;
-    return left.originalIndex - right.originalIndex;
-  });
-
-  return payloads.map((p) => p.payload);
+  payloads.sort((l, r) => l.file.localeCompare(r.file) || l.line - r.line);
+  return payloads;
 }
 
 function buildSearchContentOptions(args: SearchInput, signal?: AbortSignal): SearchContentOptions {
@@ -245,23 +243,6 @@ function createSearchMatcher(args: SearchInput): Regex | undefined {
     return compileRegex(escapeRegexLiteral(args.searchPattern), { caseSensitive: false });
   }
   return undefined;
-}
-
-function createSearchContext(args: SearchInput, matcher: Regex | undefined): SearchContext {
-  return {
-    pattern: args.searchPattern,
-    caseSensitive: args.caseSensitive,
-    ...(matcher ? { matcher } : {}),
-  };
-}
-
-function sortedPayloads(
-  result: SearchResultValue,
-  args: SearchInput,
-  regexMatcher: Regex | undefined,
-): SearchMatchPayload[] {
-  const searchContext = createSearchContext(args, regexMatcher);
-  return buildSortedPayloads(result, searchContext);
 }
 
 /**
@@ -336,12 +317,16 @@ async function handleSearchContent(
         scoped.searchPattern,
         buildSearchContentOptions({ ...scoped, maxResults: MAX_SEARCH_RESULTS }, ctx.signal),
         ctx.fs.pathGuard,
+        // Same pattern, same flags as createSearchMatcher compiled above; pass it
+        // through so searchContent does not compile a second copy in re2-wasm's
+        // fixed 16 MB heap.
+        regexMatcher,
       );
 
       // regexMatcher holds wasm memory re2-wasm never reclaims on its own.
       let items: SearchMatchPayload[];
       try {
-        items = sortedPayloads(result, scoped, regexMatcher);
+        items = buildSortedPayloads(result, scoped, regexMatcher);
       } finally {
         freeRegex(regexMatcher);
       }

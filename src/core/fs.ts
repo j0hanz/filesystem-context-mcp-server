@@ -1,6 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto';
-import type { ReadStream, Stats } from 'node:fs';
-import { createReadStream, constants as fsConstants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import type { Stats } from 'node:fs';
+import { constants as fsConstants } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import {
   chmod as fsChmod,
@@ -19,7 +19,6 @@ import {
   writeFile as fsWriteFile,
 } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 
 import { withAbort } from './concurrency.js';
 import { ErrorCode, formatUnknownErrorMessage, FsError, isFsError, isNodeError } from './errors.js';
@@ -34,12 +33,11 @@ import {
   normalizeSpec,
   readFileWithStats,
   readNormalized,
-  STREAM_CHUNK_SIZE,
 } from './read.js';
 import { getMaxTextFileSize } from './util.js';
 
 export type { FileType };
-export type { Stats, ReadStream };
+export type { Stats };
 export type { FileHandle };
 
 // ─── Domain primitives ────────────────────────────────────────────────────────
@@ -57,16 +55,6 @@ export interface FileInfo {
   readonly isHidden: boolean;
   readonly mimeType?: string;
   readonly symlinkTarget?: string;
-}
-
-// ─── File hashing ────────────────────────────────────────────────────────────
-
-async function calculateFileContentHash(filePath: string, signal?: AbortSignal): Promise<string> {
-  const hasher = createHash('sha256');
-  await pipeline(createReadStream(filePath, { signal, highWaterMark: STREAM_CHUNK_SIZE }), hasher, {
-    signal,
-  });
-  return hasher.digest('hex');
 }
 
 async function atomicWriteFile(
@@ -235,12 +223,6 @@ export class GuardedFileSystem {
     return { validSource, validDest };
   }
 
-  async hash(filePath: string, signal?: AbortSignal): Promise<string> {
-    // For hashing, we require the path to exist and be a file, so we use the stricter existing-path guard.
-    const validPath = await this.pathGuard.validateExistingPath(filePath);
-    return calculateFileContentHash(validPath, signal);
-  }
-
   async readFile(filePath: string, spec: ReadSpec): Promise<ReadFileResult> {
     const normalized = normalizeSpec(spec);
     const validPath = await this.pathGuard.validateExistingPath(filePath);
@@ -311,14 +293,6 @@ export class GuardedFileSystem {
     return fsOpen(validPath, flags, mode);
   }
 
-  async createReadStream(
-    filePath: string,
-    options?: Parameters<typeof createReadStream>[1],
-  ): Promise<ReadStream> {
-    const validPath = await this.pathGuard.validateExistingPath(filePath);
-    return createReadStream(validPath, options);
-  }
-
   // Single resolution + stat: validateExistingPathDetailed resolves the real
   // path (following symlinks, re-checking sensitivity) once, then we stat the
   // resolved target. Replaces the tool-side validateExistingPathDetailed +
@@ -348,15 +322,15 @@ export class GuardedFileSystem {
   }
 }
 
-export interface StatPath {
-  stat(filePath: string, options?: { signal?: AbortSignal }): Promise<unknown>;
-}
-
 /**
  * Returns whether `path` exists, treating "not found" as absent and logging any
  * other stat failure. Used for TOCTOU re-checks between plan and execute phases.
  */
-export async function destExists(fs: StatPath, path: string, label: string): Promise<boolean> {
+export async function destExists(
+  fs: Pick<GuardedFileSystem, 'stat'>,
+  path: string,
+  label: string,
+): Promise<boolean> {
   try {
     await fs.stat(path);
     return true;

@@ -18,7 +18,7 @@ import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
 import { readAcceptedChoice } from '../core/input-required.js';
 import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path-utils.js';
-import { defaultFalseBoolean, pairFailureSchema, RequiredPath } from '../core/schema.js';
+import { defaultFalseBoolean, PerFileErrorSchema, RequiredPath } from '../core/schema.js';
 import type { PairExecResult, PairPlanResult } from './batch.js';
 import { isTotalFailure, pairFailure, runOverPairs } from './batch.js';
 import type { ToolCtx } from './define.js';
@@ -42,7 +42,11 @@ const MoveInputSchema = z.strictObject({
   ),
 });
 
-const MoveFailureItemSchema = pairFailureSchema('moved', 'move');
+const MoveFailureItemSchema = z.strictObject({
+  source: z.string().describe('Source path that could not be moved'),
+  destination: z.string().describe('Intended destination path for the failed move'),
+  error: PerFileErrorSchema,
+});
 
 type MoveFailureItem = z.infer<typeof MoveFailureItemSchema>;
 
@@ -411,7 +415,6 @@ async function performRenameWithFallback(
           baseProblem.code,
           `Cross-device move of ${originalSource}: copy succeeded but source removal failed (destination holds a copy): ${baseProblem.message}`,
           originalSource,
-          undefined,
           copyOrRemoveError,
         );
       }

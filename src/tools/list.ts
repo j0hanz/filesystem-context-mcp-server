@@ -121,7 +121,7 @@ async function collect(rootPath: string, options: CollectOptions): Promise<Colle
     ) {
       continue;
     }
-    const accessible = await options.pathGuard.isEntryAccessible(entry.path, entryType, [rootPath]);
+    const accessible = await options.pathGuard.isEntryAccessible(entry.path);
     if (!accessible) continue;
 
     totalEntries++;

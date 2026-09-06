@@ -4,7 +4,6 @@ import { processInParallel } from '../core/concurrency.js';
 import { ErrorCode, FsError, Problem, rethrowIfAborted } from '../core/errors.js';
 import { choiceInput, pendingRoundTrip } from '../core/input-required.js';
 import { IS_CASE_INSENSITIVE_FS } from '../core/path-utils.js';
-import type { PairFailureItem } from '../core/schema.js';
 import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 
@@ -13,6 +12,18 @@ interface PerPathError {
   message: string;
   path?: string;
   suggestion?: string;
+}
+
+/** One entry of a source→destination tool's `failures[]` — move's failure schema is the wire twin. */
+export interface PairFailureItem {
+  source: string;
+  destination: string;
+  error: {
+    code: string;
+    message: string;
+    path?: string | undefined;
+    suggestion?: string | undefined;
+  };
 }
 
 export type PerPathResult<T> = { path: string; value: T } | { path: string; error: PerPathError };
@@ -27,7 +38,6 @@ type BatchInput<TOverride> =
 
 interface RunOverPathsOptions {
   defaultErrorCode?: ErrorCode;
-  concurrency?: number;
 }
 
 function normalizeBatchItems<TOverride>(
@@ -58,7 +68,6 @@ export async function runOverPaths<TOverride, TPerPath>(
   }
 
   const defaultErrorCode = options?.defaultErrorCode ?? ErrorCode.UNKNOWN;
-  const concurrency = options?.concurrency ?? PARALLEL_CONCURRENCY;
 
   const total = items.length;
   let completed = 0;
@@ -88,7 +97,7 @@ export async function runOverPaths<TOverride, TPerPath>(
       }
       return undefined;
     },
-    concurrency,
+    PARALLEL_CONCURRENCY,
     ctx.signal,
   );
 

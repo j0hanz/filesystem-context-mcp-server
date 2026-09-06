@@ -7,7 +7,13 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { ErrorCode, isFsError } from '../src/core/errors.js';
 import { isSamePath } from '../src/core/path-utils.js';
 import { PathGuard } from '../src/core/path.js';
-import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
+import {
+  cleanupTestRoot,
+  createTestRoot,
+  makeGuard,
+  trySymlink,
+  writeTestFile,
+} from './helpers.js';
 
 // Grant round-trip: precheckAccess → applyGrant → the guard's
 // allowed-directory view. These pin the behavior so future regressions fail
@@ -41,7 +47,7 @@ describe('PathGuard grant round-trip', () => {
   });
 
   it('TC-PG-001: precheckAccess returns [] for a path already inside an allowed root', async () => {
-    const guard = await PathGuard.fromAllowedDirectories([root]);
+    const guard = await makeGuard([root]);
     const inside = join(root, 'file.txt');
 
     const grants = await guard.precheckAccess([inside]);
@@ -98,7 +104,7 @@ describe('PathGuard grant round-trip', () => {
   });
 
   it('TC-PG-004: precheckAccess offers [] when the only existing ancestor is a bare filesystem root', async () => {
-    const guard = await PathGuard.fromAllowedDirectories([root]);
+    const guard = await makeGuard([root]);
     // A path whose every intermediate segment is missing: walking up reaches
     // the filesystem root, which precheckAccess must never offer as a grant.
     const unique = `fsmcp_pg004_${Date.now()}`;
@@ -247,7 +253,7 @@ describe('Write/Delete PathGuard', () => {
 
   beforeEach(async () => {
     root = await createTestRoot();
-    guard = await PathGuard.fromAllowedDirectories([root]);
+    guard = await makeGuard([root]);
   });
 
   afterEach(async () => {

@@ -18,7 +18,7 @@ const MAX_BEARER_TOKEN_LENGTH = 4096;
  * "Rate limit exceeded", both of which this module refuses before any handler
  * has parsed a request.
  */
-const JSONRPC_SERVER_ERROR = -32000;
+export const JSONRPC_SERVER_ERROR = -32000;
 
 /**
  * The one way an HTTP refusal goes out — this module's pre-handler rejections

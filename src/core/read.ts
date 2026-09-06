@@ -10,7 +10,7 @@ import { isBinarySample, isKnownBinaryExtension, MIME_SAMPLE_SIZE } from './mime
 import { Logger } from './observability.js';
 import { getMaxTextFileSize } from './util.js';
 
-export const STREAM_CHUNK_SIZE = 64 * 1024;
+const STREAM_CHUNK_SIZE = 64 * 1024;
 
 const READ_ONLY_FILE_FLAG = 'r';
 
@@ -161,22 +161,6 @@ function buildBaseOptions(spec: ReadSpec): NormalizedBase {
   };
 }
 
-function normalizeHeadSpec(
-  spec: Extract<ReadSpec, { kind: 'head' }>,
-  base: NormalizedBase,
-): NormalizedSpec {
-  assertPositiveIntegerOption('lines', spec.lines, 'lines must be at least 1');
-  return { ...base, kind: 'head', lines: spec.lines };
-}
-
-function normalizeTailSpec(
-  spec: Extract<ReadSpec, { kind: 'tail' }>,
-  base: NormalizedBase,
-): NormalizedSpec {
-  assertPositiveIntegerOption('lines', spec.lines, 'lines must be at least 1');
-  return { ...base, kind: 'tail', lines: spec.lines };
-}
-
 function normalizeRangeSpec(
   spec: Extract<ReadSpec, { kind: 'range' }>,
   base: NormalizedBase,
@@ -205,9 +189,9 @@ export function normalizeSpec(spec: ReadSpec): NormalizedSpec {
 
   switch (spec.kind) {
     case 'head':
-      return normalizeHeadSpec(spec, base);
     case 'tail':
-      return normalizeTailSpec(spec, base);
+      assertPositiveIntegerOption('lines', spec.lines, 'lines must be at least 1');
+      return { ...base, kind: spec.kind, lines: spec.lines };
     case 'range':
       return normalizeRangeSpec(spec, base);
     case 'full':
@@ -237,7 +221,6 @@ export function createTooLargeError(
     ErrorCode.TOO_LARGE,
     `File exceeds size limit (${bytesRead} > ${maxSize} bytes)`,
     requestedPath,
-    { size: bytesRead, maxSize },
   );
 }
 
@@ -342,7 +325,6 @@ async function* readLinesBounded(
       ErrorCode.TOO_LARGE,
       `File too large (single line ${bytes} > ${options.maxSize} bytes). Use a narrower range or head.`,
       filePath,
-      { size: bytes, maxSize: options.maxSize },
     );
 
   try {
@@ -543,7 +525,6 @@ async function readTailContent(
       ErrorCode.TOO_LARGE,
       `File too large (${totalLen} > ${options.maxSize} bytes, could not collect ${tail} lines). Use a narrower tail or head.`,
       filePath,
-      { size: totalLen, maxSize: options.maxSize },
     );
   }
 
@@ -592,7 +573,6 @@ function assertSizeWithinLimit(size: number, maxSize: number, filePath: string):
     ErrorCode.TOO_LARGE,
     `File too large (${size} > ${maxSize} bytes). Use head to preview.`,
     filePath,
-    { size, maxSize },
   );
 }
 

@@ -351,7 +351,7 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
 
     recordChangedFile(summary, validPath, plan.matchCount);
 
-    await maybeAppendPatchDiff(summary, {
+    maybeAppendPatchDiff(summary, {
       filePath: validPath,
       originalContent: plan.originalContent,
       updatedContent: plan.updatedContent,
@@ -387,7 +387,7 @@ async function readReplacementPlan(
   return buildReplacementPlan(buffer.toString('utf-8'), replacement, matcher);
 }
 
-async function maybeAppendPatchDiff(
+function maybeAppendPatchDiff(
   summary: ReplaceSummary,
   params: {
     filePath: string;
@@ -396,25 +396,20 @@ async function maybeAppendPatchDiff(
     includeDiff: boolean;
     signal?: AbortSignal;
   },
-): Promise<void> {
+): void {
   if (!params.includeDiff) return;
   const header = toPosixRelative(summary.root, params.filePath);
 
-  const patch = await new Promise<string>((resolve) => {
-    createTwoFilesPatch(
-      header,
-      header,
-      params.originalContent,
-      params.updatedContent,
-      'Original',
-      'Modified',
-      {
-        callback: (res: string | undefined) => {
-          resolve(res ?? '');
-        },
-      },
-    );
-  });
+  // createTwoFilesPatch returns the unified diff string synchronously on
+  // diff v9 (the { callback } option fires via setTimeout and returns undefined).
+  const patch = createTwoFilesPatch(
+    header,
+    header,
+    params.originalContent,
+    params.updatedContent,
+    'Original',
+    'Modified',
+  );
 
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;

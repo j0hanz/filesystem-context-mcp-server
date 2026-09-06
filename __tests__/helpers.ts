@@ -17,7 +17,7 @@ import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { isNodeError } from '../src/core/errors.js';
-import { PathGuard } from '../src/core/path.js';
+import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
@@ -77,8 +77,15 @@ export async function withBoundary<T>(boundary: string, fn: () => Promise<T>): P
 }
 
 /** Spreadable `readOnly` flag — the one owner of the `--read-only` gate in test setup. */
-export function readOnlyOpts(options: { readOnly?: boolean }): { readOnly?: true } {
+function readOnlyOpts(options: { readOnly?: boolean }): { readOnly?: true } {
   return options.readOnly ? { readOnly: true } : {};
+}
+
+/** A PathGuard initialized straight from `dirs` — no CLI/env recompute. */
+export async function makeGuard(dirs: readonly string[]): Promise<PathGuard> {
+  const guard = new PathGuard();
+  guard.initialize(await resolveAllowedDirectoriesState(dirs));
+  return guard;
 }
 
 /** Create an MCP server context pointed at the given allowed dirs. */
@@ -115,7 +122,8 @@ export async function createTestClientPair(
     serverCtx,
     close: async () => {
       await client.close();
-      await serverCtx.close();
+      serverCtx.disposeRuntimeState();
+      await serverCtx.mcp.close();
     },
   };
 }
@@ -159,10 +167,7 @@ export async function createElicitationClientPair(
   options: { readOnly?: boolean; noElicitation?: boolean } = {},
 ): Promise<ElicitationTestContext> {
   const sharedRegistry = createWatcherRegistry();
-  const sharedPathGuard = new PathGuard(
-    { cliAllowedDirs: allowedDirs, ...readOnlyOpts(options) },
-    true,
-  );
+  const sharedPathGuard = new PathGuard({ cliAllowedDirs: allowedDirs, ...readOnlyOpts(options) });
   await sharedPathGuard.recomputeAllowedDirectories();
 
   const handler = createMcpHandler(

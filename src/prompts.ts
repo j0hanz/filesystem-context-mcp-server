@@ -4,7 +4,7 @@ import type {
   PromptMessage,
   TextContent,
 } from '@modelcontextprotocol/server';
-import { completable, getDisplayName, ProtocolError } from '@modelcontextprotocol/server';
+import { completable, ProtocolError } from '@modelcontextprotocol/server';
 
 import * as z from 'zod/v4';
 
@@ -13,12 +13,6 @@ import { Logger } from './core/observability.js';
 import { buildSectionsRecord, INSTRUCTIONS_SUMMARY, renderSections } from './instructions.js';
 
 // --- Types ---
-
-interface PromptContract {
-  readonly name: string;
-  readonly title: string;
-  readonly description: string;
-}
 
 interface PromptRegistrarDeps {
   readonly server: McpServer;
@@ -52,33 +46,7 @@ function userText(text: string): PromptMessage {
   return { role: 'user', content };
 }
 
-async function wrapHandler<T>(contract: PromptContract, fn: () => Promise<T> | T): Promise<T> {
-  const displayName = getDisplayName(contract);
-
-  try {
-    const result = await fn();
-    Logger.debug(`prompt resolved`, { name: contract.name, displayName });
-    return result;
-  } catch (error) {
-    if (hasErrorShape(error, 'ProtocolError')) throw error;
-    const message = formatUnknownErrorMessage(error);
-    Logger.error(`Prompt handler failed: ${message}`, {
-      promptName: contract.name,
-      error,
-    });
-    const protocolError = new ProtocolError(fsErrorCode(error), message);
-    protocolError.cause = error;
-    throw protocolError;
-  }
-}
-
 // --- Prompt entries ---
-
-const GET_HELP: PromptContract = {
-  name: 'get-help',
-  title: 'Get Help',
-  description: INSTRUCTIONS_SUMMARY,
-};
 
 export function registerPrompts(deps: PromptRegistrarDeps): void {
   const sections = buildSectionsRecord(deps.readOnly ?? false);
@@ -86,10 +54,10 @@ export function registerPrompts(deps: PromptRegistrarDeps): void {
   const topics = Object.keys(sections);
 
   deps.server.registerPrompt(
-    GET_HELP.name,
+    'get-help',
     {
-      title: GET_HELP.title,
-      description: GET_HELP.description,
+      title: 'Get Help',
+      description: INSTRUCTIONS_SUMMARY,
       argsSchema: z.strictObject({
         topic: topicArg(
           topics,
@@ -97,8 +65,8 @@ export function registerPrompts(deps: PromptRegistrarDeps): void {
         ).optional(),
       }),
     },
-    ({ topic }: { topic?: string | undefined }): GetPromptResult | Promise<GetPromptResult> =>
-      wrapHandler(GET_HELP, () => {
+    ({ topic }: { topic?: string | undefined }): GetPromptResult => {
+      try {
         const lowerTopic = topic?.toLowerCase();
         const section =
           lowerTopic && Object.hasOwn(sections, lowerTopic) ? sections[lowerTopic] : undefined;
@@ -111,9 +79,20 @@ export function registerPrompts(deps: PromptRegistrarDeps): void {
             ? `Section '${topic}' not found. Available: ${topics.join(', ')}\n\n${instructions}`
             : instructions);
         return {
-          description: GET_HELP.description,
+          description: INSTRUCTIONS_SUMMARY,
           messages: [userText(text)],
         };
-      }),
+      } catch (error) {
+        if (hasErrorShape(error, 'ProtocolError')) throw error;
+        const message = formatUnknownErrorMessage(error);
+        Logger.error(`Prompt handler failed: ${message}`, {
+          promptName: 'get-help',
+          error,
+        });
+        const protocolError = new ProtocolError(fsErrorCode(error), message);
+        protocolError.cause = error;
+        throw protocolError;
+      }
+    },
   );
 }

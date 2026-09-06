@@ -177,21 +177,6 @@ export const PathFailureSchema = z.strictObject({
   error: PerFileErrorSchema,
 });
 
-/**
- * One entry of a source→destination tool's `failures[]`. The verb and noun stay
- * per-op so the `.describe()` text reads correctly for each caller.
- */
-export function pairFailureSchema(verb: 'copied' | 'moved', noun: 'copy' | 'move') {
-  return z.strictObject({
-    source: z.string().describe(`Source path that could not be ${verb}`),
-    destination: z.string().describe(`Intended destination path for the failed ${noun}`),
-    error: PerFileErrorSchema,
-  });
-}
-
-/** Wire shape of a `pairFailureSchema` entry — the runtime twin of the schema. */
-export type PairFailureItem = z.infer<ReturnType<typeof pairFailureSchema>>;
-
 // TODO(future): Wrap createReadRangeFields output in a typed Zod object with built-in
 // cross-validation. Safe for now — the only caller (read.ts) calls validateReadRange in its own superRefine.
 interface ReadRangeDescriptions {
@@ -202,31 +187,18 @@ interface ReadRangeDescriptions {
 }
 
 export function createReadRangeFields(descs: ReadRangeDescriptions) {
+  const rangeField = (d: string) =>
+    z
+      .int32()
+      .min(1, { message: 'Min: 1' })
+      .max(100000, { message: 'Max: 100,000' })
+      .optional()
+      .describe(d);
   return {
-    head: z
-      .int32()
-      .min(1, { message: 'Min: 1' })
-      .max(100000, { message: 'Max: 100,000' })
-      .optional()
-      .describe(descs.head),
-    tail: z
-      .int32()
-      .min(1, { message: 'Min: 1' })
-      .max(100000, { message: 'Max: 100,000' })
-      .optional()
-      .describe(descs.tail),
-    startLine: z
-      .int32()
-      .min(1, { message: 'Min: 1' })
-      .max(100000, { message: 'Max: 100,000' })
-      .optional()
-      .describe(descs.startLine),
-    endLine: z
-      .int32()
-      .min(1, { message: 'Min: 1' })
-      .max(100000, { message: 'Max: 100,000' })
-      .optional()
-      .describe(descs.endLine),
+    head: rangeField(descs.head),
+    tail: rangeField(descs.tail),
+    startLine: rangeField(descs.startLine),
+    endLine: rangeField(descs.endLine),
   };
 }
 

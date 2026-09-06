@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -27,7 +26,8 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
 
   after(async () => {
     if (ctx) {
-      await ctx.close();
+      ctx.disposeRuntimeState();
+      await ctx.mcp.close();
     }
     if (tmpDir) {
       await cleanupTestRoot(tmpDir);
@@ -186,20 +186,6 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
         assert.strictEqual(error, reason);
         return true;
       });
-    });
-  });
-
-  describe('Hashing (TC-FUNC-035–038)', () => {
-    it('TC-FUNC-035: hash returns 64-char sha256 hex string matching content', async () => {
-      const content = 'Hashing test content for sha256 verification\n';
-      const filePath = await writeTestFile(tmpDir, 'hash_test.txt', content);
-
-      const expectedHash = createHash('sha256').update(content).digest('hex');
-      const actualHash = await ctx.fs.hash(filePath);
-
-      assert.strictEqual(actualHash.length, 64);
-      assert.match(actualHash, /^[0-9a-f]{64}$/);
-      assert.strictEqual(actualHash, expectedHash);
     });
   });
 

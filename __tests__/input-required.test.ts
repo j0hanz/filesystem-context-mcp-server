@@ -7,7 +7,6 @@ import { ErrorCode, isFsError } from '../src/core/errors.js';
 import {
   buildInputRequired,
   choiceInput,
-  confirmInput,
   multiSelectInput,
   pendingRoundTrip,
   readAcceptedChoice,
@@ -81,7 +80,8 @@ describe('input_required multi-round-trip infrastructure', () => {
       op: 'delete',
       pending: ['/a'],
       requestState: undefined,
-      buildInputs: (paths) => paths.map((p, idx) => confirmInput(`confirm_${idx}`, `Delete ${p}?`)),
+      buildInputs: (paths) =>
+        paths.map((p, idx) => ({ key: `confirm_${idx}`, message: `Delete ${p}?` })),
     });
     assert.ok(result !== undefined);
     assert.strictEqual(isInputRequiredResult(result), true);
@@ -94,7 +94,8 @@ describe('input_required multi-round-trip infrastructure', () => {
       op: 'move',
       pending: ['/x'],
       requestState: () => decoded,
-      buildInputs: (paths) => paths.map((p, idx) => confirmInput(`confirm_${idx}`, `Move ${p}?`)),
+      buildInputs: (paths) =>
+        paths.map((p, idx) => ({ key: `confirm_${idx}`, message: `Move ${p}?` })),
     });
     assert.strictEqual(result, undefined);
   });
@@ -109,7 +110,7 @@ describe('input_required multi-round-trip infrastructure', () => {
           pending: ['/y'],
           requestState: () => decoded,
           buildInputs: (paths) =>
-            paths.map((p, idx) => confirmInput(`confirm_${idx}`, `Move ${p}?`)),
+            paths.map((p, idx) => ({ key: `confirm_${idx}`, message: `Move ${p}?` })),
         });
       },
       (e: unknown) => isFsError(e) && e.code === ErrorCode.INVALID_INPUT,
@@ -123,7 +124,8 @@ describe('input_required multi-round-trip infrastructure', () => {
       op: 'delete',
       pending: ['/x'],
       requestState: () => decoded,
-      buildInputs: (paths) => paths.map((p, idx) => confirmInput(`confirm_${idx}`, `Delete ${p}?`)),
+      buildInputs: (paths) =>
+        paths.map((p, idx) => ({ key: `confirm_${idx}`, message: `Delete ${p}?` })),
     });
     assert.ok(result !== undefined);
     assert.strictEqual(isInputRequiredResult(result), true);
@@ -131,7 +133,7 @@ describe('input_required multi-round-trip infrastructure', () => {
 
   it('7. buildInputRequired shape', async () => {
     const r = await buildInputRequired({ op: 'delete', paths: ['/a'] }, [
-      confirmInput('confirm_0', 'Delete /a?'),
+      { key: 'confirm_0', message: 'Delete /a?' },
     ]);
     assert.strictEqual(isInputRequiredResult(r), true);
     assert.ok(r.inputRequests);

@@ -118,7 +118,7 @@ export async function seedRootsFromClient(ctx: FilesystemServerContext): Promise
 export function startServer(options: ServerOptions, config: RuntimeConfig = {}): StdioServerHandle {
   let closed = false;
   let activeCtx: FilesystemServerContext | undefined;
-  const pathGuard = new PathGuard(options, true);
+  const pathGuard = new PathGuard(options);
   let pathGuardReady: Promise<void> | undefined;
   const ensurePathGuard = (): Promise<void> => {
     pathGuardReady ??= pathGuard.recomputeAllowedDirectories();

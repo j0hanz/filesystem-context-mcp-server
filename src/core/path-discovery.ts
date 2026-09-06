@@ -5,7 +5,7 @@ import { dirname, join, parse } from 'node:path';
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
 import { isPathWithinDirectories, isSamePath, normalizePath } from './path-utils.js';
-import { parseEnvDirList, splitDirList } from './primitives.js';
+import { splitDirList } from './primitives.js';
 
 // Resolve a configured env-var directory list (FS_ALLOWED_DIRS / FS_ROOT_BOUNDARY)
 // into normalized, verified directories. Each entry is stat'd; a non-directory
@@ -19,7 +19,7 @@ export async function resolveConfiguredDirs(
   envVar: string,
   opts: { allowMissing?: boolean; resolveReal?: boolean; rawValue?: string } = {},
 ): Promise<string[]> {
-  const raw = opts.rawValue !== undefined ? splitDirList(opts.rawValue) : parseEnvDirList(envVar);
+  const raw = splitDirList(opts.rawValue ?? process.env[envVar]);
   const result: string[] = [];
   for (const rawPath of raw) {
     const normalized = normalizePath(rawPath);

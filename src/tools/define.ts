@@ -28,7 +28,6 @@ import type { ProgressCtx } from '../core/fmt.js';
 import { plainMessage } from '../core/fmt.js';
 import { GuardedFileSystem } from '../core/fs.js';
 import {
-  confirmInput,
   multiSelectInput,
   pendingRoundTrip,
   readAcceptedConfirm,
@@ -360,9 +359,10 @@ class ToolExecutor<I extends z.ZodType, O extends z.ZodType> {
                 dirs.map((d) => ({ value: d, title: d })),
               ),
             ]
-          : dirs.map((dir, i) =>
-              confirmInput(`confirm_${i}`, `Grant filesystem access to "${dir}"?`),
-            ),
+          : dirs.map((dir, i) => ({
+              key: `confirm_${i}`,
+              message: `Grant filesystem access to "${dir}"?`,
+            })),
     });
     if (round !== undefined) return round;
     // Apply accepted grants for the session (R8). Declined/missing dirs are

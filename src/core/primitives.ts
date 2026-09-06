@@ -47,10 +47,6 @@ export function splitDirList(val: string | undefined): string[] {
     .filter((p) => p.length > 0);
 }
 
-export function parseEnvDirList(envVar: string): string[] {
-  return splitDirList(process.env[envVar]);
-}
-
 // ─── Path primitives (moved from path.ts to break the path↔sensitive cycle) ──
 
 export const IS_WINDOWS = process.platform === 'win32';

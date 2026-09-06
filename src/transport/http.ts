@@ -41,6 +41,7 @@ import {
   corsOriginMiddleware,
   corsPreflightHandler,
   createRateLimiter,
+  JSONRPC_SERVER_ERROR,
   protectedResourceUrl,
   resolveAllowedHosts,
   resolveTrustProxySetting,
@@ -55,14 +56,6 @@ import {
 } from './shared.js';
 
 const MAX_REQUEST_BODY_BYTES = parseEnvInt('FS_MAX_REQUEST_BYTES', 4 * MIB, 1024, 256 * MIB);
-
-/**
- * The code the SDK's own non-POST rejection carries. Not a `ProtocolErrorCode`
- * member — the enum has no `-32000` — so it is pinned here to keep the local
- * 405 envelope identical to the one the handler would have produced.
- */
-const SDK_METHOD_NOT_ALLOWED_CODE = -32000;
-const SDK_UNSUPPORTED_MEDIA_TYPE_CODE = -32000;
 
 /** Body-parser rejections and anything else that reaches the end of the chain. */
 function errorHandlerMiddleware(
@@ -198,7 +191,7 @@ function setupExpressApp(
         sendJsonRpcError(
           res,
           415,
-          SDK_UNSUPPORTED_MEDIA_TYPE_CODE,
+          JSONRPC_SERVER_ERROR,
           'Unsupported Media Type: Content-Type must be application/json',
         );
         return;
@@ -284,7 +277,7 @@ function setupExpressApp(
   // header RFC 9110 §15.5.6 requires and routes every routine GET probe through
   // the handler's `onerror` — which this server logs at error level.
   app.all('/mcp', (_req: Request, res: Response) => {
-    sendJsonRpcError(res, 405, SDK_METHOD_NOT_ALLOWED_CODE, 'Method not allowed.', null, {
+    sendJsonRpcError(res, 405, JSONRPC_SERVER_ERROR, 'Method not allowed.', null, {
       Allow: 'POST, OPTIONS',
     });
   });
@@ -329,7 +322,7 @@ export async function startHttpServer(
   // every caller presents the same key (one auth context by construction), and
   // without it the bind is loopback-only. Split into per-auth-context guards if
   // this ever serves more than one credential.
-  const sharedPathGuard = new PathGuard(options, true);
+  const sharedPathGuard = new PathGuard(options);
   await sharedPathGuard.recomputeAllowedDirectories();
 
   const modernHandler: McpHttpHandler = createMcpHandler(

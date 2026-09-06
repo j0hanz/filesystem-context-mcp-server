@@ -176,26 +176,18 @@ interface EditResult {
   lineRange?: [number, number];
 }
 
-async function computeDiffStats(
+function computeDiffStats(
   original: string,
   modified: string,
-): Promise<{ linesAdded: number; linesRemoved: number }> {
-  return new Promise((resolve) => {
-    // Yield to the event loop so we don't completely block
-    setImmediate(() => {
-      diffLines(original, modified, {
-        callback: (changes) => {
-          let linesAdded = 0;
-          let linesRemoved = 0;
-          for (const part of changes) {
-            if (part.added) linesAdded += part.count;
-            else if (part.removed) linesRemoved += part.count;
-          }
-          resolve({ linesAdded, linesRemoved });
-        },
-      });
-    });
-  });
+): { linesAdded: number; linesRemoved: number } {
+  // diffLines returns the change list synchronously on diff v9.
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const part of diffLines(original, modified)) {
+    if (part.added) linesAdded += part.count;
+    else if (part.removed) linesRemoved += part.count;
+  }
+  return { linesAdded, linesRemoved };
 }
 
 function findEditMatch(
@@ -317,16 +309,16 @@ function buildEditFileValue(
   };
 }
 
-async function finalizeEditResult(
+function finalizeEditResult(
   originalContent: string,
   updatedContent: string,
   appliedEdits: number,
   unmatchedEdits: string[],
   lineRange: EditResult['lineRange'],
-): Promise<EditResult> {
+): EditResult {
   const { linesAdded, linesRemoved } =
     appliedEdits > 0
-      ? await computeDiffStats(originalContent, updatedContent)
+      ? computeDiffStats(originalContent, updatedContent)
       : { linesAdded: 0, linesRemoved: 0 };
 
   return {
@@ -375,11 +367,11 @@ function buildEditFileMetadata(
   };
 }
 
-async function applyEdits(
+function applyEdits(
   content: string,
   edits: z.infer<typeof EditSpecSchema>[],
   ignoreWhitespace: boolean,
-): Promise<EditResult> {
+): EditResult {
   let newContent = content;
   let appliedEdits = 0;
   const unmatchedEdits: string[] = [];
@@ -425,18 +417,21 @@ async function handleEditFile(
   const { validPath, content } = await ctx.fs.readEditableText(filePath, {
     signal: ctx.signal,
   });
-  const editResult = await applyEdits(content, edits, options.ignoreWhitespace);
+  const editResult = applyEdits(content, edits, options.ignoreWhitespace);
 
   if (options.dryRun) {
     if (editResult.appliedEdits > 0) {
       const label = basename(validPath);
-      editResult.diff = await new Promise<string>((resolve) => {
-        createTwoFilesPatch(label, label, content, editResult.content, 'Original', 'Modified', {
-          callback: (res: string | undefined) => {
-            resolve(res ?? '');
-          },
-        });
-      });
+      // createTwoFilesPatch returns the unified diff string synchronously on
+      // diff v9 (the { callback } option fires via setTimeout and returns undefined).
+      editResult.diff = createTwoFilesPatch(
+        label,
+        label,
+        content,
+        editResult.content,
+        'Original',
+        'Modified',
+      );
     }
 
     // Nothing was written, so there is no updated content to point a

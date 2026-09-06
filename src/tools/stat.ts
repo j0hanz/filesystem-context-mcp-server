@@ -98,9 +98,7 @@ async function getSymlinkTarget(
 }
 
 interface FileInfoOptions {
-  includeMimeType?: boolean | undefined;
   signal?: AbortSignal | undefined;
-  onProgress?: (() => void) | undefined;
   fs: GuardedFileSystem;
   log?: ToolCtx['log'] | undefined;
 }
@@ -116,9 +114,7 @@ async function getFileInfo(filePath: string, options: FileInfoOptions): Promise<
   } = await fs.statDetailed(filePath, signal ? { signal } : undefined);
 
   const { base: name, ext: rawExt } = parse(requestedPath);
-  const includeMimeType = options.includeMimeType !== false;
-  const mimeType =
-    includeMimeType && rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
+  const mimeType = rawExt.length > 0 ? detectMimeType(requestedPath).mimeType : undefined;
 
   // For a symlink, fsStat follows the link and reports the target's metadata.
   // Report the link's own metadata instead so size/permissions/timestamps
@@ -221,7 +217,6 @@ export const GET_FILE_INFO = defineTool({
       ctx,
       async ({ path }) =>
         getFileInfo(path, {
-          includeMimeType: true,
           fs: ctx.fs,
           signal: ctx.signal,
           log: ctx.log,

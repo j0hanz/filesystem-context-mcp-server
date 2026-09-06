@@ -9,7 +9,7 @@ import { after, before, describe, it } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import type { FilesystemServerContext } from '../src/server.js';
-import { seedRootsFromClient } from '../src/transport.js';
+import { seedRootsFromClient } from '../src/transport/stdio.js';
 import { cleanupTestRoot, createTestRoot, createTestServer } from './helpers.js';
 
 describe('Client roots seeding (legacy era)', () => {
@@ -39,7 +39,8 @@ describe('Client roots seeding (legacy era)', () => {
 
   after(async () => {
     await client.close();
-    await serverCtx.close();
+    serverCtx.disposeRuntimeState();
+    await serverCtx.mcp.close();
     await cleanupTestRoot(tmpDir);
   });
 

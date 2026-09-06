@@ -14,7 +14,6 @@ import { after, before, describe, it } from 'node:test';
 import * as z from 'zod/v4';
 
 import { PageSnapshotStore } from '../src/core/page-store.js';
-import { PathGuard } from '../src/core/path.js';
 import { ResourceStore } from '../src/core/store.js';
 import { MAX_SEARCH_RESULTS } from '../src/core/util.js';
 import { createServer } from '../src/server.js';
@@ -33,6 +32,7 @@ import {
   createTestRoot,
   failedSummary,
   firstTextBlock,
+  makeGuard,
   type TestClientContext,
   trySymlink,
   withBoundary,
@@ -308,7 +308,7 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
         };
       },
     });
-    const pathGuard = await PathGuard.fromAllowedDirectories([tmpDir]);
+    const pathGuard = await makeGuard([tmpDir]);
     const pageStore = new PageSnapshotStore();
     const resourceStore = new ResourceStore();
     const createProbeServer = (): McpServer => {
@@ -668,7 +668,8 @@ describe('P0 Functional Tests - Tools (MCP Client)', () => {
           );
         } finally {
           await client.close();
-          await serverCtx.close();
+          serverCtx.disposeRuntimeState();
+          await serverCtx.mcp.close();
         }
       });
     } finally {

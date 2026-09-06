@@ -8,7 +8,6 @@ import { cli } from './config.js';
 import {
   ERRNO_MAP,
   ErrorCode,
-  formatUnknownErrorMessage,
   FsError,
   isFsError,
   isNodeError,
@@ -27,14 +26,9 @@ import {
   normalizeAllowedDirectory,
   normalizePath,
 } from './path-utils.js';
-import { isSlash, parseTrueEnvFlag, toPosixPath } from './primitives.js';
-import type { EntryType } from './primitives.js';
+import { parseTrueEnvFlag, toPosixPath } from './primitives.js';
 import { SensitiveMatcher } from './sensitive.js';
 import { ROOTS_TIMEOUT_MS } from './util.js';
-
-// Re-exported for path-completer.ts, the one consumer that reaches these
-// through this module rather than through primitives.ts directly.
-export { isSlash, toPosixPath };
 
 // Allowed-directory assembly and the PathGuard that enforces it. The
 // sensitive-file denylist lives in sensitive.ts, and the character-level
@@ -177,7 +171,7 @@ async function expandAllowedDirectories(
   return [...new Set(expanded)];
 }
 
-async function resolveAllowedDirectoriesState(
+export async function resolveAllowedDirectoriesState(
   dirs: readonly string[],
   signal?: AbortSignal,
 ): Promise<AllowedDirectoriesState> {
@@ -227,26 +221,9 @@ export class PathGuard {
   #mutex = Promise.resolve();
 
   readonly options: ServerOptions | undefined;
-  /**
-   * True when this guard backs a live MCP server rather than a one-shot CLI
-   * invocation. Operator-facing configuration warnings are suppressed unless
-   * it is set, so `--print-config` and unit construction stay quiet.
-   */
-  readonly isServerContext: boolean;
 
-  constructor(options?: ServerOptions, isServerContext = false) {
+  constructor(options?: ServerOptions) {
     this.options = options;
-    this.isServerContext = isServerContext;
-  }
-
-  static async fromAllowedDirectories(
-    dirs: readonly string[],
-    signal?: AbortSignal,
-  ): Promise<PathGuard> {
-    const state = await resolveAllowedDirectoriesState(dirs, signal);
-    const guard = new PathGuard();
-    guard.initialize(state);
-    return guard;
   }
 
   initialize(state: AllowedDirectoriesState): void {
@@ -281,10 +258,6 @@ export class PathGuard {
     return [...this.allowedDirectoriesState.expanded];
   }
 
-  getRootBoundaries(): string[] {
-    return [...this.rootBoundaries];
-  }
-
   isSensitive(filePath: string): boolean {
     return this.sensitive.isSensitive(filePath);
   }
@@ -299,17 +272,11 @@ export class PathGuard {
    * the real path against this.allowedDirectoriesState.expanded (the guard's full
    * allowed set — a superset of the single-root `bounds` callers pass) and
    * re-checks sensitivity on the resolved target, throwing ACCESS_DENIED for
-   * escapes/sensitive, which the catch below turns into a filter. `_entryType`
-   * and `_bounds` are retained for call-site compatibility while the guard's own
-   * allowed set is the real gate. Skippable errno/fs errors return false (the
-   * entry is filtered, not fatal). The accepted TOCTOU window is documented at
-   * the class docstring above.
+   * escapes/sensitive, which the catch below turns into a filter. Skippable
+   * errno/fs errors return false (the entry is filtered, not fatal). The
+   * accepted TOCTOU window is documented at the class docstring above.
    */
-  async isEntryAccessible(
-    entryPath: string,
-    _entryType: EntryType,
-    _bounds: readonly string[],
-  ): Promise<boolean> {
+  async isEntryAccessible(entryPath: string): Promise<boolean> {
     const isSensitive = (requestedPath: string, resolvedPath: string): boolean =>
       this.isSensitive(requestedPath) || this.isSensitive(resolvedPath);
     try {
@@ -581,13 +548,7 @@ export class PathGuard {
         }
       }
 
-      throw new FsError(
-        ErrorCode.NOT_FOUND,
-        'Path not found',
-        requestedPath,
-        { originalError: error.message },
-        error,
-      );
+      throw new FsError(ErrorCode.NOT_FOUND, 'Path not found', requestedPath, error);
     }
 
     const mapped =
@@ -596,9 +557,6 @@ export class PathGuard {
       mapped ?? ErrorCode.UNKNOWN,
       'Cannot access path',
       requestedPath,
-      {
-        originalError: formatUnknownErrorMessage(error),
-      },
       error instanceof Error ? error : undefined,
     );
   }
@@ -649,9 +607,6 @@ export class PathGuard {
         ErrorCode.UNKNOWN,
         'Cannot access directory',
         requestedPath,
-        {
-          originalError: formatUnknownErrorMessage(error),
-        },
         error instanceof Error ? error : undefined,
       );
     }
@@ -752,7 +707,6 @@ export class PathGuard {
               ErrorCode.UNKNOWN,
               'Cannot probe symlink ancestor',
               requestedPath,
-              { originalError: formatUnknownErrorMessage(lstatErr) },
               lstatErr instanceof Error ? lstatErr : undefined,
             );
           }
@@ -763,7 +717,6 @@ export class PathGuard {
             ErrorCode.UNKNOWN,
             'Cannot resolve path',
             requestedPath,
-            { originalError: formatUnknownErrorMessage(error) },
             error instanceof Error ? error : undefined,
           );
         }
@@ -820,7 +773,6 @@ export class PathGuard {
         ErrorCode.NOT_FOUND,
         'Parent directory not found',
         requestedPath,
-        { originalError: formatUnknownErrorMessage(error) },
         error instanceof Error ? error : undefined,
       );
     }

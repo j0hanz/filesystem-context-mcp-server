@@ -10,7 +10,7 @@ import { setTimeout } from 'node:timers/promises';
 
 import { buildFileResourceUri } from '../src/core/file-uri.js';
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
-import { listenSubscriptionUris } from '../src/transport.js';
+import { listenSubscriptionUris } from '../src/transport/shared.js';
 import {
   bootHttpTest,
   cleanupTestRoot,

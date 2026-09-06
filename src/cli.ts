@@ -3,7 +3,6 @@ import { stat } from 'node:fs/promises';
 import { parseArgs as utilParseArgs } from 'node:util';
 
 import { printHelpAndExit, printVersionAndExit } from './cli-help.js';
-import { processInParallel } from './core/concurrency.js';
 import { cli } from './core/config.js';
 import { formatUnknownErrorMessage } from './core/errors.js';
 import { cliFmt, padEndVisible } from './core/fmt.js';
@@ -16,8 +15,6 @@ import { PathGuard } from './core/path.js';
 import { IS_WINDOWS, parseTrueEnvFlag } from './core/primitives.js';
 import { getMaxTextFileSize } from './core/util.js';
 import { registeredTools } from './tools/index.js';
-
-const CLI_VALIDATE_CONCURRENCY = 8;
 
 // ════════════════════════════════════════════════════════════
 // Path & Config Utilities — pure functions and error types
@@ -81,16 +78,11 @@ async function normalizeAndValidateDirs(
   paths: readonly string[],
   allowMissing = false,
 ): Promise<string[]> {
-  const { results, errors } = await processInParallel(
-    [...paths],
-    (p) => validateDirectoryPath(p, allowMissing),
-    CLI_VALIDATE_CONCURRENCY,
-  );
-  if (errors.length === 0) {
-    return deduplicateAllowedDirectories(results.map((r) => r.value));
+  const normalized: string[] = [];
+  for (const p of paths) {
+    normalized.push(await validateDirectoryPath(p, allowMissing));
   }
-  const first = errors.reduce((prev, curr) => (curr.index < prev.index ? curr : prev));
-  throw first.error;
+  return deduplicateAllowedDirectories(normalized);
 }
 
 function normalizeCliExitMessage(error: unknown): string {
@@ -241,16 +233,7 @@ export async function parseArgs(): Promise<{
 // Effective config reporting — prints the resolved server config
 // ════════════════════════════════════════════════════════════
 
-export interface EffectiveConfig {
-  transport: string;
-  readOnly: boolean;
-  allowedRoots: string[];
-  tools: string[];
-  apiKey: string | null;
-  limits: { maxFileSizeBytes: number };
-}
-
-export interface PrintConfigOptions {
+export async function runPrintConfig(options: {
   allowedDirs: string[];
   allowCwd: boolean;
   readOnly: boolean;
@@ -259,11 +242,8 @@ export interface PrintConfigOptions {
   port?: number;
   httpHost?: string;
   apiKey?: string;
-  stdout?: (chunk: string) => void;
-}
-
-export async function runPrintConfig(options: PrintConfigOptions): Promise<EffectiveConfig> {
-  const write = options.stdout ?? ((s: string) => process.stdout.write(s));
+}): Promise<void> {
+  const write = (s: string) => process.stdout.write(s);
 
   const pathGuard = new PathGuard({
     allowCwd: options.allowCwd,
@@ -276,7 +256,7 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
 
   // Derived, never assumed: `--print-config --port 3000` reports the HTTP bind
   // that `--port` would actually have started, not the stdio default.
-  const config: EffectiveConfig = {
+  const config = {
     transport:
       options.port !== undefined
         ? `http://${options.httpHost ?? '127.0.0.1'}:${String(options.port)}`
@@ -299,6 +279,4 @@ export async function runPrintConfig(options: PrintConfigOptions): Promise<Effec
     write(`${key('tools:')}${cliFmt.dim(config.tools.join(', '))}\n`);
     write(`${key('maxFileSize:')}${cliFmt.yellow(String(config.limits.maxFileSizeBytes))}\n`);
   }
-
-  return config;
 }

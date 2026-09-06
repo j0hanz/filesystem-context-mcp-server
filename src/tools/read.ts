@@ -464,11 +464,7 @@ export const READ_FILE = defineTool({
       survivors = [...pathList];
     }
 
-    const firstSurvivor = survivors[0];
-    const batchInput =
-      firstSurvivor !== undefined && survivors.length === 1 && args.path !== undefined
-        ? { path: firstSurvivor }
-        : { paths: survivors };
+    const batchInput = { paths: survivors };
 
     // Every path can be budget-skipped (a single file over maxTotalSize does
     // it), and runOverPaths rejects an empty list. The per-path TOO_LARGE

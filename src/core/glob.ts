@@ -197,10 +197,9 @@ export function isIgnoredByGitignore(
   matcher: GitignoreManager,
   root: string,
   absolutePath: string,
-  options: { isDirectory?: boolean; relativePath?: string } = {},
+  options: { isDirectory?: boolean } = {},
 ): boolean {
-  let { relativePath } = options;
-  relativePath ??= relative(root, absolutePath);
+  const relativePath = relative(root, absolutePath);
   if (relativePath.length === 0) return false;
   return matcher.isIgnored(relativePath, Boolean(options.isDirectory));
 }

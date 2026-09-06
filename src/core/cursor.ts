@@ -1,4 +1,4 @@
-import { ErrorCode, formatUnknownErrorMessage, FsError } from './errors.js';
+import { ErrorCode, FsError } from './errors.js';
 import type { PageSnapshot, PageSnapshotStore } from './page-store.js';
 import { invalidCursor } from './page-store.js';
 
@@ -31,32 +31,6 @@ function pageResult<T, M>(
   };
 }
 
-export function createFirstPage<T, M>(params: {
-  store: PageSnapshotStore;
-  queryKey: string;
-  items: readonly T[];
-  metadata: M;
-  pageSize: number;
-}): Page<T, M> {
-  if (params.items.length <= params.pageSize) {
-    return {
-      page: params.items,
-      metadata: params.metadata,
-      nextCursor: undefined,
-      offset: 0,
-    };
-  }
-  const snapshotId = params.store.create({
-    queryKey: params.queryKey,
-    items: params.items,
-    metadata: params.metadata,
-  });
-  return pageResult(snapshotId, 0, params.pageSize, {
-    items: params.items,
-    metadata: params.metadata,
-  });
-}
-
 /**
  * The full result set a paged tool produced, before slicing. `truncated` is the
  * engine's own stop state — the hard result cap or a timeout cut the set — and
@@ -68,7 +42,7 @@ export interface ProducedPage<T, M> {
   readonly truncated: boolean;
 }
 
-export interface Page<T, M> {
+interface Page<T, M> {
   readonly page: readonly T[];
   readonly metadata: M;
   readonly nextCursor: string | undefined;
@@ -106,35 +80,33 @@ export async function paginate<T, M, R>(params: {
   externalize?: ((items: readonly T[], metadata: M) => R) | undefined;
 }): Promise<PaginatedPage<T, M, R>> {
   if (params.cursor !== undefined) {
-    return readNextPage<T, M>({
-      store: params.store,
-      queryKey: params.queryKey,
-      cursor: params.cursor,
-      pageSize: params.pageSize,
-    });
+    const decoded = decodePageCursor(params.cursor);
+    const snapshot = params.store.read<T, M>(decoded.snapshotId, params.queryKey);
+    return pageResult(decoded.snapshotId, decoded.offset, params.pageSize, snapshot);
   }
   const produced = await params.produce();
   const incomplete = produced.items.length > params.pageSize || produced.truncated;
-  const first = createFirstPage<T, M>({
-    store: params.store,
-    queryKey: params.queryKey,
-    items: produced.items,
-    metadata: produced.metadata,
-    pageSize: params.pageSize,
-  });
+  let first: Page<T, M>;
+  if (produced.items.length <= params.pageSize) {
+    first = {
+      page: produced.items,
+      metadata: produced.metadata,
+      nextCursor: undefined,
+      offset: 0,
+    };
+  } else {
+    const snapshotId = params.store.create({
+      queryKey: params.queryKey,
+      items: produced.items,
+      metadata: produced.metadata,
+    });
+    first = pageResult(snapshotId, 0, params.pageSize, {
+      items: produced.items,
+      metadata: produced.metadata,
+    });
+  }
   if (!incomplete || params.externalize === undefined) return first;
   return { ...first, resource: params.externalize(produced.items, produced.metadata) };
-}
-
-export function readNextPage<T, M>(params: {
-  store: PageSnapshotStore;
-  queryKey: string;
-  cursor: string;
-  pageSize: number;
-}): Page<T, M> {
-  const decoded = decodePageCursor(params.cursor);
-  const snapshot = params.store.read<T, M>(decoded.snapshotId, params.queryKey);
-  return pageResult(decoded.snapshotId, decoded.offset, params.pageSize, snapshot);
 }
 
 function decodePageCursor(cursor: string): PageCursor {
@@ -157,7 +129,6 @@ function decodePageCursor(cursor: string): PageCursor {
       ErrorCode.INVALID_INPUT,
       invalidCursor().message,
       undefined,
-      { originalError: formatUnknownErrorMessage(error) },
       error instanceof Error ? error : undefined,
     );
   }

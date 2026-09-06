@@ -97,7 +97,7 @@ export class ResourceStore {
     }
   }
 
-  private getExisting(uri: string): ResourceEntry {
+  getEntry(uri: string): ResourceEntry {
     const existing = this.byUri.get(uri);
 
     if (!existing) {
@@ -147,10 +147,6 @@ export class ResourceStore {
     this.enforceLimits();
     this.emitListChanged(true);
     return entry;
-  }
-
-  getEntry(uri: string): ResourceEntry {
-    return this.getExisting(uri);
   }
 
   /**

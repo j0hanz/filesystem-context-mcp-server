@@ -19,9 +19,6 @@ import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
 
-export type { ServerNotifier };
-export type { ServerOptions };
-
 // ═══════════════════════════════════════════════════════════════
 // bootstrap
 // ═══════════════════════════════════════════════════════════════
@@ -65,11 +62,6 @@ export class FilesystemServerContext {
     this.cleanedUp = true;
     if (this.ownsPages) this.pages.clear();
     this.resourceDisposable?.dispose();
-  }
-
-  async close(): Promise<void> {
-    this.disposeRuntimeState();
-    await this.mcp.close();
   }
 }
 
@@ -181,7 +173,7 @@ export async function createServer(
     });
   const pageStore = extraDeps?.pageStore ?? new PageSnapshotStore();
 
-  const pathGuard = extraDeps?.pathGuard ?? new PathGuard(options, true);
+  const pathGuard = extraDeps?.pathGuard ?? new PathGuard(options);
   // Recompute once per guard, keyed on the guard's own state rather than on
   // whether it was injected — an injected-but-uninitialized guard would
   // otherwise deny every path. Not unconditional: the HTTP leg shares one guard

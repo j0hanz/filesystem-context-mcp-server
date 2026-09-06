@@ -4,9 +4,15 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
-import { PathGuard } from '../src/core/path.js';
+import type { PathGuard } from '../src/core/path.js';
 import { SensitiveMatcher } from '../src/core/sensitive.js';
-import { cleanupTestRoot, createTestRoot, trySymlink, writeTestFile } from './helpers.js';
+import {
+  cleanupTestRoot,
+  createTestRoot,
+  makeGuard,
+  trySymlink,
+  writeTestFile,
+} from './helpers.js';
 
 describe('Security (P0)', () => {
   let root: string;
@@ -25,7 +31,7 @@ describe('Security (P0)', () => {
     let guard: PathGuard;
 
     beforeEach(async () => {
-      guard = await PathGuard.fromAllowedDirectories([root]);
+      guard = await makeGuard([root]);
     });
 
     it('TC-SEC-005: Blocks directory traversal via ..', async () => {

@@ -108,15 +108,6 @@ export const requestStateCodec: RequestStateCodec<PendingState> = {
 };
 
 /**
- * Build a boolean confirmation input for one pending item. The schema uses a
- * fixed `confirm` boolean field; the input request is keyed by `key` so a
- * batched call carries one request per item under a distinct key.
- */
-export function confirmInput(key: string, message: string): PendingInput {
-  return { key, message };
-}
-
-/**
  * Build a single-select enum confirmation input. The form renders a `choice`
  * field whose options are the titled `choices`; the caller reads the selection
  * with `readAcceptedChoice`. A `defaultValue` preselects one option.

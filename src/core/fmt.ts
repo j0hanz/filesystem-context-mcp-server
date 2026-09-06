@@ -136,8 +136,8 @@ export function pageTrailer(p: {
 // CLI color helpers
 // ---------------------------------------------------------------------------
 
-function isColorEnabled(stream: { isTTY?: boolean } = process.stdout): boolean {
-  return stream.isTTY === true && !process.env['NO_COLOR'];
+function isColorEnabled(): boolean {
+  return process.stdout.isTTY && !process.env['NO_COLOR'];
 }
 
 export function padEndVisible(s: string, width: number): string {
@@ -147,9 +147,9 @@ export function padEndVisible(s: string, width: number): string {
 
 type Style = Parameters<typeof styleText>[0];
 
-/** Same palette as above, but only when the target stream wants color. */
-function tint(format: Style, text: string, stream?: { isTTY?: boolean }): string {
-  return isColorEnabled(stream) ? styleText(format, text) : text;
+/** Same palette as above, but only when stdout wants color. */
+function tint(format: Style, text: string): string {
+  return isColorEnabled() ? styleText(format, text) : text;
 }
 
 export const cliFmt = {

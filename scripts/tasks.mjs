@@ -21,10 +21,12 @@ Examples:
 `;
 
 function run(command, args) {
-  const windowsNpm = process.platform === 'win32' && command === 'npm';
-  const executable = windowsNpm ? (process.env.ComSpec ?? 'cmd.exe') : command;
-  const executableArgs = windowsNpm ? ['/d', '/c', 'npm', ...args] : args;
-  const result = spawnSync(executable, executableArgs, { stdio: 'inherit' });
+  // Windows resolves npm via npm.cmd; spawning .cmd directly needs the shell, so
+  // route npm through ComSpec (shell + args array trips DEP0190).
+  const isWindowsNpm = process.platform === 'win32' && command === 'npm';
+  const executable = isWindowsNpm ? process.env.ComSpec : command;
+  const adjusted = isWindowsNpm ? ['/d', '/c', 'npm', ...args] : args;
+  const result = spawnSync(executable, adjusted, { stdio: 'inherit' });
   if (result.error) {
     console.error(result.error.message);
     return 1;

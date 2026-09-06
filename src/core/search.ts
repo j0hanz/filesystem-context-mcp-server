@@ -126,19 +126,117 @@ export interface SearchContentOutcome {
   };
 }
 
-/** Owns the compiled pattern's lifetime; the scan itself is `scanContent`. */
+/**
+ * Owns the compiled pattern's lifetime. Pass `precompiled` to skip compiling
+ * here — the caller compiled the same pattern with the same flags and keeps
+ * owning the {@link freeRegex} call in that case.
+ */
 export async function searchContent(
   directory: string,
   pattern: string,
   options: SearchContentOptions,
   pathGuard: PathGuard,
+  precompiled?: Regex,
 ): Promise<SearchContentOutcome> {
-  const regexPattern = options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || '');
-  const regex = compileRegex(regexPattern, { caseSensitive: Boolean(options.caseSensitive) });
+  const regex =
+    precompiled ??
+    compileRegex(options.isRegex ? pattern || '' : escapeRegexLiteral(pattern || ''), {
+      caseSensitive: Boolean(options.caseSensitive),
+    });
   try {
-    return await scanContent(directory, options, pathGuard, regex);
+    const matches: SearchResult[] = [];
+    const maxResults = options.maxResults ?? 100;
+    const maxFileSize = options.maxFileSize ?? getMaxTextFileSize();
+
+    const entries = globEntries({
+      cwd: directory,
+      pattern: options.filePattern ?? '**/*',
+      excludePatterns: options.excludePatterns ?? [],
+      includeHidden: Boolean(options.includeHidden),
+      respectGitignore: Boolean(options.respectGitignore),
+      maxDepth: options.maxDepth ?? 100,
+      suppressErrors: true,
+    });
+
+    let filesScanned = 0;
+    let filesMatched = 0;
+    let matchingLines = 0;
+    let skippedTooLarge = 0;
+    const counters = { skippedInaccessible: 0, stoppedByAbort: false };
+
+    for await (const entry of guardedEntries(entries, pathGuard, options.signal, counters)) {
+      if (matches.length >= maxResults) break;
+
+      // Skip oversized files before reading to avoid unbounded memory use. Count
+      // them: "no matches" for a reason other than the pattern must be visible.
+      try {
+        const stats = await fsStat(entry.path);
+        if (stats.size > maxFileSize) {
+          skippedTooLarge++;
+          continue;
+        }
+      } catch {
+        counters.skippedInaccessible++;
+        continue;
+      }
+
+      filesScanned++;
+
+      try {
+        const content = await readFile(entry.path, { encoding: 'utf-8', signal: options.signal });
+        const lines = content.split('\n');
+        let matchedFile = false;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line === undefined) continue;
+          // One scan per line: countLineMatches resets lastIndex itself, so it
+          // doubles as the "does this line match" test.
+          const occurrences = countLineMatches(regex, line);
+          if (occurrences > 0) {
+            matchedFile = true;
+            matchingLines++;
+            matches.push({
+              file: entry.path,
+              line: i + 1,
+              content: line,
+              matchCount: occurrences,
+            });
+            if (matches.length >= maxResults) break;
+          }
+        }
+        if (matchedFile) filesMatched++;
+      } catch {
+        // A read failure while the signal is aborted IS the abort, not an
+        // unreadable file — stop rather than spend another iteration and then
+        // report a cut-short scan as complete.
+        if (options.signal?.aborted) {
+          counters.stoppedByAbort = true;
+          break;
+        }
+        // ignore read errors (e.g. binary files)
+      }
+    }
+
+    const tracker = new StopReasonTracker();
+    if (matches.length >= maxResults) tracker.hitMaxResults();
+    if (counters.stoppedByAbort) tracker.hitAbort();
+    const stoppedReason = tracker.resolve();
+
+    return {
+      basePath: directory,
+      matches,
+      summary: {
+        matchingLines,
+        filesScanned,
+        filesMatched,
+        truncated: tracker.truncated,
+        skippedInaccessible: counters.skippedInaccessible,
+        skippedTooLarge,
+        ...(stoppedReason ? { stoppedReason } : {}),
+      },
+    };
   } finally {
-    freeRegex(regex);
+    if (precompiled === undefined) freeRegex(regex);
   }
 }
 
@@ -164,105 +262,6 @@ async function* guardedEntries(
     }
     yield entry;
   }
-}
-
-async function scanContent(
-  directory: string,
-  options: SearchContentOptions,
-  pathGuard: PathGuard,
-  regex: Regex,
-): Promise<SearchContentOutcome> {
-  const matches: SearchResult[] = [];
-  const maxResults = options.maxResults ?? 100;
-  const maxFileSize = options.maxFileSize ?? getMaxTextFileSize();
-
-  const entries = globEntries({
-    cwd: directory,
-    pattern: options.filePattern ?? '**/*',
-    excludePatterns: options.excludePatterns ?? [],
-    includeHidden: Boolean(options.includeHidden),
-    respectGitignore: Boolean(options.respectGitignore),
-    maxDepth: options.maxDepth ?? 100,
-    suppressErrors: true,
-  });
-
-  let filesScanned = 0;
-  let filesMatched = 0;
-  let matchingLines = 0;
-  let skippedTooLarge = 0;
-  const counters = { skippedInaccessible: 0, stoppedByAbort: false };
-
-  for await (const entry of guardedEntries(entries, pathGuard, options.signal, counters)) {
-    if (matches.length >= maxResults) break;
-
-    // Skip oversized files before reading to avoid unbounded memory use. Count
-    // them: "no matches" for a reason other than the pattern must be visible.
-    try {
-      const stats = await fsStat(entry.path);
-      if (stats.size > maxFileSize) {
-        skippedTooLarge++;
-        continue;
-      }
-    } catch {
-      counters.skippedInaccessible++;
-      continue;
-    }
-
-    filesScanned++;
-
-    try {
-      const content = await readFile(entry.path, { encoding: 'utf-8', signal: options.signal });
-      const lines = content.split('\n');
-      let matchedFile = false;
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line === undefined) continue;
-        // One scan per line: countLineMatches resets lastIndex itself, so it
-        // doubles as the "does this line match" test.
-        const occurrences = countLineMatches(regex, line);
-        if (occurrences > 0) {
-          matchedFile = true;
-          matchingLines++;
-          matches.push({
-            file: entry.path,
-            line: i + 1,
-            content: line,
-            matchCount: occurrences,
-          });
-          if (matches.length >= maxResults) break;
-        }
-      }
-      if (matchedFile) filesMatched++;
-    } catch {
-      // A read failure while the signal is aborted IS the abort, not an
-      // unreadable file — stop rather than spend another iteration and then
-      // report a cut-short scan as complete.
-      if (options.signal?.aborted) {
-        counters.stoppedByAbort = true;
-        break;
-      }
-      // ignore read errors (e.g. binary files)
-    }
-  }
-
-  const tracker = new StopReasonTracker();
-  if (matches.length >= maxResults) tracker.hitMaxResults();
-  if (counters.stoppedByAbort) tracker.hitAbort();
-  const stoppedReason = tracker.resolve();
-
-  return {
-    basePath: directory,
-    matches,
-    summary: {
-      matchingLines,
-      filesScanned,
-      filesMatched,
-      truncated: tracker.truncated,
-      skippedInaccessible: counters.skippedInaccessible,
-      skippedTooLarge,
-      ...(stoppedReason ? { stoppedReason } : {}),
-    },
-  };
 }
 
 export async function searchFiles(

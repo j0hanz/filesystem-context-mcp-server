@@ -21,7 +21,6 @@ export type ProgressEvent =
 
 interface ProgressSessionOptions {
   label: string;
-  total?: number;
   sink?: McpProgressSink;
   /** Override the rate limit window. Default: 50ms. */
   rateLimitMs?: number;
@@ -31,7 +30,6 @@ const DEFAULT_RATE_LIMIT_MS = 50;
 
 export class ProgressSession {
   readonly #label: string;
-  readonly #total: number | undefined;
   readonly #sink: McpProgressSink | undefined;
   readonly #rateLimitMs: number;
   readonly #startTime: number;
@@ -42,7 +40,6 @@ export class ProgressSession {
 
   constructor(opts: ProgressSessionOptions) {
     this.#label = opts.label;
-    this.#total = opts.total;
     this.#sink = opts.sink;
     this.#rateLimitMs = opts.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS;
 
@@ -50,11 +47,10 @@ export class ProgressSession {
     this.#startTime = now;
     this.#lastSentMs = now - this.#rateLimitMs;
 
-    // Synthetic start tick — preserves today's "fire 0/total at session creation" wire behavior.
+    // Synthetic start tick — preserves today's "fire 0 at session creation" wire behavior.
     this.#dispatch({
       kind: 'tick',
       current: 0,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
       message: this.#label,
     });
   }
@@ -66,11 +62,10 @@ export class ProgressSession {
     // would put a duplicate value on the wire — drop it.
     if (input.current <= this.#cursor) return;
     this.#cursor = input.current;
-    const total = input.total ?? this.#total;
     this.#dispatch({
       kind: 'tick',
       current: this.#cursor,
-      ...(total !== undefined ? { total } : {}),
+      ...(input.total !== undefined ? { total: input.total } : {}),
       message: input.message ?? this.#label,
     });
   }
@@ -81,7 +76,6 @@ export class ProgressSession {
     this.#dispatch({
       kind: 'complete',
       current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
       message,
     });
   }
@@ -92,7 +86,6 @@ export class ProgressSession {
     this.#dispatch({
       kind: 'fail',
       current: this.#cursor,
-      ...(this.#total !== undefined ? { total: this.#total } : {}),
       message: message ?? this.#label,
       error,
     });

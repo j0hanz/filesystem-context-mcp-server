@@ -57,7 +57,7 @@ import {
 
 export interface ResourceRegistrationOptions {
   resourceStore: ResourceStore;
-  pathGuard?: PathGuard;
+  pathGuard: PathGuard;
   /** Mirrors the `--read-only` gate so the instructions match the tools actually registered. */
   readOnly: boolean;
   /**
@@ -182,7 +182,7 @@ function createInstructionsResource(options: ResourceRegistrationOptions): Resou
 // ═══════════════════════════════════════════════════════════════
 
 function createFilesystemResource(options: ResourceRegistrationOptions): ResourceContract {
-  const completer = options.pathGuard ? new PathCompleter(options.pathGuard) : undefined;
+  const completer = new PathCompleter(options.pathGuard);
   const registry = options.watcherRegistry ?? createWatcherRegistry();
   // Only the per-server (legacy/stdio) registry is owned by this resource and
   // destroyed on dispose; the shared modern-leg registry is owned by the host
@@ -222,9 +222,6 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     // `list_roots` owns root discovery.
 
     async read(uri, _variables, _ctx: ServerContext) {
-      if (!options.pathGuard) {
-        throw new ProtocolError(ProtocolErrorCode.InternalError, 'PathGuard not configured');
-      }
       // Decode via extractPath — the same decoder resources/subscribe uses — so
       // both consumers are symmetric with buildFileResourceUri's encoding. The
       // {+path} template variable arrives still percent-encoded, so validating
@@ -257,7 +254,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     async complete(variable, value) {
-      if (variable !== 'path' || !completer) return [];
+      if (variable !== 'path') return [];
       // Both ends speak the `{+path}` form (see encodeFileUriPath), not raw OS
       // paths: the partial arriving here is whatever this returned last, so the
       // decode mirrors the encode. An undecodable partial is matched as typed.
@@ -266,8 +263,6 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
     },
 
     subscribe(uri, notify) {
-      const pathGuard = options.pathGuard;
-      if (!pathGuard) return undefined;
       // Already subscribed on this connection: the watcher is live and the sink
       // is registered, so this is a no-op success rather than a second lease.
       if (leasedUris.has(uri)) return undefined;
@@ -277,7 +272,7 @@ function createFilesystemResource(options: ResourceRegistrationOptions): Resourc
       if (pending) return pending;
 
       const acquire = async (): Promise<boolean | undefined> => {
-        const result = await registry.acquire(pathGuard, uri, notify, {
+        const result = await registry.acquire(options.pathGuard, uri, notify, {
           markSubscribe: true,
         });
         if (result.ok) {

@@ -32,7 +32,7 @@ export type WatcherAttachResult =
  * plus `acquire`, the one ladder that sequences them correctly. `acquire` awaits
  * path validation midway and re-checks `isStale` and `hasWatcher` itself
  * afterwards, so callers do not: they take a lease and release it. The
- * individual primitives stay public for the state-machine tests.
+ * individual primitives stay closure-private.
  */
 export function createWatcherRegistry() {
   const watchers = new Map<string, FSWatcher>();
@@ -128,10 +128,8 @@ export function createWatcherRegistry() {
     debounceTimers.set(uri, timer);
   };
 
-  // The seven members below are hoisted out of the returned literal so `acquire`
-  // can sequence them from inside the closure. Their signatures and the shape of
-  // the returned object are unchanged — they are still public members, listed
-  // shorthand in the `return` at the bottom.
+  // The primitives below are hoisted out of the returned literal so `acquire`
+  // can sequence them from inside the closure. They are closure-private.
 
   const hasWatcher = (uri: string): boolean => watchers.has(uri);
 
@@ -221,20 +219,8 @@ export function createWatcherRegistry() {
   return {
     hasWatcher,
 
-    isAtCap,
-
     /** Live watcher count, for pre-checking a batched listen against remaining capacity. */
     size: (): number => watchers.size,
-
-    isStale,
-
-    startSubscribe,
-
-    cancelSubscribe,
-
-    addCallback,
-
-    retain,
 
     release,
 
@@ -326,8 +312,6 @@ export function createWatcherRegistry() {
       retain(uri);
       return { ok: true };
     },
-
-    attach,
 
     destroy(): void {
       destroyed = true;

@@ -34,7 +34,6 @@ export interface Problem {
   readonly path?: string;
   readonly issues?: readonly ProblemIssue[];
   readonly suggestion?: string;
-  readonly details?: ProblemDetails;
 }
 
 interface ProblemIssue {
@@ -46,17 +45,9 @@ interface ProblemIssue {
   readonly params?: Readonly<Record<string, unknown>>;
 }
 
-interface ProblemDetails {
-  readonly errno?: string;
-  readonly syscall?: string;
-  readonly tool?: string;
-  readonly extra?: Readonly<Record<string, unknown>>;
-}
-
 interface ProblemFactoryOptions {
   path?: string;
   suggestion?: string;
-  details?: ProblemDetails;
   issues?: readonly ProblemIssue[];
 }
 
@@ -66,7 +57,6 @@ function build(code: ErrorCode, message: string, opts: ProblemFactoryOptions = {
     message,
     ...(opts.path !== undefined ? { path: opts.path } : {}),
     ...(opts.suggestion !== undefined ? { suggestion: opts.suggestion } : {}),
-    ...(opts.details !== undefined ? { details: opts.details } : {}),
     ...(opts.issues !== undefined ? { issues: opts.issues } : {}),
   };
 }
@@ -247,13 +237,8 @@ function buildProblemFromSignal(signal: ClassificationSignal, error: unknown): P
       return Problem.timeout(message);
     case 'errno': {
       const code = ERRNO_MAP[signal.errno] ?? ErrorCode.IO_ERROR;
-      const details: ProblemDetails = {
-        errno: signal.errno,
-        ...(signal.syscall !== undefined ? { syscall: signal.syscall } : {}),
-      };
       return build(code, message, {
         ...(signal.path !== undefined ? { path: signal.path } : {}),
-        details,
       });
     }
     case 'unknown':
@@ -320,12 +305,10 @@ export function fsErrorCode(error: unknown): ProtocolErrorCode {
 export function hasErrorShape(
   error: unknown,
   name: string,
-  code?: string | number,
 ): error is Error & { code: string | number } {
   if (!(error instanceof Error) || error.name !== name) return false;
   const c = (error as { code?: unknown }).code;
-  if (typeof c !== 'string' && typeof c !== 'number') return false;
-  return code === undefined || c === code;
+  return typeof c === 'string' || typeof c === 'number';
 }
 
 function classify(error: unknown): Problem {
@@ -341,12 +324,8 @@ function classify(error: unknown): Problem {
   return buildProblemFromSignal(signal, error);
 }
 
-function isNativeError(error: unknown): error is Error {
-  return error instanceof Error;
-}
-
 export function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  if (!isNativeError(error)) return false;
+  if (!(error instanceof Error)) return false;
   if (!('code' in error)) return false;
   const { code } = error as { code?: unknown };
   return typeof code === 'string';
@@ -367,7 +346,7 @@ export function rethrowIfAborted(error: unknown): void {
 
 export function formatUnknownErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
-  if (isNativeError(error)) return error.message;
+  if (error instanceof Error) return error.message;
   try {
     return JSON.stringify(error);
   } catch {
@@ -376,7 +355,7 @@ export function formatUnknownErrorMessage(error: unknown): string {
 }
 
 export function normalizeUnknownError(error: unknown): Error {
-  return isNativeError(error) ? error : new Error(formatUnknownErrorMessage(error));
+  return error instanceof Error ? error : new Error(formatUnknownErrorMessage(error));
 }
 
 function formatDetailedError(
@@ -395,20 +374,13 @@ function formatDetailedError(
 export class FsError extends Error {
   readonly problem: Problem;
 
-  constructor(
-    code: ErrorCode,
-    message: string,
-    path?: string,
-    details?: Record<string, unknown>,
-    cause?: unknown,
-  ) {
+  constructor(code: ErrorCode, message: string, path?: string, cause?: unknown) {
     super(message, cause === undefined ? {} : { cause });
     const suggestion = DEFAULT_SUGGESTIONS[code];
     this.problem = {
       code,
       message,
       ...(path !== undefined ? { path } : {}),
-      ...(details !== undefined ? { details: { extra: details } } : {}),
       ...(suggestion !== undefined ? { suggestion } : {}),
     };
     this.name = 'FsError';
@@ -421,12 +393,5 @@ export class FsError extends Error {
 
   get path(): string | undefined {
     return this.problem.path;
-  }
-
-  get details(): Record<string, unknown> | undefined {
-    if (!this.problem.details) return undefined;
-    const { extra, ...rest } = this.problem.details;
-    if (!extra) return Object.keys(rest).length > 0 ? rest : undefined;
-    return { ...rest, ...extra };
   }
 }
