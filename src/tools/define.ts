@@ -43,7 +43,6 @@ import { McpProgressSink, ProgressSession } from './progress.js';
 
 export interface ToolCtx {
   readonly signal: AbortSignal;
-  readonly sessionId?: string;
   readonly authInfo?: AuthInfo;
   readonly _meta?: RequestMeta | undefined;
   readonly fs: GuardedFileSystem;
@@ -80,7 +79,6 @@ export interface ToolCtx {
    * all. `undefined` means "cannot tell" — never "no capabilities".
    */
   readonly clientCapabilities?: ClientCapabilities | undefined;
-  readonly server?: McpServer;
 }
 
 interface ToolDeps {
@@ -153,7 +151,6 @@ function toToolCtx(
       fs: new GuardedFileSystem(deps.pathGuard),
       pageStore: deps.pageStore,
       resourceStore: deps.resourceStore,
-      server: deps.server,
     };
   }
   // Envelope first, accessor second — the two eras carry this differently.
@@ -176,7 +173,6 @@ function toToolCtx(
 
   return {
     signal: ctx.mcpReq.signal,
-    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
     ...(ctx.http?.authInfo ? { authInfo: ctx.http.authInfo } : {}),
     ...(ctx.mcpReq._meta ? { _meta: ctx.mcpReq._meta } : {}),
     fs: new GuardedFileSystem(deps.pathGuard),
@@ -186,7 +182,6 @@ function toToolCtx(
     inputResponses: ctx.mcpReq.inputResponses,
     requestState: ctx.mcpReq.requestState,
     ...(clientCapabilities ? { clientCapabilities } : {}),
-    server: deps.server,
   };
 }
 

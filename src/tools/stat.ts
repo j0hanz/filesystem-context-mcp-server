@@ -6,8 +6,9 @@ import * as z from 'zod/v4';
 
 import { ErrorCode, rethrowIfAborted } from '../core/errors.js';
 import type { FileInfo, GuardedFileSystem, Stats } from '../core/fs.js';
-import { getFileType, isHidden } from '../core/fs.js';
+import { isHidden } from '../core/fs.js';
 import { detectMimeType } from '../core/mime.js';
+import { resolveEntryType } from '../core/primitives.js';
 import {
   FileInfoSchema,
   NonNegInt,
@@ -23,7 +24,7 @@ import { isTotalFailure, runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
-const StatInputSchema = singleOrBatchPathsInput({ extra: {} });
+const StatInputSchema = singleOrBatchPathsInput({});
 
 const StatPerPathSchema = z.strictObject({
   path: z.string().describe('Requested path'),
@@ -67,7 +68,7 @@ function buildFileInfoResult(
   return {
     name,
     path: requestedPath,
-    type: isSymlink ? 'symlink' : getFileType(stats),
+    type: isSymlink ? 'symlink' : resolveEntryType(stats),
     size: stats.size,
     ...(tokenEstimate !== undefined ? { tokenEstimate } : {}),
     created: stats.birthtime,

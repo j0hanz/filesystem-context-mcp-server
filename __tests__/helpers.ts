@@ -21,7 +21,11 @@ import { PathGuard, resolveAllowedDirectoriesState } from '../src/core/path.js';
 import { createWatcherRegistry } from '../src/core/watcher-registry.js';
 import { createServer } from '../src/server.js';
 import type { FilesystemServerContext } from '../src/server.js';
+import { ALL_TOOLS } from '../src/tools/index.js';
 import { startHttpServer } from '../src/transport.js';
+
+/** Every registered tool's name - the inventory tests assert `tools/list` against. */
+export const ALL_REGISTERED_TOOL_NAMES: readonly string[] = ALL_TOOLS.map((t) => t.name);
 
 /** Create an isolated temp directory for a test. */
 export async function createTestRoot(): Promise<string> {

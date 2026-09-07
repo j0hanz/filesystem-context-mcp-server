@@ -6,9 +6,7 @@ import * as z from 'zod/v4';
 import { applyPatch, parsePatch } from 'diff';
 
 import { ErrorCode, FsError } from '../core/errors.js';
-import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { detectMimeFromContent } from '../core/mime.js';
-import { countLines } from '../core/read.js';
+import { buildWrittenFileMeta } from '../core/file-uri.js';
 import {
   defaultFalseBoolean,
   FileKind,
@@ -39,37 +37,6 @@ const PatchOutputSchema = z.strictObject({
   linesRemoved: NonNegInt.describe('Number of lines removed by the patch'),
   diff: z.string().optional().describe('Unified diff preview (present only in dryRun mode)'),
 });
-
-interface PatchMeta {
-  size: number;
-  lineCount: number;
-  mimeType: string;
-  kind: FileKind;
-  resourceUri: string;
-  link: ContentBlock | undefined;
-}
-
-function buildPatchMeta(
-  validPath: string,
-  patched: string,
-  resourceStore: ToolCtx['resourceStore'],
-): PatchMeta {
-  const bytesWritten = Buffer.byteLength(patched, 'utf-8');
-  const mimeInfo = detectMimeFromContent(validPath, patched);
-  const resourceUri = buildFileResourceUri(validPath);
-  const link =
-    resourceStore !== undefined
-      ? buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten)
-      : undefined;
-  return {
-    size: bytesWritten,
-    lineCount: countLines(patched),
-    mimeType: mimeInfo.mimeType,
-    kind: mimeInfo.kind,
-    resourceUri,
-    link,
-  };
-}
 
 // Hunk lines are the raw unified lines with their +/-/ leading prefix (no
 // +++/--- file headers inside hunks), so the first char is a reliable marker.
@@ -139,7 +106,7 @@ async function handlePatch(
   const summaryText = `patch: ${basename(args.path)} +${String(linesAdded)} -${String(linesRemoved)}`;
 
   if (args.dryRun) {
-    const meta = buildPatchMeta(validPath, patched, ctx.resourceStore);
+    const meta = buildWrittenFileMeta(validPath, patched, ctx.resourceStore);
     return {
       structured: {
         path: validPath,
@@ -156,7 +123,7 @@ async function handlePatch(
       // A dry run exists to be previewed, so it keeps returning the patched
       // text; only the write path summarizes, where the bytes are on disk.
       text: patched,
-      ...(meta.link !== undefined ? { resources: [meta.link] } : {}),
+      ...(meta.resourceLink !== undefined ? { resources: [meta.resourceLink] } : {}),
     };
   }
 
@@ -167,7 +134,7 @@ async function handlePatch(
   // writer it may reflect that writer's mtime while `size`/content come from this
   // patch's atomic write. The file content itself is always consistent.
   const { stats: fileStats } = await ctx.fs.stat(args.path, { signal: ctx.signal });
-  const meta = buildPatchMeta(validPath, patched, ctx.resourceStore);
+  const meta = buildWrittenFileMeta(validPath, patched, ctx.resourceStore);
   return {
     structured: {
       path: validPath,
@@ -181,7 +148,7 @@ async function handlePatch(
       linesRemoved,
     },
     text: summaryText,
-    ...(meta.link !== undefined ? { resources: [meta.link] } : {}),
+    ...(meta.resourceLink !== undefined ? { resources: [meta.resourceLink] } : {}),
   };
 }
 

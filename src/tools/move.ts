@@ -5,6 +5,7 @@ import { basename, dirname, resolve } from 'node:path';
 
 import * as z from 'zod/v4';
 
+import { processInParallel } from '../core/concurrency.js';
 import {
   ErrorCode,
   FsError,
@@ -16,11 +17,10 @@ import {
 import { joinRoster, pathLabel } from '../core/fmt.js';
 import { destExists } from '../core/fs.js';
 import type { GuardedFileSystem } from '../core/fs.js';
-import { readAcceptedChoice } from '../core/input-required.js';
-import { isPathInsideDirectory, isSamePath } from '../core/path-utils.js';
+import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
+import { IS_CASE_INSENSITIVE_FS, isPathInsideDirectory, isSamePath } from '../core/path-utils.js';
 import { defaultFalseBoolean, PerFileErrorSchema, RequiredPath } from '../core/schema.js';
-import type { PairExecResult, PairPlanResult } from './batch.js';
-import { isTotalFailure, pairFailure, runOverPairs } from './batch.js';
+import { PARALLEL_CONCURRENCY } from '../core/util.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
@@ -106,7 +106,7 @@ async function planTransfer(
   pair: { source: string; destination: string },
   fs: ToolCtx['fs'],
   overwrite: boolean,
-): Promise<PairPlanResult<TransferPlan>> {
+): Promise<TransferPlanResult> {
   let realSource: string;
   let opSource: string;
   let validDest: string;
@@ -167,7 +167,7 @@ async function executeTransfer(
   plan: TransferPlan,
   ctx: Pick<ToolCtx, 'fs' | 'signal' | 'inputResponses' | 'log'>,
   pendingSorted: readonly string[],
-): Promise<PairExecResult<MoveItemResult>> {
+): Promise<TransferExecResult> {
   if (plan.pending) {
     const key = `confirm_${pendingSorted.indexOf(plan.validDest)}`;
     const choice = readAcceptedChoice(ctx.inputResponses, key);
@@ -213,6 +213,152 @@ async function executeTransfer(
   return { value: { from: plan.opSource, to: plan.validDest } };
 }
 
+type TransferPlanResult =
+  | { status: 'fail'; failure: MoveFailureItem }
+  | { status: 'noop' }
+  | { status: 'plan'; plan: TransferPlan };
+
+/** A discriminated union, so the fold below narrows without a generic cast. */
+type TransferExecResult = { readonly skipped: string } | { readonly value: MoveItemResult };
+
+function pairFailure(
+  pair: { source: string; destination: string },
+  error: unknown,
+): MoveFailureItem {
+  return {
+    source: pair.source,
+    destination: pair.destination,
+    error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, pair.source),
+  };
+}
+
+/**
+ * The source→destination sibling of `runOverPaths`: plan every pair, fail closed
+ * on a duplicated destination, round-trip the overwrite confirmations as one
+ * set, then execute what survived in parallel. `copy` and `move` differ only in
+ * their `plan` and `execute` callbacks.
+ */
+async function runTransfers(
+  items: readonly z.infer<typeof MoveItemSchema>[],
+  ctx: ToolCtx,
+  op: PairOp,
+  overwrite: boolean,
+): Promise<
+  | { results: MoveItemResult[]; skipped: string[]; failures: MoveFailureItem[] }
+  | InputRequiredResult
+> {
+  const { results: planned, errors: planErrors } = await processInParallel(
+    items,
+    (pair) => planTransfer(op, pair, ctx.fs, overwrite),
+    PARALLEL_CONCURRENCY,
+    ctx.signal,
+  );
+  // plan callbacks are fail-closed (they return { status: 'fail' }, never
+  // throw), so planErrors should always be empty. Surface the first rather
+  // than silently dropping the item if a future plan callback violates that.
+  const firstPlanError = planErrors[0];
+  if (firstPlanError) throw firstPlanError.error;
+
+  const failures: MoveFailureItem[] = [];
+  const candidates: TransferPlan[] = [];
+  for (const { value } of planned) {
+    if (value.status === 'fail') failures.push(value.failure);
+    else if (value.status === 'plan') candidates.push(value.plan);
+    // 'noop' (self-copy / self-move) is silently skipped.
+  }
+
+  // Two sources targeting the same destination in one batch would otherwise
+  // collapse to a single shared overwrite confirmation and let the second
+  // one silently clobber the first's freshly-written content. Fail closed:
+  // only the first plan per destination proceeds; later ones targeting the
+  // same destination are reported as a per-item failure.
+  const seenDest = new Set<string>();
+  const ready: TransferPlan[] = [];
+  for (const candidate of candidates) {
+    const destKey = IS_CASE_INSENSITIVE_FS
+      ? candidate.validDest.toLowerCase()
+      : candidate.validDest;
+    if (seenDest.has(destKey)) {
+      failures.push(
+        pairFailure(
+          candidate.pair,
+          new FsError(
+            ErrorCode.INVALID_INPUT,
+            `${VERB[op]} cancelled: another entry in this batch already targets destination "${candidate.pair.destination}"`,
+            candidate.pair.destination,
+          ),
+        ),
+      );
+      continue;
+    }
+    seenDest.add(destKey);
+    ready.push(candidate);
+  }
+
+  const pendingSorted = ready
+    .filter((p) => p.pending)
+    .map((p) => p.validDest)
+    .sort();
+  if (pendingSorted.length > 0) {
+    // Round 1 returns input_required; a retry whose verified state does not
+    // bind this overwrite set throws (R9) via `pendingRoundTrip`.
+    const round = await pendingRoundTrip({
+      op,
+      pending: pendingSorted,
+      requestState: ctx.requestState,
+      clientCapabilities: ctx.clientCapabilities,
+      buildInputs: (dests) =>
+        dests.map((dest, i) =>
+          choiceInput(
+            `confirm_${i}`,
+            op === 'move'
+              ? `"${dest}" already exists. Overwrite it?`
+              : `Destination "${dest}" already exists. Overwrite it?`,
+            [
+              { value: 'overwrite', title: 'Overwrite' },
+              { value: 'skip', title: 'Skip' },
+            ],
+          ),
+        ),
+    });
+    if (round !== undefined) return round;
+  }
+
+  const total = ready.length;
+  let completed = 0;
+  const tick = (): void => {
+    completed += 1;
+    ctx.onProgress?.({ current: completed, total });
+  };
+  const { results: execResults, errors: execErrors } = await processInParallel(
+    ready,
+    async (readyPlan) => {
+      try {
+        return await executeTransfer(op, readyPlan, ctx, pendingSorted);
+      } finally {
+        tick();
+      }
+    },
+    PARALLEL_CONCURRENCY,
+    ctx.signal,
+  );
+
+  for (const { error, index } of execErrors) {
+    rethrowIfAborted(error);
+    const failed = ready[index];
+    if (failed) failures.push(pairFailure(failed.pair, error));
+  }
+
+  const results: MoveItemResult[] = [];
+  const skipped: string[] = [];
+  for (const { value } of execResults) {
+    if ('skipped' in value) skipped.push(value.skipped);
+    else results.push(value.value);
+  }
+
+  return { results, skipped, failures };
+}
+
 /**
  * Two-phase move: pre-check every move (no mutation) to build the overwrite
  * pending set; if any move is pending and the round carries no verified
@@ -227,11 +373,7 @@ async function handleMove(
   const op: PairOp = args.copy ? 'copy' : 'move';
   // `overwrite` is copy-only; move has no confirmation bypass.
   const overwrite = args.copy && args.overwrite;
-  const outcome = await runOverPairs(args.moves, ctx, {
-    op,
-    plan: (pair) => planTransfer(op, pair, ctx.fs, overwrite),
-    execute: (plan, pendingSorted) => executeTransfer(op, plan, ctx, pendingSorted),
-  });
+  const outcome = await runTransfers(args.moves, ctx, op, overwrite);
   if (isInputRequiredResult(outcome)) return outcome;
 
   const { results, skipped, failures } = outcome;
@@ -391,7 +533,9 @@ export const MOVE = defineTool({
     return {
       structured: output,
       text: buildSummary(args.copy ? 'copy' : 'move', output.moves, failures, skipped),
-      isError: isTotalFailure({ results: output.moves, skipped, failures }),
+      // Every requested pair failed: no move, no copy, no user-chosen skip - the
+      // call did nothing. A skip is work the caller asked for, so it counts.
+      isError: failures.length > 0 && output.moves.length + skipped.length === 0,
     };
   },
 });

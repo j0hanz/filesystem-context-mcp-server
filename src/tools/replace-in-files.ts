@@ -4,10 +4,10 @@ import { Buffer } from 'node:buffer';
 import { dirname, join } from 'node:path';
 
 import * as z from 'zod/v4';
-import { createTwoFilesPatch } from 'diff';
 
 import type { StoppedReason, StopReasonTracker } from '../core/concurrency.js';
 import { processEntriesConcurrently, StoppedReasonSchema } from '../core/concurrency.js';
+import { unifiedPatch } from '../core/diff.js';
 import {
   ErrorCode,
   formatUnknownErrorMessage,
@@ -356,7 +356,6 @@ async function processEntry(entryPath: string, ctx: ReplaceContext): Promise<voi
       originalContent: plan.originalContent,
       updatedContent: plan.updatedContent,
       includeDiff: options.dryRun || options.returnDiff,
-      ...(signal ? { signal } : {}),
     });
   } catch (error) {
     summary.failedFiles++;
@@ -372,7 +371,7 @@ async function readReplacementPlan(
   ctx: ReplaceContext,
 ): Promise<ReplacementPlan | undefined> {
   const { matcher, replacement, maxFileSize, signal } = ctx;
-  await using fileHandle = await ctx.fs.open(validPath, 'r');
+  await using fileHandle = await ctx.fs.open(validPath);
   const stats = await fileHandle.stat();
   if (stats.size > maxFileSize) {
     throw new FsError(
@@ -394,22 +393,12 @@ function maybeAppendPatchDiff(
     originalContent: string;
     updatedContent: string;
     includeDiff: boolean;
-    signal?: AbortSignal;
   },
 ): void {
   if (!params.includeDiff) return;
   const header = toPosixRelative(summary.root, params.filePath);
 
-  // createTwoFilesPatch returns the unified diff string synchronously on
-  // diff v9 (the { callback } option fires via setTimeout and returns undefined).
-  const patch = createTwoFilesPatch(
-    header,
-    header,
-    params.originalContent,
-    params.updatedContent,
-    'Original',
-    'Modified',
-  );
+  const patch = unifiedPatch(header, params.originalContent, params.updatedContent);
 
   if (summary.diff.length >= MAX_DIFF_SIZE) {
     summary.diffTruncated = true;

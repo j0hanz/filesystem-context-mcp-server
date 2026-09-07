@@ -16,8 +16,8 @@ import {
 } from '../core/errors.js';
 import { joinRoster, pathLabel } from '../core/fmt.js';
 import type { FileType, GuardedFileSystem } from '../core/fs.js';
-import { getFileType } from '../core/fs.js';
 import { choiceInput, pendingRoundTrip, readAcceptedChoice } from '../core/input-required.js';
+import { resolveEntryType } from '../core/primitives.js';
 import {
   defaultFalseBoolean,
   OperationSummarySchema,
@@ -75,12 +75,7 @@ interface DeletedItem {
 }
 interface DeleteFailure {
   path: string;
-  error: {
-    code: string;
-    message: string;
-    path?: string;
-    suggestion?: string;
-  };
+  error: Problem;
 }
 
 const ERR_NOT_EMPTY = new Error('Directory not empty. Set recursive: true.');
@@ -93,7 +88,7 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   if (isNotFoundErrno(error)) {
     return {
       path,
-      error: Problem.toPerFileError(
+      error: Problem.fromUnknown(
         new FsError(ErrorCode.NOT_FOUND, 'Path not found', path),
         ErrorCode.NOT_FOUND,
         path,
@@ -106,10 +101,10 @@ function toDeleteFailure(path: string, error: unknown): DeleteFailure {
   ) {
     return {
       path,
-      error: Problem.toPerFileError(ERR_NOT_EMPTY, ErrorCode.INVALID_INPUT, path),
+      error: Problem.fromUnknown(ERR_NOT_EMPTY, ErrorCode.INVALID_INPUT, path),
     };
   }
-  return { path, error: Problem.toPerFileError(error, ErrorCode.UNKNOWN, path) };
+  return { path, error: Problem.fromUnknown(error, ErrorCode.UNKNOWN, path) };
 }
 
 type LstatResult = Awaited<ReturnType<GuardedFileSystem['lstat']>>;
@@ -178,7 +173,7 @@ async function planPath(
     return { status: 'fail', failure: toDeleteFailure(inputPath, error) };
   }
 
-  const itemType = getFileType(firstStats.stats);
+  const itemType = resolveEntryType(firstStats.stats);
   let hasChildren = false;
   if (args.recursive && itemType === 'directory') {
     try {
@@ -227,7 +222,7 @@ async function finalizeDeletion(
     return { failure: toDeleteFailure(plan.inputPath, error) };
   }
 
-  const currentItemType = getFileType(currentStats.stats);
+  const currentItemType = resolveEntryType(currentStats.stats);
   // Identity comparison, not just the coarse category: a swap during the
   // confirmation gap (delete original, create a same-named replacement) keeps
   // the type but changes dev/ino/birthtimeMs. birthtimeMs is the primary

@@ -5,9 +5,7 @@ import { basename, dirname } from 'node:path';
 import * as z from 'zod/v4';
 
 import { ErrorCode } from '../core/errors.js';
-import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { detectMimeFromContent } from '../core/mime.js';
-import { countLines } from '../core/read.js';
+import { buildWrittenFileMeta } from '../core/file-uri.js';
 import {
   FileKind,
   IsoDateTime,
@@ -96,28 +94,20 @@ export const CREATE = defineTool({
         });
 
         const { stats: fileStats } = await ctx.fs.stat(path, { signal: ctx.signal });
-        const bytesWritten = Buffer.byteLength(content, 'utf-8');
-        const lineCount = countLines(content);
-        const mimeInfo = detectMimeFromContent(validPath, content);
+        const meta = buildWrittenFileMeta(validPath, content, ctx.resourceStore);
 
-        const resourceUri = buildFileResourceUri(validPath);
         const file: CreateFileResult = {
           path: validPath,
-          size: bytesWritten,
-          lineCount,
-          mimeType: mimeInfo.mimeType,
-          kind: mimeInfo.kind,
-          resourceUri,
+          size: meta.size,
+          lineCount: meta.lineCount,
+          mimeType: meta.mimeType,
+          kind: meta.kind,
+          resourceUri: meta.resourceUri,
           created: fileStats.birthtime.toISOString(),
           modified: fileStats.mtime.toISOString(),
         };
 
-        return ctx.resourceStore
-          ? {
-              file,
-              resourceLink: buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten),
-            }
-          : { file };
+        return meta.resourceLink ? { file, resourceLink: meta.resourceLink } : { file };
       },
       { defaultErrorCode: ErrorCode.UNKNOWN },
     );

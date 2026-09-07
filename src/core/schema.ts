@@ -177,31 +177,6 @@ export const PathFailureSchema = z.strictObject({
   error: PerFileErrorSchema,
 });
 
-// TODO(future): Wrap createReadRangeFields output in a typed Zod object with built-in
-// cross-validation. Safe for now — the only caller (read.ts) calls validateReadRange in its own superRefine.
-interface ReadRangeDescriptions {
-  head: string;
-  tail: string;
-  startLine: string;
-  endLine: string;
-}
-
-export function createReadRangeFields(descs: ReadRangeDescriptions) {
-  const rangeField = (d: string) =>
-    z
-      .int32()
-      .min(1, { message: 'Min: 1' })
-      .max(100000, { message: 'Max: 100,000' })
-      .optional()
-      .describe(d);
-  return {
-    head: rangeField(descs.head),
-    tail: rangeField(descs.tail),
-    startLine: rangeField(descs.startLine),
-    endLine: rangeField(descs.endLine),
-  };
-}
-
 export function validateReadRange(
   value: {
     head?: number | undefined;
@@ -276,22 +251,19 @@ export type SingleOrBatchShape<TExtra extends z.ZodRawShape> = TExtra & {
   paths: z.ZodOptional<z.ZodArray<typeof RequiredPath>>;
 };
 
-export function singleOrBatchPathsInput<TExtra extends z.ZodRawShape>(opts: {
-  extra: TExtra;
-  maxBatch?: number;
-}): z.ZodObject<SingleOrBatchShape<TExtra>> {
-  const maxBatch = opts.maxBatch ?? DEFAULT_MAX_BATCH;
-
+export function singleOrBatchPathsInput<TExtra extends z.ZodRawShape>(
+  extra: TExtra,
+): z.ZodObject<SingleOrBatchShape<TExtra>> {
   const shape: z.ZodRawShape = {
-    ...opts.extra,
+    ...extra,
     path: RequiredPath.optional().describe('Single file path; mutually exclusive with paths'),
     paths: z
       .array(RequiredPath)
       .min(1)
-      .max(maxBatch)
+      .max(DEFAULT_MAX_BATCH)
       .optional()
       .describe(
-        `Array of file paths for batch mode (max ${String(maxBatch)}); mutually exclusive with path`,
+        `Array of file paths for batch mode (max ${String(DEFAULT_MAX_BATCH)}); mutually exclusive with path`,
       ),
   };
 

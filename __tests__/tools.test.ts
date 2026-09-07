@@ -18,13 +18,9 @@ import { ResourceStore } from '../src/core/store.js';
 import { MAX_SEARCH_RESULTS } from '../src/core/util.js';
 import { createServer } from '../src/server.js';
 import { defineTool } from '../src/tools/define.js';
+import { ALL_TOOLS, MUTATING_TOOL_NAMES, registeredTools } from '../src/tools/index.js';
 import {
   ALL_REGISTERED_TOOL_NAMES,
-  ALL_TOOLS,
-  MUTATING_TOOL_NAMES,
-  registeredTools,
-} from '../src/tools/index.js';
-import {
   bootHttpTest,
   cleanupTestRoot,
   createElicitationClientPair,

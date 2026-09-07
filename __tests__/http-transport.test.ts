@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { INSTRUCTIONS_URI } from '../src/instructions.js';
-import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
+  ALL_REGISTERED_TOOL_NAMES,
   cleanupTestRoot,
   createTestHttpHarness,
   createTestRoot,

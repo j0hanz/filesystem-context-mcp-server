@@ -18,13 +18,6 @@ export const ErrorCode = {
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-interface PerFileError {
-  readonly code: ErrorCode;
-  readonly message: string;
-  readonly path?: string;
-  readonly suggestion?: string;
-}
-
 export interface Problem {
   readonly code: ErrorCode;
   readonly message: string;
@@ -54,7 +47,6 @@ export const Problem = {
   timeout: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.TIMEOUT, msg, o),
   cancelled: (msg: string, o?: ProblemFactoryOptions): Problem =>
     build(ErrorCode.CANCELLED, msg, o),
-  ioError: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.IO_ERROR, msg, o),
   unknown: (msg: string, o?: ProblemFactoryOptions): Problem => build(ErrorCode.UNKNOWN, msg, o),
   fromUnknown(error: unknown, defaultCode: ErrorCode, path?: string): Problem {
     const problem = classify(error);
@@ -74,19 +66,6 @@ export const Problem = {
   toText(error: unknown, defaultCode: ErrorCode): { code: ErrorCode; text: string } {
     const resolved = Problem.fromUnknown(error, defaultCode);
     return { code: resolved.code, text: formatDetailedError(resolved) };
-  },
-  toPerFileError(
-    error: unknown,
-    defaultCode: ErrorCode = ErrorCode.UNKNOWN,
-    path?: string,
-  ): PerFileError {
-    const problem = Problem.fromUnknown(error, defaultCode, path);
-    return {
-      code: problem.code,
-      message: problem.message,
-      ...(problem.path !== undefined ? { path: problem.path } : {}),
-      ...(problem.suggestion !== undefined ? { suggestion: problem.suggestion } : {}),
-    };
   },
 } as const;
 

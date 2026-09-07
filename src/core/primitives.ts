@@ -5,10 +5,23 @@ import { delimiter } from 'node:path';
  * Kept separate to avoid import cycles between observability.ts and util.ts.
  */
 
-/** The four filesystem entry types. Produced by `resolveEntryType` (glob.ts)
- *  and `getFileType` (fs.ts); published as the `FileType` schema. */
+/** The four filesystem entry types; published as the `FileType` schema. */
 export const ENTRY_TYPES = ['file', 'directory', 'symlink', 'other'] as const;
 export type EntryType = (typeof ENTRY_TYPES)[number];
+
+/** The three predicates both `Dirent` and `Stats` expose - all `resolveEntryType` needs. */
+export interface DirentLike {
+  isDirectory(): boolean;
+  isFile(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+export function resolveEntryType(dirent: DirentLike): EntryType {
+  if (dirent.isDirectory()) return 'directory';
+  if (dirent.isFile()) return 'file';
+  if (dirent.isSymbolicLink()) return 'symlink';
+  return 'other';
+}
 
 const warnedFlagValues = new Set<string>();
 

@@ -2,8 +2,14 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 
 import { basename } from 'node:path';
 
-// Single owner of the `filesystem-mcp://file/` URI scheme: the template string,
-// the path→URI encoder, and the URI→path decoder.
+import { detectMimeFromContent } from './mime.js';
+import { countLines } from './read.js';
+import type { FileKind } from './schema.js';
+import type { ResourceStore } from './store.js';
+
+// Single owner of the `filesystem-mcp://file/` URI scheme — the template string,
+// the path→URI encoder, the URI→path decoder, the link blocks built from them,
+// and the post-write metadata block every write tool reports alongside them.
 
 export const FILESYSTEM_FILE_URI_TEMPLATE = 'filesystem-mcp://file/{+path}';
 
@@ -44,23 +50,27 @@ export function buildFileResourceLinkFor(
   name: string,
   mimeType: string,
   size: number,
-  annotations: Record<string, unknown> = { audience: ['user', 'assistant'] },
 ): ContentBlock {
-  return { type: 'resource_link', uri, name, mimeType, size, annotations };
+  return {
+    type: 'resource_link',
+    uri,
+    name,
+    mimeType,
+    size,
+    annotations: { audience: ['user', 'assistant'] },
+  };
 }
 
 export function buildFileResourceLink(
   validPath: string,
   mimeType: string,
   size: number,
-  annotations: Record<string, unknown> = { audience: ['user', 'assistant'] },
 ): ContentBlock {
   return buildFileResourceLinkFor(
     buildFileResourceUri(validPath),
     basename(validPath),
     mimeType,
     size,
-    annotations,
   );
 }
 
@@ -72,4 +82,37 @@ export function extractPath(uri: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export interface WrittenFileMeta {
+  size: number;
+  lineCount: number;
+  mimeType: string;
+  kind: FileKind;
+  resourceUri: string;
+  /** Undefined when no resource store is configured — nothing to link into. */
+  resourceLink: ContentBlock | undefined;
+}
+
+/**
+ * The five-step block every write tool runs on its post-write content: size,
+ * line count, MIME, the file's resource URI, and the store-gated link block.
+ */
+export function buildWrittenFileMeta(
+  validPath: string,
+  content: string,
+  resourceStore: ResourceStore | undefined,
+): WrittenFileMeta {
+  const size = Buffer.byteLength(content, 'utf-8');
+  const mimeInfo = detectMimeFromContent(validPath, content);
+  return {
+    size,
+    lineCount: countLines(content),
+    mimeType: mimeInfo.mimeType,
+    kind: mimeInfo.kind,
+    resourceUri: buildFileResourceUri(validPath),
+    resourceLink: resourceStore
+      ? buildFileResourceLink(validPath, mimeInfo.mimeType, size)
+      : undefined,
+  };
 }

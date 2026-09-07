@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
-import { constants as fsConstants } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import {
   chmod as fsChmod,
@@ -118,13 +117,6 @@ async function atomicWriteFile(
     throw error;
   }
   return { validPath };
-}
-
-export function getFileType(stats: Stats): FileType {
-  if (stats.isFile()) return 'file';
-  if (stats.isDirectory()) return 'directory';
-  if (stats.isSymbolicLink()) return 'symlink';
-  return 'other';
 }
 
 export function isHidden(name: string): boolean {
@@ -278,19 +270,9 @@ export class GuardedFileSystem {
     };
   }
 
-  async open(
-    filePath: string,
-    flags: string | number,
-    mode?: string | number,
-  ): Promise<FileHandle> {
-    // Only a plain read-only open ('r' / O_RDONLY) uses the existing-path guard.
-    // Every other flag (write, append, read-write, sync, numeric) is treated as
-    // write-capable and routed through the stricter write guard.
-    const isReadOnly = flags === 'r' || flags === fsConstants.O_RDONLY;
-    const validPath = isReadOnly
-      ? await this.pathGuard.validateExistingPath(filePath)
-      : await this.pathGuard.validatePathForWrite(filePath);
-    return fsOpen(validPath, flags, mode);
+  async open(filePath: string): Promise<FileHandle> {
+    const validPath = await this.pathGuard.validateExistingPath(filePath);
+    return fsOpen(validPath, 'r');
   }
 
   // Single resolution + stat: validateExistingPathDetailed resolves the real

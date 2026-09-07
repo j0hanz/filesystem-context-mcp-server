@@ -38,8 +38,6 @@ export const MUTATING_TOOL_NAMES = new Set(
   ALL_TOOLS.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name),
 );
 
-export const ALL_REGISTERED_TOOL_NAMES: readonly string[] = ALL_TOOLS.map((t) => t.name);
-
 /** The tools a server registers at this setting — the one owner of the `--read-only` gate. */
 export function registeredTools(readOnly: boolean): readonly DefinedTool[] {
   return readOnly ? ALL_TOOLS.filter((t) => !MUTATING_TOOL_NAMES.has(t.name)) : ALL_TOOLS;

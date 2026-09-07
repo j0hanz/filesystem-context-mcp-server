@@ -8,23 +8,10 @@ import { processInParallel } from './concurrency.js';
 import { formatUnknownErrorMessage } from './errors.js';
 import { Logger } from './observability.js';
 import { isWindowsDriveRelativePath } from './path-utils.js';
-import { toPosixPath } from './primitives.js';
+import { type DirentLike, toPosixPath } from './primitives.js';
 import type { EntryType } from './primitives.js';
 
 export type { EntryType };
-
-export interface DirentLike {
-  isDirectory(): boolean;
-  isFile(): boolean;
-  isSymbolicLink(): boolean;
-}
-
-export function resolveEntryType(dirent: DirentLike): EntryType {
-  if (dirent.isDirectory()) return 'directory';
-  if (dirent.isFile()) return 'file';
-  if (dirent.isSymbolicLink()) return 'symlink';
-  return 'other';
-}
 
 export function isSafeGlobSyntax(pattern: string): boolean {
   if (!pattern || pattern.trim().length === 0) {
