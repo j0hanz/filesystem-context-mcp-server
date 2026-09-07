@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { normalizePath } from '../src/core/path-utils.js';
-import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
+  ALL_REGISTERED_TOOL_NAMES,
   cleanupTestRoot,
   createTestClientPair,
   createTestRoot,

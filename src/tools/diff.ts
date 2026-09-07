@@ -3,8 +3,9 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
-import { createTwoFilesPatch, diffLines } from 'diff';
+import { createTwoFilesPatch } from 'diff';
 
+import { computeDiffStats } from '../core/diff.js';
 import { NonNegInt, PositiveInt, RequiredPath } from '../core/schema.js';
 import { putJsonResource } from '../core/store.js';
 import { defineTool, type ToolCtx } from './define.js';
@@ -58,13 +59,7 @@ async function handleDiff(
     { context: args.context },
   );
 
-  // diffLines returns the change list synchronously; count added/removed lines.
-  let linesAdded = 0;
-  let linesRemoved = 0;
-  for (const part of diffLines(contentA, contentB)) {
-    if (part.added) linesAdded += part.count;
-    else if (part.removed) linesRemoved += part.count;
-  }
+  const { linesAdded, linesRemoved } = computeDiffStats(contentA, contentB);
 
   let resourceUri: string | undefined;
   let link: ReturnType<typeof putJsonResource>['link'] | undefined;

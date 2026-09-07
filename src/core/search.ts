@@ -1,4 +1,5 @@
 import { stat as fsStat, readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import type { RE2ExecArray } from '@adguard/re2-wasm';
 import { RE2 } from '@adguard/re2-wasm';
@@ -311,11 +312,7 @@ export async function searchFiles(
   // Sorting — only name / path are supported; size / modified were removed
   // (the glob never collected stats, so they were always undefined).
   if (options.sortBy === 'name') {
-    results.sort((a, b) => {
-      const aName = a.path.split(/[/\\]/).pop() ?? '';
-      const bName = b.path.split(/[/\\]/).pop() ?? '';
-      return aName.localeCompare(bName);
-    });
+    results.sort((a, b) => basename(a.path).localeCompare(basename(b.path)));
   } else {
     results.sort((a, b) => a.path.localeCompare(b.path));
   }

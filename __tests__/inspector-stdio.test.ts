@@ -3,8 +3,13 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { normalizePath } from '../src/core/path-utils.js';
-import { ALL_REGISTERED_TOOL_NAMES, MUTATING_TOOL_NAMES } from '../src/tools/index.js';
-import { cleanupTestRoot, createTestRoot, getStdioServerCommand } from './helpers.js';
+import { MUTATING_TOOL_NAMES } from '../src/tools/index.js';
+import {
+  ALL_REGISTERED_TOOL_NAMES,
+  cleanupTestRoot,
+  createTestRoot,
+  getStdioServerCommand,
+} from './helpers.js';
 import { executeInspectorCli, inspectorSkipReason } from './inspector-harness.js';
 
 describe('Inspector CLI: Stdio Integration & Conformance', { skip: inspectorSkipReason() }, () => {

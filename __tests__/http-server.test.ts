@@ -8,9 +8,9 @@ import { json } from 'node:stream/consumers';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import { MAX_WATCHERS } from '../src/core/watcher-registry.js';
-import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import { startHttpServer } from '../src/transport.js';
 import {
+  ALL_REGISTERED_TOOL_NAMES,
   bootHttpTest,
   cleanupTestRoot,
   createTestRoot,

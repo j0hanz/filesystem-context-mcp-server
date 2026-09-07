@@ -3,13 +3,11 @@ import type { ContentBlock } from '@modelcontextprotocol/server';
 import { basename } from 'node:path';
 
 import * as z from 'zod/v4';
-import { createTwoFilesPatch, diffLines } from 'diff';
 
+import { computeDiffStats, unifiedPatch } from '../core/diff.js';
 import { ErrorCode, FsError } from '../core/errors.js';
-import { buildFileResourceLink, buildFileResourceUri } from '../core/file-uri.js';
-import { detectMimeFromContent } from '../core/mime.js';
+import { buildWrittenFileMeta, type WrittenFileMeta } from '../core/file-uri.js';
 import { escapeRegexLiteral } from '../core/primitives.js';
-import { countLines } from '../core/read.js';
 import {
   defaultFalseBoolean,
   FileKind,
@@ -176,20 +174,6 @@ interface EditResult {
   lineRange?: [number, number];
 }
 
-function computeDiffStats(
-  original: string,
-  modified: string,
-): { linesAdded: number; linesRemoved: number } {
-  // diffLines returns the change list synchronously on diff v9.
-  let linesAdded = 0;
-  let linesRemoved = 0;
-  for (const part of diffLines(original, modified)) {
-    if (part.added) linesAdded += part.count;
-    else if (part.removed) linesRemoved += part.count;
-  }
-  return { linesAdded, linesRemoved };
-}
-
 function findEditMatch(
   content: string,
   oldText: string,
@@ -293,7 +277,7 @@ function buildEditFileValue(
 ): EditFileValue {
   return {
     path: validPath,
-    size: meta.bytesWritten,
+    size: meta.size,
     lineCount: meta.lineCount,
     mimeType: meta.mimeType,
     kind: meta.kind,
@@ -331,15 +315,11 @@ function finalizeEditResult(
   };
 }
 
-interface EditFileMetadata {
-  bytesWritten: number;
-  lineCount: number;
-  mimeType: string;
-  kind: FileKind;
-  /** Undefined when no edit matched: there is no updated content to point at. */
+/** {@link WrittenFileMeta}, with `resourceUri` widened: an edit that matched
+ *  nothing has no updated content to point at. */
+type EditFileMetadata = Omit<WrittenFileMeta, 'resourceUri'> & {
   resourceUri: string | undefined;
-  resourceLink: ContentBlock | undefined;
-}
+};
 
 function buildEditFileMetadata(
   content: string,
@@ -347,23 +327,14 @@ function buildEditFileMetadata(
   appliedEdits: number,
   resourceStore: ResourceStore | undefined,
 ): EditFileMetadata {
-  const bytesWritten = Buffer.byteLength(content, 'utf-8');
-  const lineCount = countLines(content);
-  const mimeInfo = detectMimeFromContent(validPath, content);
+  const meta = buildWrittenFileMeta(validPath, content, resourceStore);
   // Omitted rather than empty-stringed when nothing matched: `""` satisfied the
   // schema's `string` and then failed every resources/read a client tried it on.
-  const resourceUri = appliedEdits > 0 ? buildFileResourceUri(validPath) : undefined;
-  const resourceLink =
-    appliedEdits > 0 && resourceStore
-      ? buildFileResourceLink(validPath, mimeInfo.mimeType, bytesWritten)
-      : undefined;
+  const written = appliedEdits > 0;
   return {
-    bytesWritten,
-    lineCount,
-    mimeType: mimeInfo.mimeType,
-    kind: mimeInfo.kind,
-    resourceUri,
-    resourceLink,
+    ...meta,
+    resourceUri: written ? meta.resourceUri : undefined,
+    resourceLink: written ? meta.resourceLink : undefined,
   };
 }
 
@@ -421,17 +392,7 @@ async function handleEditFile(
 
   if (options.dryRun) {
     if (editResult.appliedEdits > 0) {
-      const label = basename(validPath);
-      // createTwoFilesPatch returns the unified diff string synchronously on
-      // diff v9 (the { callback } option fires via setTimeout and returns undefined).
-      editResult.diff = createTwoFilesPatch(
-        label,
-        label,
-        content,
-        editResult.content,
-        'Original',
-        'Modified',
-      );
+      editResult.diff = unifiedPatch(basename(validPath), content, editResult.content);
     }
 
     // Nothing was written, so there is no updated content to point a

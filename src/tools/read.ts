@@ -14,7 +14,6 @@ import type { ReadFileResult, ReadSpec } from '../core/read.js';
 import { readFileWithStats } from '../core/read.js';
 import {
   ContinuationSchema,
-  createReadRangeFields,
   defaultFalseBoolean,
   FileKind,
   NonNegInt,
@@ -38,20 +37,24 @@ import { isTotalFailure, runOverPaths } from './batch.js';
 import type { ToolCtx } from './define.js';
 import { defineTool } from './define.js';
 
-const readRangeFields = createReadRangeFields({
-  head: 'Return first N lines',
-  tail: 'Return last N lines',
-  startLine: 'Start line (1-indexed)',
-  endLine: 'End line (1-indexed)',
-});
+const rangeField = (description: string) =>
+  z
+    .int32()
+    .min(1, { message: 'Min: 1' })
+    .max(100000, { message: 'Max: 100,000' })
+    .optional()
+    .describe(description);
+
+const readRangeFields = {
+  head: rangeField('Return first N lines'),
+  tail: rangeField('Return last N lines'),
+  startLine: rangeField('Start line (1-indexed)'),
+  endLine: rangeField('End line (1-indexed)'),
+};
 
 const ReadFileInputSchema = singleOrBatchPathsInput({
-  extra: {
-    includeHash: defaultFalseBoolean(
-      'Include SHA-256 hash of the returned content in the response',
-    ),
-    ...readRangeFields,
-  },
+  includeHash: defaultFalseBoolean('Include SHA-256 hash of the returned content in the response'),
+  ...readRangeFields,
 })
   .superRefine((value, ctx) => {
     validateReadRange(

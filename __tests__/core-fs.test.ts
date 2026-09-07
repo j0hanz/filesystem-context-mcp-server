@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { ErrorCode, isFsError } from '../src/core/errors.js';
@@ -206,6 +206,24 @@ describe('Core Filesystem (GuardedFileSystem + core search) Tests', () => {
       const txtResults = await searchFiles(searchDir, '**/*.txt', [], {}, ctx.pathGuard);
       assert.strictEqual(txtResults.results.length, 2);
       assert.ok(txtResults.results.every((r) => r.path.endsWith('.txt')));
+    });
+
+    it("TC-FUNC-039b: searchFiles sortBy 'name' orders by basename, not full path", async () => {
+      await writeTestFile(tmpDir, 'sort_dir/zzz/alpha.ts', '// a');
+      await writeTestFile(tmpDir, 'sort_dir/aaa/omega.ts', '// o');
+
+      const sortDir = join(tmpDir, 'sort_dir');
+      const byName = await searchFiles(sortDir, '**/*.ts', [], { sortBy: 'name' }, ctx.pathGuard);
+      assert.deepStrictEqual(
+        byName.results.map((r) => basename(r.path)),
+        ['alpha.ts', 'omega.ts'],
+      );
+
+      const byPath = await searchFiles(sortDir, '**/*.ts', [], {}, ctx.pathGuard);
+      assert.deepStrictEqual(
+        byPath.results.map((r) => basename(r.path)),
+        ['omega.ts', 'alpha.ts'],
+      );
     });
 
     it('TC-FUNC-040: searchContent matches literal patterns across files', async () => {

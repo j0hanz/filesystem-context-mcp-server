@@ -10,8 +10,8 @@ import { setTimeout } from 'node:timers/promises';
 
 import { isNodeError } from '../src/core/errors.js';
 import { buildFileResourceUri } from '../src/core/file-uri.js';
-import { ALL_REGISTERED_TOOL_NAMES } from '../src/tools/index.js';
 import {
+  ALL_REGISTERED_TOOL_NAMES,
   cleanupTestRoot,
   createRawStdioServer,
   createStdioClient,

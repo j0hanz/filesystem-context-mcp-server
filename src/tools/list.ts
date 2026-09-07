@@ -13,10 +13,10 @@ import {
   globEntries,
   isIgnoredByGitignore,
   loadRootGitignore,
-  resolveEntryType,
 } from '../core/glob.js';
 import type { PathGuard } from '../core/path.js';
 import { toPosixRelative } from '../core/path.js';
+import { resolveEntryType } from '../core/primitives.js';
 import {
   CursorSchema,
   FileType as FileTypeEnum,
